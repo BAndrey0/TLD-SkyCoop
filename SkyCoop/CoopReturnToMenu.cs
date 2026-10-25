@@ -417,7 +417,7 @@ public static class CoopReturnToMenu
 		GameManager.DoExitToMainMenu();
 	}
 
-	private static void LeaveLobby()
+	internal static void LeaveLobby()
 	{
 		if (SteamConnect.CanUseSteam && !string.IsNullOrEmpty(MyMod.MyLobby))
 		{

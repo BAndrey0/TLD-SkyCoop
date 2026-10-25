@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.1";
+		public const string Version = "0.14.2";
 
 		public const string DownloadLink = null;
 
@@ -10813,6 +10813,8 @@ public class MyMod : MelonMod
 		return CameraVisibility.IsFlyModeEntered;
 	}
 
+	private static float DiskCommitWaitStarted = -1f;
+
 	public static void SaveCheck()
 	{
 		if (SaveBeforeQuitRequested)
@@ -10835,6 +10837,39 @@ public class MyMod : MelonMod
 			{
 				MelonLogger.Error("[SaveQuit] Save request failed; the game will remain open: " + ex);
 				Pathes.ResetPendingQuitAfterSaveFailure();
+			}
+		}
+		if (!QuitWhenSaveOperationFinished || string.IsNullOrEmpty(PendingSlotDiskCommit))
+		{
+			DiskCommitWaitStarted = -1f;
+		}
+		else if (DiskCommitWaitStarted < 0f)
+		{
+			DiskCommitWaitStarted = Time.realtimeSinceStartup;
+		}
+		else if (Time.realtimeSinceStartup - DiskCommitWaitStarted > 10f)
+		{
+			// Once seen in a session: a save flag never cleared after the in-memory save and the game hung with the
+			// world never written. Log what is holding and commit the slot anyway.
+			DiskCommitWaitStarted = -1f;
+			MelonLogger.Warning("[SaveQuit] Disk commit for " + PendingSlotDiskCommit + " stuck 10s: operationPending=" + SaveGameData.IsAnyOperationPending() + " asyncRunning=" + SaveGameSystem.IsAsyncSaveRunning() + " waitingScreenshot=" + SaveGameSystem.IsWaitingForScreenshot() + "; forcing commit");
+			if (SaveGameSystem.IsWaitingForScreenshot())
+			{
+				SaveGameSystem.AbortScreenshot();
+			}
+			try
+			{
+				bool committed = SaveGameSlots.WriteSlotToDisk(PendingSlotDiskCommit);
+				MelonLogger.Msg("[SaveQuit] Forced WriteSlotToDisk(" + PendingSlotDiskCommit + ") = " + committed);
+				if (committed)
+				{
+					PendingSlotDiskCommit = null;
+					SaveCommitDrainAfterFrame = Time.frameCount + 2;
+				}
+			}
+			catch (System.Exception ex3)
+			{
+				MelonLogger.Error("[SaveQuit] Forced disk commit failed: " + ex3);
 			}
 		}
 		if (!QuitWhenSaveOperationFinished || Time.frameCount < SaveCommitDrainAfterFrame || SaveGameData.IsAnyOperationPending() || SaveGameSystem.IsAsyncSaveRunning() || SaveGameSystem.IsWaitingForScreenshot())

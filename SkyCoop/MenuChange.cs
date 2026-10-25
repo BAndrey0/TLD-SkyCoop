@@ -196,6 +196,12 @@ public class MenuChange
 				{
 					MyMod.LobbyUI.SetActive(value: false);
 				}
+				// Used to fall through to the native Back with MenuMode still "Lobby" and the Steam lobby still joined,
+				// which left the main menu unresponsive. Leave the lobby and return to the multiplayer menu instead.
+				MelonLogger.Msg("[Menu] Back from lobby: leaving lobby " + MyMod.MyLobby);
+				CoopReturnToMenu.LeaveLobby();
+				ChangeMenuItems("Multiplayer");
+				return false;
 			}
 			else
 			{
@@ -960,7 +966,7 @@ public class MenuChange
 			MyMod.DoWaitForConnect(Steam: true);
 			if (flag2)
 			{
-				MyMod.DoKickMessage("Wrong mod version! Server using version 0.14.1");
+				MyMod.DoKickMessage("Wrong mod version! Server using version 0.14.2");
 			}
 		}
 		else if (flag)

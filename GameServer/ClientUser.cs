@@ -199,7 +199,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.14.1")
+				if (text2 != "0.14.2")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
@@ -234,6 +234,13 @@ internal class ClientUser
 		}
 	}
 
+	// The first DNS answer can be an IPv6 link-local address that the IPv4 UDP socket rejects.
+	private static string ResolvePreferIPv4(string host)
+	{
+		IPAddress[] hostAddresses = Dns.GetHostAddresses(host);
+		return (hostAddresses.FirstOrDefault((IPAddress a) => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ?? hostAddresses.FirstOrDefault())?.ToString() ?? "";
+	}
+
 	public static void DoConnectToIp(string _ip)
 	{
 		if (MyMod.TryResetSaveExitForNewSession())
@@ -244,12 +251,12 @@ internal class ClientUser
 			if (_ip.Contains(':'))
 			{
 				string[] array = _ip.Split(':');
-				text2 = Dns.GetHostAddresses(array[0]).FirstOrDefault().ToString();
+				text2 = ResolvePreferIPv4(array[0]);
 				text = array[1];
 			}
 			else
 			{
-				text2 = Dns.GetHostAddresses(_ip).FirstOrDefault().ToString();
+				text2 = ResolvePreferIPv4(_ip);
 				text = "26950";
 			}
 			if (text2 == "" && text == "")

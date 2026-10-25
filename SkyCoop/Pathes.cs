@@ -1728,6 +1728,16 @@ public class Pathes
 			}
 			if (MyMod.PendingSave != null || MenuChange.MenuMode == "NewGameSelect")
 			{
+				// Back used to do nothing here, leaving the player stuck on the map.
+				if (MenuChange.MenuMode == "NewGameSelect" && MyMod.PendingSave == null)
+				{
+					__instance.Enable(enable: false);
+					InterfaceManager.TrySetPanelEnabled<Panel_SelectExperience>(enable: true);
+				}
+				else
+				{
+					HUDMessage.AddMessage("Выберите регион, чтобы продолжить");
+				}
 				return false;
 			}
 			return true;
