@@ -93,7 +93,7 @@ public static class CheatConsole
 			}
 			return;
 		}
-		if (!KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+		if (ItemSpawner.IsOpen || !KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
 		{
 			return;
 		}
@@ -309,20 +309,28 @@ public static class CheatConsole
 			count = Mathf.Clamp(uConsole.GetInt(), 1, 100);
 		}
 		name = name.StartsWith("GEAR_", StringComparison.OrdinalIgnoreCase) ? ("GEAR_" + name.Substring(5)) : ("GEAR_" + name);
+		Print(GiveItem(name, count));
+	}
+
+	// Shared by the console and the item window; returns a message for the player.
+	public static string GiveItem(string name, int count)
+	{
+		if (!Allowed)
+		{
+			return "Читы выключены настройками сервера";
+		}
 		PlayerManager playerManager = GameManager.GetPlayerManagerComponent();
 		if (playerManager == null || MyMod.level_name == "Empty" || Shared.IsMainMenuScene(MyMod.level_name))
 		{
-			Print("Сначала зайдите в мир");
-			return;
+			return "Сначала зайдите в мир";
 		}
 		if (MyMod.GetGearItemObject(name) == null)
 		{
-			Print("Нет предмета " + name + " (имя с учётом регистра, give без параметров покажет примеры)");
-			return;
+			return "Нет предмета " + name + " (имя с учётом регистра, give без параметров покажет примеры)";
 		}
 		GearItem gearItem = playerManager.InstantiateItemInPlayerInventory(name, count);
-		Print((gearItem != null) ? ("Выдано: " + name + " x" + count) : ("Не удалось выдать " + name));
 		MelonLogger.Msg("[Cheats] give " + name + " x" + count + " -> " + (gearItem != null));
+		return (gearItem != null) ? ("Выдано: " + name + " x" + count) : ("Не удалось выдать " + name);
 	}
 
 	private static void Hud(string text)

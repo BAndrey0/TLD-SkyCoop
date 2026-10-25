@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.4";
+		public const string Version = "0.14.5";
 
 		public const string DownloadLink = null;
 
@@ -11610,6 +11610,7 @@ public class MyMod : MelonMod
 	{
 		SaveCheck();
 		CheatConsole.Tick();
+		ItemSpawner.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)
@@ -11753,6 +11754,7 @@ public class MyMod : MelonMod
 		CoopContainerFlow.Draw();
 		CoopReturnToMenu.Draw();
 		CheatConsole.Draw();
+		ItemSpawner.Draw();
 	}
 
 	public static void SetRevivedStats(bool health = true)
