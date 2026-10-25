@@ -49,8 +49,6 @@ public static class CheatConsole
 
 	private static int historyIndex;
 
-	private static float savedInputDisableTime;
-
 	public static bool IsOpen => open;
 
 	public static bool Allowed
@@ -91,14 +89,17 @@ public static class CheatConsole
 				Close();
 				Hud("Читы выключены настройками сервера");
 			}
-			else if (Time.frameCount != openedFrame && KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+			else if (Time.frameCount != openedFrame && KeyboardUtilities.InputManager.GetTogglePressed(ToggleKey))
 			{
-				// The IMGUI KeyDown event for F1 does not arrive reliably; close through the same input that opens it.
 				Close();
+			}
+			else
+			{
+				OverlayInput.Keep();
 			}
 			return;
 		}
-		if (ItemSpawner.IsOpen || !KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+		if (ItemSpawner.IsOpen || !KeyboardUtilities.InputManager.GetTogglePressed(ToggleKey))
 		{
 			return;
 		}
@@ -139,8 +140,7 @@ public static class CheatConsole
 		openedFrame = Time.frameCount;
 		input = "";
 		historyIndex = History.Count;
-		savedInputDisableTime = InputManager.m_InputDisableTime;
-		InputManager.m_InputDisableTime = float.PositiveInfinity;
+		OverlayInput.Acquire();
 		if (Lines.Count == 0)
 		{
 			Print("Консоль: help — список, give <предмет> [кол-во], Enter — выполнить, Esc/F1 — закрыть");
@@ -150,8 +150,11 @@ public static class CheatConsole
 
 	private static void Close()
 	{
-		open = false;
-		InputManager.m_InputDisableTime = savedInputDisableTime;
+		if (open)
+		{
+			open = false;
+			OverlayInput.Release();
+		}
 	}
 
 	public static void Draw()
@@ -177,6 +180,7 @@ public static class CheatConsole
 			else if (keyCode == KeyCode.Escape || (keyCode == ToggleKey && Time.frameCount != openedFrame))
 			{
 				current.Use();
+				KeyboardUtilities.InputManager.MarkToggled(ToggleKey);
 				Close();
 				return;
 			}
@@ -207,6 +211,7 @@ public static class CheatConsole
 				current.Use();
 			}
 		}
+		OverlayInput.Keep();
 		float width = Mathf.Min(Screen.width - 40f, 1100f);
 		float lineHeight = 22f;
 		float height = lineHeight * (MaxLines + 2) + 10f;
@@ -356,5 +361,43 @@ public static class CheatConsole
 		{
 		}
 		MelonLogger.Msg("[Cheats] " + text);
+	}
+}
+
+// Shared by the F1 console and the F2 window: blocks game input and keeps the mouse cursor visible while open.
+// The game hides the cursor in the world through its own cursor state, so Unity's Cursor.visible alone is not enough.
+internal static class OverlayInput
+{
+	private static int users;
+
+	private static float savedInputDisableTime;
+
+	private static InputManager.CursorState savedCursorState;
+
+	public static void Acquire()
+	{
+		if (users++ == 0)
+		{
+			savedInputDisableTime = InputManager.m_InputDisableTime;
+			savedCursorState = InputManager.m_CursorState;
+			InputManager.m_InputDisableTime = float.PositiveInfinity;
+		}
+		Keep();
+	}
+
+	public static void Release()
+	{
+		if (users > 0 && --users == 0)
+		{
+			InputManager.m_InputDisableTime = savedInputDisableTime;
+			InputManager.m_CursorState = savedCursorState;
+		}
+	}
+
+	public static void Keep()
+	{
+		InputManager.m_CursorState = InputManager.CursorState.Show;
+		Cursor.visible = true;
+		Cursor.lockState = CursorLockMode.None;
 	}
 }

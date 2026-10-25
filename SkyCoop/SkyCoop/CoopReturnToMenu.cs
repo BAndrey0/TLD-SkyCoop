@@ -455,19 +455,33 @@ public static class CoopReturnToMenu
 		}
 		Panel_PauseMenu panel_PauseMenu = GameCompat.Panel<Panel_PauseMenu>();
 		bool flag = CoopContainerFlow.HasActiveSearch || MyMod.GoingToOpenContinaer != null;
-		if (CanRequest && (pending || flag || (!(panel_PauseMenu == null) && panel_PauseMenu.isActiveAndEnabled)))
+		bool pauseOpen = panel_PauseMenu != null && panel_PauseMenu.isActiveAndEnabled;
+		if (!CanRequest || (!pending && !flag && !pauseOpen))
 		{
-			int depth = GUI.depth;
-			GUI.depth = -10000;
+			return;
+		}
+		int depth = GUI.depth;
+		GUI.depth = -10000;
+		// The pause menu has its own "QUIT TO MAIN MENU" item; this button stays for exiting during a container search.
+		if (!pauseOpen && !pending)
+		{
 			bool enabled = GUI.enabled;
-			GUI.enabled = !pending && !MyMod.SaveExitPending;
-			if (GUI.Button(new Rect((float)Screen.width / 2f - 190f, Screen.height - 85, 380f, 42f), pending ? "Сохранение и выход в меню…" : "Выйти в главное меню"))
+			GUI.enabled = !MyMod.SaveExitPending;
+			if (GUI.Button(new Rect((float)Screen.width / 2f - 190f, Screen.height - 85, 380f, 42f), "Выйти в главное меню"))
 			{
 				Request();
 			}
 			GUI.enabled = enabled;
-			GUI.Box(text: (!string.IsNullOrEmpty(status)) ? status : (MyMod.iAmHost ? "Сервер закроется для всех игроков" : "Персонаж будет сохранён перед выходом"), position: new Rect((float)Screen.width / 2f - 300f, Screen.height - 135, 600f, 45f));
-			GUI.depth = depth;
 		}
+		string text = status;
+		if (string.IsNullOrEmpty(text) && pauseOpen)
+		{
+			text = MyMod.iAmHost ? "Выход в меню закроет сервер для всех игроков" : "Перед выходом в меню персонаж будет сохранён";
+		}
+		if (!string.IsNullOrEmpty(text))
+		{
+			GUI.Box(new Rect((float)Screen.width / 2f - 300f, Screen.height - 135, 600f, 45f), text);
+		}
+		GUI.depth = depth;
 	}
 }

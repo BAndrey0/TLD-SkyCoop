@@ -136,7 +136,31 @@ public class MenuChange
 	{
 		public static void Postfix(Panel_PauseMenu __instance)
 		{
-			AddButtonPause(__instance, "INVITE", 0, 2);
+			AddButtonPause(__instance, "INVITE", 0, InvitePlus);
+			int quit = __instance.m_MenuItems.IndexOf(Panel_PauseMenu.PauseMenuItemType.Quit);
+			AddButtonPause(__instance, "QUIT TO MAIN MENU", (quit < 0) ? __instance.m_MenuItems.Count : quit, ReturnToMenuPlus);
+		}
+	}
+
+	// The menu is rebuilt from item types, so custom items need their actions resolved here too
+	// (keyboard, gamepad and double click go through these actions instead of the button hook).
+	[HarmonyPatch(typeof(Panel_PauseMenu), "GetActionFromType")]
+	public class Panel_PauseMenu_GetActionFromType
+	{
+		public static void Postfix(Panel_PauseMenu __instance, Panel_PauseMenu.PauseMenuItemType type, ref Il2CppSystem.Action __result)
+		{
+			if ((int)type == 30 + InvitePlus)
+			{
+				__result = (Action)PauseInvite;
+			}
+			else if ((int)type == 30 + ReturnToMenuPlus)
+			{
+				Panel_PauseMenu panel = __instance;
+				__result = (Action)delegate
+				{
+					PauseReturnToMenu(panel);
+				};
+			}
 		}
 	}
 
@@ -433,6 +457,16 @@ public class MenuChange
 			{
 				return true;
 			}
+			if (MyMod.m_Panel_Sandbox != null && __instance == MyMod.m_Panel_Sandbox.m_BasicMenu && MenuMode != "Original")
+			{
+				// Enter / gamepad confirm on a multiplayer row. The native survival actions (resume, new game, load)
+				// must never run from here: they started an ordinary offline game from the multiplayer menu.
+				if (IsSandboxMenuMode)
+				{
+					HandleSandboxClick(index);
+				}
+				return false;
+			}
 			if (basicMenuItemModel.m_LabelText == "Donaters")
 			{
 				Application.OpenURL("https://filigrani.github.io/SkyCoop/");
@@ -467,9 +501,13 @@ public class MenuChange
 					Panel_PauseMenu panel_PauseMenu = GameCompat.Panel<Panel_PauseMenu>();
 					if (panel_PauseMenu != null && panel_PauseMenu.isActiveAndEnabled)
 					{
-						if (customId == 0 && MyMod.MyLobby != "")
+						if (customId == 0)
 						{
-							SteamConnect.Main.MakeFriendListUI();
+							PauseInvite();
+						}
+						else if (customId == 1)
+						{
+							PauseReturnToMenu(panel_PauseMenu);
 						}
 					}
 					else
@@ -478,162 +516,47 @@ public class MenuChange
 						{
 							return true;
 						}
-						GameAudioManager.PlayGUIButtonClick();
-						if (MenuMode == "Multiplayer")
-						{
-							switch (customId)
-							{
-							case 1:
-							{
-								MenuMode = "Nothing";
-								Transform parent = GameCompat.ResolveChildPath(MyMod.m_Panel_Sandbox, 0, 0, 5);
-								GameCompat.SetChildActive(parent, 1, state: false);
-								GameCompat.SetChildActive(parent, 2, state: false);
-								GameCompat.SetChildActive(parent, 4, state: false);
-								GameCompat.SetChildActive(parent, 5, state: false);
-								MyMod.HostMenu(Ignore: true);
-								break;
-							}
-							case 2:
-								if (SteamConnect.CanUseSteam)
-								{
-									ChangeMenuItems("Join");
-								}
-								else
-								{
-									ConnectByIp();
-								}
-								break;
-							case 3:
-								ChangeMenuItems("MultiProfileSettings");
-								break;
-							}
-						}
-						else if (MenuMode == "MultiProfileSettings")
-						{
-							switch (customId)
-							{
-							case 1:
-								GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.Rename, "HOW DO YOU WANT TO BE CALLED?", MyMod.MyChatName, Panel_Confirmation.ButtonLayout.Button_2, "GAMEPLAY_Apply", "GAMEPLAY_Cancel", Panel_Confirmation.Background.Transperent, null, null);
-								break;
-							case 2:
-								OpenFlairsMenu();
-								break;
-							case 3:
-								if (Supporters.IsLoaded())
-								{
-									GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.ErrorMessage, "Your ID was copied to clipboard", Panel_Confirmation.ButtonLayout.Button_1, Panel_Confirmation.Background.Transperent, null);
-									GUIUtility.systemCopyBuffer = Supporters.MyID;
-								}
-								else
-								{
-									GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.ErrorMessage, "Can't detect your account ID", Panel_Confirmation.ButtonLayout.Button_1, Panel_Confirmation.Background.Transperent, null);
-								}
-								break;
-							}
-						}
-						else if (MenuMode == "Join")
-						{
-							switch (customId)
-							{
-							case 1:
-							{
-								Transform parent2 = GameCompat.ResolveChildPath(MyMod.m_Panel_Sandbox, 0, 0, 5);
-								GameCompat.SetChildActive(parent2, 1, state: false);
-								GameCompat.SetChildActive(parent2, 2, state: false);
-								GameCompat.SetChildActive(parent2, 4, state: false);
-								GameCompat.SetChildActive(parent2, 5, state: false);
-								MenuMode = "Browser";
-								SteamConnect.Main.BrowseServers();
-								break;
-							}
-							case 2:
-								ConnectByIp();
-								break;
-							case 3:
-								if (SteamConnect.CanUseSteam)
-								{
-									SteamConnect.Main.OpenFriends();
-								}
-								break;
-							}
-						}
-						else if (MenuMode == "Lobby")
-						{
-							switch (customId)
-							{
-							case 0:
-								if (!SteamConnect.IsMyLobby || !CanStartServer() || !SteamConnect.CanUseSteam)
-								{
-									return false;
-								}
-								CloseLobbyUI();
-								if (SteamConnect.CanUseSteam)
-								{
-									if (MyMod.LobbyState == "SelectedNewSave")
-									{
-										SteamConnect.Main.CreateSaveForHosting();
-									}
-									else if (MyMod.LobbyState == "SelectedSave")
-									{
-										SteamConnect.Main.LoadSaveForHosting();
-									}
-									SetLobbyState("StartingGame");
-								}
-								break;
-							case 1:
-								if (SteamConnect.IsMyLobby)
-								{
-									ChangeMenuItems("LobbySettings");
-								}
-								break;
-							case 2:
-								if (SteamConnect.CanUseSteam)
-								{
-									SteamConnect.Main.MakeFriendListUI();
-								}
-								break;
-							case 3:
-								if (SteamConnect.CanUseSteam)
-								{
-									SteamConnect.Main.CopyInviteLink();
-									GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.ErrorMessage, "Link copied to clipboard.", Panel_Confirmation.ButtonLayout.Button_1, Panel_Confirmation.Background.Transperent, null);
-								}
-								break;
-							}
-						}
-						else if (MenuMode == "LobbySettings")
-						{
-							if (!MyMod.StartServerAfterSelectSave && !SteamConnect.IsMyLobby)
-							{
-								ChangeMenuItems("Lobby");
-								return false;
-							}
-							switch (customId)
-							{
-							case 1:
-								if (!MyMod.StartServerAfterSelectSave)
-								{
-									MenuMode = "NewGameSelect";
-								}
-								CloseLobbyUI();
-								MyMod.m_Panel_Sandbox.OnClickNew();
-								break;
-							case 2:
-								CloseLobbyUI();
-								MyMod.m_Panel_Sandbox.OnClickLoad();
-								break;
-							case 3:
-								CloseLobbyUI();
-								MyMod.m_Panel_Sandbox.OnClickFeats();
-								break;
-							}
-						}
+						HandleSandboxClick(customId);
 					}
 				}
 				return false;
 			}
 			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(BasicMenu), "OnItemDoubleClicked")]
+	internal class BasicMenu_OnItemDoubleClicked
+	{
+		private static bool Prefix(BasicMenu __instance)
+		{
+			// The first click of a double click is already handled by the button hook; the second one would run
+			// the native survival action of the row (the way into the ordinary game menus).
+			if (MyMod.m_Panel_Sandbox != null && __instance == MyMod.m_Panel_Sandbox.m_BasicMenu && MenuMode != "Original")
+			{
+				return false;
+			}
+			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(Panel_Sandbox), "Enable")]
+	internal class Panel_Sandbox_Enable
+	{
+		private static void Postfix(Panel_Sandbox __instance, bool enable)
+		{
+			// Returning from the game's options (or another sub panel) rebuilds the survival rows; put the multiplayer ones back.
+			if (enable && __instance == MyMod.m_Panel_Sandbox && IsSandboxMenuMode)
+			{
+				try
+				{
+					ChangeMenuItems(MenuMode);
+				}
+				catch (Exception ex)
+				{
+					MelonLogger.Warning("[Menu] Restoring " + MenuMode + " rows: " + ex.Message);
+				}
+			}
 		}
 	}
 
@@ -664,11 +587,192 @@ public class MenuChange
 		}
 	}
 
+	// Rows of the borrowed Panel_Sandbox menu in multiplayer modes; used by mouse clicks (button hook) and by
+	// keyboard, gamepad and double click (BasicMenu actions), which used to run the native survival actions.
+	public static void HandleSandboxClick(int customId)
+	{
+		// A click can reach here from the button hook and again from a BasicMenu action; act on it once.
+		if (Time.realtimeSinceStartup - lastSandboxClick < 0.3f)
+		{
+			return;
+		}
+		lastSandboxClick = Time.realtimeSinceStartup;
+		GameAudioManager.PlayGUIButtonClick();
+		if (customId == optionsRow && (MenuMode == "Multiplayer" || MenuMode == "Lobby"))
+		{
+			OpenGameOptions();
+			return;
+		}
+		if (MenuMode == "Multiplayer")
+		{
+			switch (customId)
+			{
+			case 1:
+			{
+				MenuMode = "Nothing";
+				Transform parent = GameCompat.ResolveChildPath(MyMod.m_Panel_Sandbox, 0, 0, 5);
+				GameCompat.SetChildActive(parent, 1, state: false);
+				GameCompat.SetChildActive(parent, 2, state: false);
+				GameCompat.SetChildActive(parent, 4, state: false);
+				GameCompat.SetChildActive(parent, 5, state: false);
+				MyMod.HostMenu(Ignore: true);
+				break;
+			}
+			case 2:
+				if (SteamConnect.CanUseSteam)
+				{
+					ChangeMenuItems("Join");
+				}
+				else
+				{
+					ConnectByIp();
+				}
+				break;
+			case 3:
+				ChangeMenuItems("MultiProfileSettings");
+				break;
+			}
+		}
+		else if (MenuMode == "MultiProfileSettings")
+		{
+			switch (customId)
+			{
+			case 1:
+				GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.Rename, "HOW DO YOU WANT TO BE CALLED?", MyMod.MyChatName, Panel_Confirmation.ButtonLayout.Button_2, "GAMEPLAY_Apply", "GAMEPLAY_Cancel", Panel_Confirmation.Background.Transperent, null, null);
+				break;
+			case 2:
+				OpenFlairsMenu();
+				break;
+			case 3:
+				if (Supporters.IsLoaded())
+				{
+					GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.ErrorMessage, "Your ID was copied to clipboard", Panel_Confirmation.ButtonLayout.Button_1, Panel_Confirmation.Background.Transperent, null);
+					GUIUtility.systemCopyBuffer = Supporters.MyID;
+				}
+				else
+				{
+					GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.ErrorMessage, "Can't detect your account ID", Panel_Confirmation.ButtonLayout.Button_1, Panel_Confirmation.Background.Transperent, null);
+				}
+				break;
+			}
+		}
+		else if (MenuMode == "Join")
+		{
+			switch (customId)
+			{
+			case 1:
+			{
+				Transform parent2 = GameCompat.ResolveChildPath(MyMod.m_Panel_Sandbox, 0, 0, 5);
+				GameCompat.SetChildActive(parent2, 1, state: false);
+				GameCompat.SetChildActive(parent2, 2, state: false);
+				GameCompat.SetChildActive(parent2, 4, state: false);
+				GameCompat.SetChildActive(parent2, 5, state: false);
+				MenuMode = "Browser";
+				SteamConnect.Main.BrowseServers();
+				break;
+			}
+			case 2:
+				ConnectByIp();
+				break;
+			case 3:
+				if (SteamConnect.CanUseSteam)
+				{
+					SteamConnect.Main.OpenFriends();
+				}
+				break;
+			}
+		}
+		else if (MenuMode == "Lobby")
+		{
+			switch (customId)
+			{
+			case 0:
+				if (!SteamConnect.IsMyLobby || !CanStartServer() || !SteamConnect.CanUseSteam)
+				{
+					return;
+				}
+				CloseLobbyUI();
+				if (SteamConnect.CanUseSteam)
+				{
+					if (MyMod.LobbyState == "SelectedNewSave")
+					{
+						SteamConnect.Main.CreateSaveForHosting();
+					}
+					else if (MyMod.LobbyState == "SelectedSave")
+					{
+						SteamConnect.Main.LoadSaveForHosting();
+					}
+					SetLobbyState("StartingGame");
+				}
+				break;
+			case 1:
+				if (SteamConnect.IsMyLobby)
+				{
+					ChangeMenuItems("LobbySettings");
+				}
+				break;
+			case 2:
+				if (SteamConnect.CanUseSteam)
+				{
+					SteamConnect.Main.MakeFriendListUI();
+				}
+				break;
+			case 3:
+				if (SteamConnect.CanUseSteam)
+				{
+					SteamConnect.Main.CopyInviteLink();
+					GameCompat.Panel<Panel_Confirmation>().AddConfirmation(Panel_Confirmation.ConfirmationType.ErrorMessage, "Link copied to clipboard.", Panel_Confirmation.ButtonLayout.Button_1, Panel_Confirmation.Background.Transperent, null);
+				}
+				break;
+			}
+		}
+		else if (MenuMode == "LobbySettings")
+		{
+			if (!MyMod.StartServerAfterSelectSave && !SteamConnect.IsMyLobby)
+			{
+				ChangeMenuItems("Lobby");
+				return;
+			}
+			switch (customId)
+			{
+			case 1:
+				if (!MyMod.StartServerAfterSelectSave)
+				{
+					MenuMode = "NewGameSelect";
+				}
+				CloseLobbyUI();
+				MyMod.m_Panel_Sandbox.OnClickNew();
+				break;
+			case 2:
+				CloseLobbyUI();
+				MyMod.m_Panel_Sandbox.OnClickLoad();
+				break;
+			case 3:
+				CloseLobbyUI();
+				MyMod.m_Panel_Sandbox.OnClickFeats();
+				break;
+			}
+		}
+	}
+
+	private static float lastSandboxClick = -10f;
+
+	// Row of the borrowed survival menu shown as the game's own settings in multiplayer modes, -1 when unavailable.
+	private static int optionsRow = -1;
+
+	private static readonly string[] SandboxModes = new string[5] { "Multiplayer", "Join", "MultiProfileSettings", "Lobby", "LobbySettings" };
+
+	public static bool IsSandboxMenuMode => Array.IndexOf(SandboxModes, MenuMode) >= 0;
+
 	public static string MenuMode = "Original";
 
 	public static int TempExperience = 0;
 
 	public const int InvitePlus = 2;
+
+	public const int ReturnToMenuPlus = 3;
+
+	private static string nativeQuitLabel;
 
 	public static void SetDefaultCamera()
 	{
@@ -825,54 +929,92 @@ public class MenuChange
 		{
 			return;
 		}
-		string text = ((Panel_PauseMenu.PauseMenuItemType)32/*cast due to .constrained prefix*/).ToString();
-		int num = -1;
-		for (int i = 0; i < itemModelList.Count; i++)
+		string inviteId = ((Panel_PauseMenu.PauseMenuItemType)(30 + InvitePlus)).ToString();
+		string returnId = ((Panel_PauseMenu.PauseMenuItemType)(30 + ReturnToMenuPlus)).ToString();
+		string quitId = Panel_PauseMenu.PauseMenuItemType.Quit.ToString();
+		bool coop = CoopReturnToMenu.CanRequest;
+		for (int i = 0; i < itemModelList.Count && i < menuItems.Count; i++)
 		{
-			if (itemModelList[i] != null && itemModelList[i].m_Id == text)
+			BasicMenu.BasicMenuItemModel model = itemModelList[i];
+			BasicMenu.BasicMenuItemView view = menuItems[i];
+			if (model == null || view == null)
 			{
-				num = i;
-				break;
+				continue;
+			}
+			if (model.m_Id == inviteId)
+			{
+				if (!SteamConnect.CanUseSteam)
+				{
+					SetPauseItem(model, view, "INVITE (STEAM ONLY)", selectable: false, 0);
+				}
+				else if (MyMod.MyLobby == "")
+				{
+					SetPauseItem(model, view, "INVITE (NO LOBBY)", selectable: false, 0);
+				}
+				else
+				{
+					SetPauseItem(model, view, "INVITE", selectable: true, 0);
+				}
+			}
+			else if (model.m_Id == returnId)
+			{
+				SetPauseItem(model, view, CoopReturnToMenu.InProgress ? "SAVING..." : "QUIT TO MAIN MENU", !CoopReturnToMenu.InProgress && !MyMod.SaveExitPending, 1);
+			}
+			else if (model.m_Id == quitId)
+			{
+				// In co-op the native Quit closes the game (after saving); outside co-op it keeps its own label and behaviour.
+				if (nativeQuitLabel == null && view.m_Label != null)
+				{
+					nativeQuitLabel = view.m_Label.text;
+				}
+				string label = coop ? "QUIT GAME" : nativeQuitLabel;
+				if (!string.IsNullOrEmpty(label) && view.m_Label != null && view.m_Label.text != label)
+				{
+					SetLabel(view.m_Label, label);
+				}
 			}
 		}
-		if (num < 0 || num >= menuItems.Count)
+	}
+
+	private static void SetPauseItem(BasicMenu.BasicMenuItemModel model, BasicMenu.BasicMenuItemView view, string text, bool selectable, int hookId)
+	{
+		model.m_LabelText = text;
+		model.m_Selectable = selectable;
+		if (view.m_Label != null && view.m_Label.text != text)
 		{
-			return;
+			SetLabel(view.m_Label, text);
 		}
-		BasicMenu.BasicMenuItemModel basicMenuItemModel = itemModelList[num];
-		BasicMenu.BasicMenuItemView basicMenuItemView = menuItems[num];
-		if (basicMenuItemModel != null && basicMenuItemView != null)
+		if (view.m_Button != null && view.m_Button.gameObject != null && view.m_Button.gameObject.GetComponent<Comps.UiButtonPressHook>() == null)
 		{
-			string text2;
-			bool selectable;
-			if (!SteamConnect.CanUseSteam)
-			{
-				text2 = "INVITE (STEAM ONLY)";
-				selectable = false;
-			}
-			else if (MyMod.MyLobby == "")
-			{
-				text2 = "INVITE (NO LOBBY)";
-				selectable = false;
-			}
-			else
-			{
-				text2 = "INVITE";
-				selectable = true;
-			}
-			basicMenuItemModel.m_LabelText = text2;
-			basicMenuItemModel.m_Selectable = selectable;
-			if (basicMenuItemView.m_Label != null)
-			{
-				UILabel label = basicMenuItemView.m_Label;
-				label.mText = text2;
-				label.text = text2;
-				label.ProcessText();
-			}
-			if (basicMenuItemView.m_Button != null && basicMenuItemView.m_Button.gameObject != null && basicMenuItemView.m_Button.gameObject.GetComponent<Comps.UiButtonPressHook>() == null)
-			{
-				basicMenuItemView.m_Button.gameObject.AddComponent<Comps.UiButtonPressHook>().m_CustomId = 0;
-			}
+			view.m_Button.gameObject.AddComponent<Comps.UiButtonPressHook>().m_CustomId = hookId;
+		}
+	}
+
+	private static void SetLabel(UILabel label, string text)
+	{
+		label.mText = text;
+		label.text = text;
+		label.ProcessText();
+	}
+
+	public static void PauseInvite()
+	{
+		if (SteamConnect.CanUseSteam && MyMod.MyLobby != "")
+		{
+			SteamConnect.Main.MakeFriendListUI();
+		}
+	}
+
+	public static void PauseReturnToMenu(Panel_PauseMenu panel)
+	{
+		if (CoopReturnToMenu.CanRequest)
+		{
+			CoopReturnToMenu.Request();
+		}
+		else if (panel != null)
+		{
+			// Outside co-op the game's own Quit already saves and returns to the main menu.
+			panel.OnQuitGame();
 		}
 	}
 
@@ -885,10 +1027,13 @@ public class MenuChange
 	{
 		Panel_PauseMenu.PauseMenuItemType item = (Panel_PauseMenu.PauseMenuItemType)(30 + plus);
 		__instance.m_MenuItems.Insert(order, item);
-		Action action = delegate
+		Action action = (plus == ReturnToMenuPlus) ? ((Action)delegate
+		{
+			PauseReturnToMenu(__instance);
+		}) : ((plus == InvitePlus) ? new Action(PauseInvite) : ((Action)delegate
 		{
 			CustomButtonClick(order);
-		};
+		}));
 		string id = __instance.m_MenuItems[order].ToString();
 		int value = (int)__instance.m_MenuItems[order];
 		__instance.m_BasicMenu.AddItem(id, value, order, name, "", "", action, Color.green, Color.white);
@@ -966,7 +1111,7 @@ public class MenuChange
 			MyMod.DoWaitForConnect(Steam: true);
 			if (flag2)
 			{
-				MyMod.DoKickMessage("Wrong mod version! Server using version 0.14.6");
+				MyMod.DoKickMessage("Wrong mod version! Server using version 0.14.7");
 			}
 		}
 		else if (flag)
@@ -1080,21 +1225,26 @@ public class MenuChange
 		}
 		if (mode == "Original")
 		{
-			ReturnOriginalButtons(basicMenu, 0);
-			ReturnOriginalButtons(basicMenu, 1);
-			ReturnOriginalButtons(basicMenu, 2);
-			ReturnOriginalButtons(basicMenu, 3);
+			for (int r = 0; r < basicMenu.m_MenuItems.Count; r++)
+			{
+				ReturnOriginalButtons(basicMenu, r);
+			}
 			MenuMode = mode;
 			return;
 		}
 		ClearMenuButtons(basicMenu);
 		MenuMode = mode;
+		optionsRow = FindOptionsRow(basicMenu);
 		switch (mode)
 		{
 		case "Multiplayer":
 			OverrideMenuButton(basicMenu, 1, "HOST SERVER");
 			OverrideMenuButton(basicMenu, 2, "JOIN SERVER");
-			OverrideMenuButton(basicMenu, 3, "SETTINGS");
+			OverrideMenuButton(basicMenu, 3, "PROFILE");
+			if (optionsRow >= 0)
+			{
+				OverrideMenuButton(basicMenu, optionsRow, "GAME SETTINGS");
+			}
 			break;
 		case "Join":
 			OverrideMenuButton(basicMenu, 1, "BROWSE SERVERS");
@@ -1118,6 +1268,10 @@ public class MenuChange
 			}
 			OverrideMenuButton(basicMenu, 2, "INVITE FRIEND");
 			OverrideMenuButton(basicMenu, 3, "COPY INVITE LINK");
+			if (optionsRow >= 0)
+			{
+				OverrideMenuButton(basicMenu, optionsRow, "GAME SETTINGS");
+			}
 			if (MyMod.LobbyUI != null)
 			{
 				MyMod.LobbyUI.SetActive(value: true);
@@ -1248,6 +1402,36 @@ public class MenuChange
 			}
 			break;
 		}
+	}
+
+	// The survival menu's own Options row, or its last spare row; rows 0-3 are used by the multiplayer buttons.
+	private static int FindOptionsRow(BasicMenu menu)
+	{
+		if (menu == null || menu.m_ItemModelList == null || menu.m_MenuItems == null)
+		{
+			return -1;
+		}
+		int count = Math.Min(menu.m_ItemModelList.Count, menu.m_MenuItems.Count);
+		for (int i = 4; i < count; i++)
+		{
+			BasicMenu.BasicMenuItemModel model = menu.m_ItemModelList[i];
+			if (model != null && model.m_Id != null && model.m_Id.IndexOf("Option", StringComparison.OrdinalIgnoreCase) >= 0)
+			{
+				return i;
+			}
+		}
+		return (count > 4) ? (count - 1) : (-1);
+	}
+
+	private static void OpenGameOptions()
+	{
+		if (MyMod.m_Panel_Sandbox == null)
+		{
+			return;
+		}
+		MelonLogger.Msg("[Menu] Opening game options from " + MenuMode);
+		CloseLobbyUI();
+		MyMod.m_Panel_Sandbox.OnClickOptions();
 	}
 
 	public static void CloseLobbyUI()

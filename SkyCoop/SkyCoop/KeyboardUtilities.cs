@@ -53,6 +53,30 @@ public static class KeyboardUtilities
 			}
 		}
 
+		private static readonly System.Collections.Generic.Dictionary<KeyCode, float> LastToggle = new System.Collections.Generic.Dictionary<KeyCode, float>();
+
+		// Legacy Input reports a press on its frame and the game's input wrapper reports the same press a frame later,
+		// so a window closed by one source was reopened by the other. One press counts once within a short window.
+		public static bool GetTogglePressed(KeyCode key)
+		{
+			if (!GetKeyDown(key))
+			{
+				return false;
+			}
+			float now = Time.realtimeSinceStartup;
+			if (LastToggle.TryGetValue(key, out var last) && now - last < 0.35f)
+			{
+				return false;
+			}
+			LastToggle[key] = now;
+			return true;
+		}
+
+		public static void MarkToggled(KeyCode key)
+		{
+			LastToggle[key] = Time.realtimeSinceStartup;
+		}
+
 		private static void LegacyFailed(Exception ex)
 		{
 			legacyFailed = true;

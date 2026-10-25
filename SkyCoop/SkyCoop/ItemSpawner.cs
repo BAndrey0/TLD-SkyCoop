@@ -38,8 +38,6 @@ public static class ItemSpawner
 
 	private static string status = "";
 
-	private static float savedInputDisableTime;
-
 	private static List<string> allGear;
 
 	private static Dictionary<string, List<string>> categories;
@@ -67,18 +65,16 @@ public static class ItemSpawner
 				Close();
 				return;
 			}
-			if (Time.frameCount != openedFrame && KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+			if (Time.frameCount != openedFrame && KeyboardUtilities.InputManager.GetTogglePressed(ToggleKey))
 			{
-				// The IMGUI KeyDown event for F2 does not arrive reliably; close through the same input that opens it.
 				Close();
 				return;
 			}
-			Cursor.visible = true;
-			Cursor.lockState = CursorLockMode.None;
+			OverlayInput.Keep();
 			PreloadNames();
 			return;
 		}
-		if (!CheatConsole.IsOpen && KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+		if (!CheatConsole.IsOpen && KeyboardUtilities.InputManager.GetTogglePressed(ToggleKey))
 		{
 			if (!CheatConsole.Allowed)
 			{
@@ -95,15 +91,17 @@ public static class ItemSpawner
 		open = true;
 		openedFrame = Time.frameCount;
 		status = (allGear.Count == 0) ? "Каталог предметов пуст — зайдите в мир и откройте снова" : "Клик по предмету — взять. Esc или F2 — закрыть";
-		savedInputDisableTime = InputManager.m_InputDisableTime;
-		InputManager.m_InputDisableTime = float.PositiveInfinity;
+		OverlayInput.Acquire();
 		MelonLogger.Msg("[Cheats] Item window opened, " + allGear.Count + " items");
 	}
 
 	private static void Close()
 	{
-		open = false;
-		InputManager.m_InputDisableTime = savedInputDisableTime;
+		if (open)
+		{
+			open = false;
+			OverlayInput.Release();
+		}
 	}
 
 	private static void EnsureCatalog()
@@ -393,12 +391,14 @@ public static class ItemSpawner
 		{
 			return;
 		}
+		OverlayInput.Keep();
 		Event current = Event.current;
 		if (current != null && current.type == EventType.KeyDown)
 		{
 			if (current.keyCode == KeyCode.Escape || (current.keyCode == ToggleKey && Time.frameCount != openedFrame))
 			{
 				current.Use();
+				KeyboardUtilities.InputManager.MarkToggled(ToggleKey);
 				Close();
 				return;
 			}
