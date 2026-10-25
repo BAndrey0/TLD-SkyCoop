@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.5";
+		public const string Version = "0.14.6";
 
 		public const string DownloadLink = null;
 
@@ -4699,10 +4699,41 @@ public class MyMod : MelonMod
 		}
 	}
 
+	// A guest that loses the controller role used to keep its real, now unsynced animals: frozen, unkillable
+	// for it and unknown to the new controller. Remove them; the controller's updates recreate them as actors.
+	public static void DropLocallyControlledAnimals()
+	{
+		if (iAmHost || BaseAiManager.m_BaseAis == null)
+		{
+			return;
+		}
+		int removed = 0;
+		for (int i = BaseAiManager.m_BaseAis.Count - 1; i >= 0; i--)
+		{
+			BaseAi baseAi = BaseAiManager.m_BaseAis[i];
+			if (baseAi == null || baseAi.gameObject == null || baseAi.gameObject.GetComponent<Comps.AnimalActor>() != null || baseAi.GetAiMode() == AiMode.Dead)
+			{
+				continue;
+			}
+			ObjectGuid objectGuid = baseAi.gameObject.GetComponent<ObjectGuid>();
+			if (objectGuid != null)
+			{
+				ObjectGuidManager.UnRegisterGuid(objectGuid.Get());
+			}
+			UnityEngine.Object.Destroy(baseAi.gameObject);
+			removed++;
+		}
+		MelonLogger.Msg("[Wildlife] Lost controller role, removed " + removed + " local animals");
+	}
+
 	public static void DoAnimalDamage(string guid, float damage)
 	{
 		MelonLogger.Msg("Other player damage animal " + guid + " on " + damage);
 		GameObject gameObject = ObjectGuidManager.Lookup(guid);
+		if (!gameObject)
+		{
+			MelonLogger.Warning("[Wildlife] Damage for unknown animal " + guid + " (controller=" + AnimalsController + ", scene=" + level_guid + ")");
+		}
 		if ((bool)gameObject)
 		{
 			BaseAi component = gameObject.GetComponent<BaseAi>();
@@ -4952,7 +4983,7 @@ public class MyMod : MelonMod
 			gameObject4 = UnityEngine.Object.Instantiate(PistolBulletPrefab, shoot.m_position, shoot.m_rotation);
 			gameObject4.AddComponent<Comps.ClientProjectile>();
 			gameObject4.GetComponent<Comps.ClientProjectile>().m_ClientID = from;
-			PlayMultiplayer3dAduio("PLAY_RIFLE_SHOOT_3D", from);
+			PlayRemoteGunshot(gearItem, "PLAY_RIFLE_SHOOT_3D", from);
 			DoShootFX(shoot.m_position);
 			if (players[from] != null && players[from].GetComponent<Comps.MultiplayerPlayerAnimator>() != null)
 			{
@@ -4970,7 +5001,7 @@ public class MyMod : MelonMod
 			gameObject4 = UnityEngine.Object.Instantiate(RevolverBulletPrefab, shoot.m_position, shoot.m_rotation);
 			gameObject4.AddComponent<Comps.ClientProjectile>();
 			gameObject4.GetComponent<Comps.ClientProjectile>().m_ClientID = from;
-			PlayMultiplayer3dAduio("PLAY_REVOLVER_SHOOT_3D", from);
+			PlayRemoteGunshot(gearItem, "PLAY_REVOLVER_SHOOT_3D", from);
 			DoShootFX(shoot.m_position);
 		}
 		if (gearItem == null || gameObject4 == null)
@@ -6333,6 +6364,28 @@ public class MyMod : MelonMod
 		}
 		PendingSave = null;
 		ShouldCreateSaveForHost = false;
+	}
+
+	// Remote shots used legacy 3D event names that no longer match 2.55 weapons; post the weapon's own fire
+	// event on the remote player so it sounds like the local gun, positioned at the shooter.
+	public static void PlayRemoteGunshot(GearItem weaponPrefab, string fallbackSound, int from)
+	{
+		if (playersData.Count > 0 && playersData[from] != null && playersData[from].m_Levelid == levelid && players[from] != null && playersData[from].m_LevelGuid == level_guid)
+		{
+			try
+			{
+				Il2CppAK.Wwise.Event fireAudio = (weaponPrefab != null && weaponPrefab.m_GunItem != null) ? weaponPrefab.m_GunItem.m_FireAudio : null;
+				if (fireAudio != null && fireAudio.Post(players[from]) != 0)
+				{
+					return;
+				}
+			}
+			catch (System.Exception ex)
+			{
+				MelonLogger.Warning("[Shoot sync] Weapon fire audio failed: " + ex.Message);
+			}
+		}
+		PlayMultiplayer3dAduio(fallbackSound, from);
 	}
 
 	public static void PlayMultiplayer3dAduio(string sound, int from)

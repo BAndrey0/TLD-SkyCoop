@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.14.5");
+			packet.Write("0.14.6");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -230,6 +230,10 @@ public class ClientHandle
 			if (MyMod.AnimalsController)
 			{
 				MyMod.SwitchToAnimalController();
+			}
+			else
+			{
+				MyMod.DropLocallyControlledAnimals();
 			}
 			MelonLogger.Msg("Got new animal controller role: " + MyMod.AnimalsController);
 		}

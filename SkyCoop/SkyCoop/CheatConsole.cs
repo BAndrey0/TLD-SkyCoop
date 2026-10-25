@@ -91,6 +91,11 @@ public static class CheatConsole
 				Close();
 				Hud("Читы выключены настройками сервера");
 			}
+			else if (Time.frameCount != openedFrame && KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+			{
+				// The IMGUI KeyDown event for F1 does not arrive reliably; close through the same input that opens it.
+				Close();
+			}
 			return;
 		}
 		if (ItemSpawner.IsOpen || !KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
@@ -103,6 +108,14 @@ public static class CheatConsole
 			return;
 		}
 		Open();
+	}
+
+	public static void OpenFromWindow()
+	{
+		if (!open && Allowed)
+		{
+			Open();
+		}
 	}
 
 	private static void Open()
@@ -206,7 +219,7 @@ public static class CheatConsole
 		GUI.Label(new Rect(30f, 25f + lineHeight * MaxLines + 5f, width - 20f, lineHeight + 4f), "> " + input + cursor);
 	}
 
-	private static void Execute(string command)
+	public static void Execute(string command)
 	{
 		History.Add(command);
 		historyIndex = History.Count;

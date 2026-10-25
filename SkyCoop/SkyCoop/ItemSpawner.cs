@@ -67,6 +67,12 @@ public static class ItemSpawner
 				Close();
 				return;
 			}
+			if (Time.frameCount != openedFrame && KeyboardUtilities.InputManager.GetKeyDown(ToggleKey))
+			{
+				// The IMGUI KeyDown event for F2 does not arrive reliably; close through the same input that opens it.
+				Close();
+				return;
+			}
 			Cursor.visible = true;
 			Cursor.lockState = CursorLockMode.None;
 			PreloadNames();
@@ -149,10 +155,138 @@ public static class ItemSpawner
 		}
 	}
 
+	private const string CommandsTab = "#commands";
+
+	private static void DrawCommands(float x0, float top, float width)
+	{
+		PlayerManager playerManager = GameManager.GetPlayerManagerComponent();
+		bool god = playerManager != null && playerManager.m_God;
+		float buttonWidth = (width - 40f) / 3f;
+		float buttonHeight = 34f;
+		int index = 0;
+		void Button(string title, Action action)
+		{
+			Rect rect = new Rect(x0 + 10f + (index % 3) * (buttonWidth + 10f), top + (index / 3) * (buttonHeight + 8f), buttonWidth, buttonHeight);
+			index++;
+			if (GUI.Button(rect, title))
+			{
+				try
+				{
+					action();
+				}
+				catch (Exception ex)
+				{
+					status = "Ошибка: " + ex.Message;
+					MelonLogger.Warning("[Cheats] " + title + " failed: " + ex);
+				}
+			}
+		}
+		Button(god ? "Бессмертие: ВКЛ" : "Бессмертие: выкл", delegate
+		{
+			Run("god");
+		});
+		Button("Полёт (вкл/выкл)", delegate
+		{
+			Run("fly");
+		});
+		Button("Невидимость для животных (вкл/выкл)", delegate
+		{
+			Run("ghost");
+		});
+		Button("Восстановить здоровье, сытость, сон", RestoreStats);
+		Button("Вылечить все болезни и травмы", delegate
+		{
+			Run("afflictions_cure");
+		});
+		Button("Открыть всю карту", delegate
+		{
+			Run("map_reveal");
+		});
+		Button("Время: утро (8:00)", delegate
+		{
+			SkipTo(8);
+		});
+		Button("Время: день (12:00)", delegate
+		{
+			SkipTo(12);
+		});
+		Button("Время: вечер (18:00)", delegate
+		{
+			SkipTo(18);
+		});
+		Button("Время: ночь (0:00)", delegate
+		{
+			SkipTo(0);
+		});
+		Button("Пропустить 1 час", delegate
+		{
+			Skip(1);
+		});
+		Button("Открыть консоль (F1)", delegate
+		{
+			Close();
+			CheatConsole.OpenFromWindow();
+		});
+	}
+
+	private static void Run(string command)
+	{
+		CheatConsole.Execute(command);
+		status = "Выполнено: " + command;
+	}
+
+	private static void RestoreStats()
+	{
+		if (GameManager.GetPlayerManagerComponent() == null || Shared.IsMainMenuScene(MyMod.level_name))
+		{
+			status = "Сначала зайдите в мир";
+			return;
+		}
+		GameManager.GetConditionComponent().m_CurrentHP = GameManager.GetConditionComponent().GetAdjustedMaxHP();
+		GameManager.GetHungerComponent().m_CurrentReserveCalories = GameManager.GetHungerComponent().m_MaxReserveCalories;
+		GameManager.GetThirstComponent().m_CurrentThirst = 0f;
+		GameManager.GetFatigueComponent().m_CurrentFatigue = 0f;
+		GameManager.GetFreezingComponent().m_CurrentFreezing = 0f;
+		status = "Здоровье, сытость, жажда, усталость и холод восстановлены";
+		MelonLogger.Msg("[Cheats] restore stats");
+	}
+
+	// In co-op the world clock belongs to the host (SkyCoop overrides time of day every frame).
+	private static void Skip(int hours)
+	{
+		if (!MyMod.InOnline())
+		{
+			CheatConsole.Execute("set_time " + ((GameManager.GetTimeOfDayComponent().GetHour() + hours) % 24));
+			status = "Время сдвинуто на " + hours + " ч";
+			return;
+		}
+		if (!MyMod.iAmHost)
+		{
+			status = "Время в коопе меняет только хост";
+			return;
+		}
+		Shared.SkipRTTime(hours);
+		status = "Время сдвинуто на " + hours + " ч";
+		MelonLogger.Msg("[Cheats] skip " + hours + "h");
+	}
+
+	private static void SkipTo(int hour)
+	{
+		int current = MyMod.InOnline() ? MyMod.OverridedHourse : GameManager.GetTimeOfDayComponent().GetHour();
+		int hours = (hour - current + 24) % 24;
+		if (hours == 0)
+		{
+			status = "Уже " + hour + ":00";
+			return;
+		}
+		Skip(hours);
+	}
+
 	private static string CategoryTitle(string key)
 	{
 		return key switch
 		{
+			CommandsTab => "Команды",
 			"" => "Все",
 			"FoodItem" => "Еда",
 			"ClothingItem" => "Одежда",
@@ -312,7 +446,7 @@ public static class ItemSpawner
 			}
 		}
 
-		List<string> keys = new List<string> { "" };
+		List<string> keys = new List<string> { CommandsTab, "" };
 		keys.AddRange(categories.Keys.OrderBy((string k) => CategoryTitle(k)));
 		float tabWidth = (width - 20f) / 10f;
 		for (int i = 0; i < keys.Count; i++)
@@ -330,6 +464,12 @@ public static class ItemSpawner
 		}
 
 		float gridTop = y0 + 56f + tabsHeight;
+		if (category == CommandsTab)
+		{
+			DrawCommands(x0, gridTop, width);
+			GUI.Label(new Rect(x0 + 10f, gridTop + Rows * Cell + 7f, width - 20f, 24f), status);
+			return;
+		}
 		int first = page * perPage;
 		for (int i = 0; i < perPage && first + i < items.Count; i++)
 		{

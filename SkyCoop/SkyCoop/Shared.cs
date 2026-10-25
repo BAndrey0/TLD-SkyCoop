@@ -1077,6 +1077,8 @@ public class Shared
 		}
 	}
 
+	private static readonly System.Collections.Generic.Dictionary<int, bool> LastAnimalRoles = new System.Collections.Generic.Dictionary<int, bool>();
+
 	public static bool ShouldbeAnimalController(int _Ticks, int _Level, int _From)
 	{
 		if (_From <= 0 || _From >= MyMod.playersData.Count)
@@ -1223,7 +1225,13 @@ public class Shared
 			if (MyMod.playersData[i] != null && Server.clients[i].IsBusy())
 			{
 				bool flag2 = false;
-				ServerSend.ANIMALROLE(_msg: MyMod.playersData[i].m_AnimState != "Knock" && ShouldbeAnimalController(MyMod.playersData[i].m_TicksOnScene, MyMod.playersData[i].m_Levelid, i), _toClient: i);
+				bool controller = MyMod.playersData[i].m_AnimState != "Knock" && ShouldbeAnimalController(MyMod.playersData[i].m_TicksOnScene, MyMod.playersData[i].m_Levelid, i);
+				if (!LastAnimalRoles.TryGetValue(i, out bool lastRole) || lastRole != controller)
+				{
+					LastAnimalRoles[i] = controller;
+					Log("[Wildlife] Client " + i + " animal controller=" + controller + " scene=" + MyMod.playersData[i].m_LevelGuid + " hostScene=" + MyMod.level_guid + " hostReady=" + MyMod.WildlifeSceneReady());
+				}
+				ServerSend.ANIMALROLE(_msg: controller, _toClient: i);
 			}
 		}
 		list2.Sort();
