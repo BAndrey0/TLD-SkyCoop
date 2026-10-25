@@ -3,13 +3,18 @@
     <AssemblyName>SkyCoop</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>netcoreapp6.0</TargetFramework>
-    <GameDir>$(MSBuildThisFileDirectory)..\..\player\game</GameDir>
+    <!-- MelonLoader-installed co-op game copy; override with -p:GameDir=... -->
+    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\..\player\game</GameDir>
   </PropertyGroup>
   <PropertyGroup>
     <LangVersion>12.0</LangVersion>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
-  <PropertyGroup />
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>False</Private>
+    </Reference>
+  </ItemDefinitionGroup>
   <ItemGroup />
   <ItemGroup>
     <Reference Include="MelonLoader">
