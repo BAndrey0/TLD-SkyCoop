@@ -432,8 +432,20 @@ public class ClientHandle
 	{
 	}
 
+	private static float LastSaveDataTime = -100f;
+
+	private static float LastVerifySaveTime = -100f;
+
 	public static void SAVEDATA(Packet _packet)
 	{
+		// The host answers every repeated Welcome ack with SAVEDATA; handle one per join or character creation opens several times.
+		if (Time.realtimeSinceStartup - LastSaveDataTime < 10f)
+		{
+			MelonLogger.Msg("Ignored duplicate SAVEDATA");
+			return;
+		}
+		LastSaveDataTime = Time.realtimeSinceStartup;
+		LastVerifySaveTime = -100f;
 		DataStr.SaveSlotSync saveSlotSync = _packet.ReadSaveSlot();
 		MyMod.RemoveWaitForConnect();
 		MyMod.ApplyOtherCampfires = true;
@@ -446,6 +458,12 @@ public class ClientHandle
 
 	public static void VERIFYSAVE(Packet _packet)
 	{
+		if (Time.realtimeSinceStartup - LastVerifySaveTime < 10f)
+		{
+			MelonLogger.Msg("Ignored duplicate VERIFYSAVE");
+			return;
+		}
+		LastVerifySaveTime = Time.realtimeSinceStartup;
 		MyMod.RemoveWaitForConnect();
 		MyMod.RemovePleaseWait();
 		MyMod.MyUGUID = _packet.ReadString();

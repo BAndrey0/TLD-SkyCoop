@@ -1658,7 +1658,7 @@ public class ExpeditionManager
 			slicedJsonDroppedGear.m_Extra.m_ExpeditionNote = Spawner.m_Extra.m_ExpeditionNote;
 			int vectorHash = Shared.GetVectorHash(possition);
 			int quaternionHash = Shared.GetQuaternionHash(rotation);
-			int hashCode = Scene.GetHashCode();
+			int hashCode = Shared.StableHash(Scene);
 			int num = vectorHash + quaternionHash + hashCode;
 			DataStr.DroppedGearItemDataPacket droppedGearItemDataPacket = new DataStr.DroppedGearItemDataPacket();
 			droppedGearItemDataPacket.m_Extra = slicedJsonDroppedGear.m_Extra;

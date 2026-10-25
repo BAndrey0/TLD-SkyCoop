@@ -359,7 +359,7 @@ public class MPSaveManager
 					string json = gameObject.GetComponent<GearItem>().SerializeToString();
 					int vectorHash = Shared.GetVectorHash(vector);
 					int quaternionHash = Shared.GetQuaternionHash(quaternion);
-					int hashCode = scene.GetHashCode();
+					int hashCode = Shared.StableHash(scene);
 					int hash2 = vectorHash + quaternionHash + hashCode;
 					UnityEngine.Object.Destroy(gameObject);
 					DataStr.DroppedGearItemDataPacket droppedGearItemDataPacket = new DataStr.DroppedGearItemDataPacket();

@@ -316,7 +316,7 @@ public class ResourceIndependent
 			slicedJsonDroppedGear.m_Extra.m_ExpeditionNote = ExpeditionNote;
 			int vectorHash = Shared.GetVectorHash(PlaceV3);
 			int quaternionHash = Shared.GetQuaternionHash(Rotation);
-			int hashCode = Scene.GetHashCode();
+			int hashCode = Shared.StableHash(Scene);
 			int num = vectorHash + quaternionHash + hashCode;
 			DataStr.DroppedGearItemDataPacket droppedGearItemDataPacket = new DataStr.DroppedGearItemDataPacket();
 			droppedGearItemDataPacket.m_Extra = slicedJsonDroppedGear.m_Extra;

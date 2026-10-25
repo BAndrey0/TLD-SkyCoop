@@ -792,6 +792,21 @@ public class Shared
 		return Encoding.UTF8.GetByteCount(str) != str.Length;
 	}
 
+	// string.GetHashCode() is randomized per process on .NET 6, so it must never feed shared seeds or keys:
+	// players rolled different scattered loot and dropped-gear keys changed between launches.
+	public static int StableHash(string text)
+	{
+		uint num = 2166136261u;
+		if (text != null)
+		{
+			foreach (char c in text)
+			{
+				num = (num ^ c) * 16777619;
+			}
+		}
+		return (int)num;
+	}
+
 	public static int GetVectorHash(Vector3 v3)
 	{
 		return (v3.x + v3.y + v3.z).GetHashCode();
@@ -941,7 +956,7 @@ public class Shared
 					json = gameObject.GetComponent<GearItem>().SerializeToString();
 					int vectorHash = GetVectorHash(vector);
 					int quaternionHash = GetQuaternionHash(quaternion);
-					int hashCode = Scene.GetHashCode();
+					int hashCode = StableHash(Scene);
 					num4 = vectorHash + quaternionHash + hashCode;
 					UnityEngine.Object.Destroy(gameObject);
 				}

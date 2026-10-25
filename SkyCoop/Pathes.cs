@@ -3121,9 +3121,18 @@ public class Pathes
 				UnityEngine.SceneManagement.SceneManager.GetActiveScene();
 				text = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 			}
-			int hashCode = text.GetHashCode();
+			int hashCode = Shared.StableHash(text);
 			__result = seed + GameManager.m_SceneTransitionData.m_GameRandomSeed + hashCode;
+			string logKey = text + "|" + GameManager.m_SceneTransitionData.m_GameRandomSeed;
+			if (logKey != LastLoggedSeed)
+			{
+				// Host and guests must print the same base for the same scene, otherwise their loot differs.
+				LastLoggedSeed = logKey;
+				MelonLogger.Msg("[Loot seed] scene=" + text + " gameSeed=" + GameManager.m_SceneTransitionData.m_GameRandomSeed + " base=" + (GameManager.m_SceneTransitionData.m_GameRandomSeed + hashCode));
+			}
 		}
+
+		private static string LastLoggedSeed;
 	}
 
 	[HarmonyPatch(typeof(RandomSpawnObject), "ActivateRandomObject")]
@@ -3237,7 +3246,7 @@ public class Pathes
 			}
 			int num = 0;
 			int num2 = 0;
-			num2 = ((!(__instance.gameObject.GetComponent<ObjectGuid>() != null) || !(__instance.gameObject.GetComponent<ObjectGuid>().Get() != "")) ? __instance.gameObject.transform.position.GetHashCode() : __instance.gameObject.GetComponent<ObjectGuid>().Get().GetHashCode());
+			num2 = ((!(__instance.gameObject.GetComponent<ObjectGuid>() != null) || !(__instance.gameObject.GetComponent<ObjectGuid>().Get() != "")) ? __instance.gameObject.transform.position.GetHashCode() : Shared.StableHash(__instance.gameObject.GetComponent<ObjectGuid>().Get()));
 			int num3 = 0;
 			for (int i = 0; i < __instance.m_PrefabList.Length; i++)
 			{
@@ -7167,7 +7176,8 @@ public class Pathes
 		case "GEAR_CrowFeather":
 		case "GEAR_Stone":
 		case "GEAR_Stick":
-			return true;
+			// Only exempt from pickup sync when the server allows duplicated spawns.
+			return MyMod.ServerConfig.m_DuppedSpawns;
 		default:
 			return false;
 		}

@@ -514,6 +514,8 @@ public class MyMod : MelonMod
 
 	public static GameObject ViewModelRadio = null;
 
+	private static bool LoggedMissingRadio;
+
 	public static GameObject ViewModelRadioNeedle = null;
 
 	public static GameObject ViewModelRadioLED = null;
@@ -1385,7 +1387,7 @@ public class MyMod : MelonMod
 		MelonLogger.Msg(System.ConsoleColor.Magenta, "[Dedicated server] Save slot user defined name " + SaveGameSlots.GetUserDefinedSlotName(saveSlotInfo.m_SaveSlotName));
 		SaveGameSystem.SetCurrentSaveInfo(saveSlotInfo.m_Episode, saveSlotInfo.m_GameMode, saveSlotInfo.m_GameId, saveSlotInfo.m_SaveSlotName);
 		MelonLogger.Msg(System.ConsoleColor.Magenta, "[Dedicated server] Selecting slot " + SaveGameSystem.GetCurrentSaveName());
-		MelonLogger.Msg(System.ConsoleColor.Magenta, "[Dedicated server] Save slot hash " + SaveSlotCompat.LoadDataFromSlot(saveSlotInfo.m_SaveSlotName, "global").GetHashCode());
+		MelonLogger.Msg(System.ConsoleColor.Magenta, "[Dedicated server] Save slot hash " + Shared.StableHash(SaveSlotCompat.LoadDataFromSlot(saveSlotInfo.m_SaveSlotName, "global")));
 		GameManager.LoadSaveGameSlot(saveSlotInfo.m_SaveSlotName, saveSlotInfo.m_SaveChangelistVersion);
 	}
 
@@ -1601,6 +1603,8 @@ public class MyMod : MelonMod
 	public override void OnApplicationStart()
 	{
 		SetAppBackgroundMode();
+		MelonPreferences_Category coopPreferences = MelonPreferences.CreateCategory("SkyCoop");
+		ItemDecayPreference = coopPreferences.CreateEntry("EnableItemDecay", false, "Enable item decay", "Co-op forces the decay scale to 0 (no spoilage or wear over time). true keeps the difficulty decay rate for this player.");
 		DedicatedServerAppMode = System.Environment.GetCommandLineArgs().Contains("-dedicated") || Application.isBatchMode;
 		ModsValidation.GetModsHash(Force: true);
 		bool num = System.Environment.GetCommandLineArgs().Contains("-nosteam");
@@ -7958,7 +7962,7 @@ public class MyMod : MelonMod
 		string text3 = CloneTrimer(name);
 		int vectorHash = Shared.GetVectorHash(position2);
 		int quaternionHash = Shared.GetQuaternionHash(rotation);
-		int hashCode = level_guid.GetHashCode();
+		int hashCode = Shared.StableHash(level_guid);
 		int hash = vectorHash + quaternionHash + hashCode;
 		string text4 = level_guid;
 		if (nums > 0 && gear.m_StackableItem != null)
@@ -9397,7 +9401,7 @@ public class MyMod : MelonMod
 					DataStr.SlicedJsonData slicedJsonData = new DataStr.SlicedJsonData();
 					slicedJsonData.m_GearName = _gear.GetGearName();
 					slicedJsonData.m_SendTo = GiveItemTo;
-					slicedJsonData.m_Hash = saveProxyData.GetHashCode();
+					slicedJsonData.m_Hash = Shared.StableHash(saveProxyData);
 					slicedJsonData.m_Str = str;
 					if (list.Count != 0)
 					{
@@ -9426,7 +9430,7 @@ public class MyMod : MelonMod
 					DataStr.SlicedJsonData slicedJsonData2 = new DataStr.SlicedJsonData();
 					slicedJsonData2.m_GearName = _gear.GetGearName();
 					slicedJsonData2.m_SendTo = GiveItemTo;
-					slicedJsonData2.m_Hash = saveProxyData.GetHashCode();
+					slicedJsonData2.m_Hash = Shared.StableHash(saveProxyData);
 					slicedJsonData2.m_Str = str2;
 					slicedJsonData2.m_Last = true;
 					if (iAmHost)
@@ -9446,7 +9450,7 @@ public class MyMod : MelonMod
 				DataStr.SlicedJsonData slicedJsonData3 = new DataStr.SlicedJsonData();
 				slicedJsonData3.m_GearName = _gear.GetGearName();
 				slicedJsonData3.m_SendTo = GiveItemTo;
-				slicedJsonData3.m_Hash = saveProxyData.GetHashCode();
+				slicedJsonData3.m_Hash = Shared.StableHash(saveProxyData);
 				slicedJsonData3.m_Str = saveProxyData;
 				slicedJsonData3.m_Last = true;
 				if (iAmHost)
@@ -11045,7 +11049,11 @@ public class MyMod : MelonMod
 		}
 		else
 		{
-			MelonLogger.Msg("No ViewModelRadio mesh");
+			if (!LoggedMissingRadio)
+			{
+				LoggedMissingRadio = true;
+				MelonLogger.Msg("No ViewModelRadio mesh");
+			}
 		}
 		if (IsCustomHandItem(gearName))
 		{
@@ -11304,6 +11312,10 @@ public class MyMod : MelonMod
 		}
 	}
 
+	private static MelonPreferences_Entry<bool> ItemDecayPreference;
+
+	private static readonly System.Collections.Generic.Dictionary<System.IntPtr, float> OriginalDecayScales = new System.Collections.Generic.Dictionary<System.IntPtr, float>();
+
 	public static void SetTime()
 	{
 		if (Utils.TryParseTOD(OveridedTime, out var normalizedTOD))
@@ -11312,7 +11324,15 @@ public class MyMod : MelonMod
 		}
 		if (GameManager.m_ExperienceModeManager != null)
 		{
-			GameManager.m_ExperienceModeManager.GetCurrentExperienceMode().m_DecayScale = 0f;
+			Il2CppTLD.Gameplay.ExperienceMode currentExperienceMode = GameManager.m_ExperienceModeManager.GetCurrentExperienceMode();
+			if (currentExperienceMode != null)
+			{
+				if (currentExperienceMode.m_DecayScale > 0f && !OriginalDecayScales.ContainsKey(currentExperienceMode.Pointer))
+				{
+					OriginalDecayScales[currentExperienceMode.Pointer] = currentExperienceMode.m_DecayScale;
+				}
+				currentExperienceMode.m_DecayScale = (ItemDecayPreference != null && ItemDecayPreference.Value && OriginalDecayScales.TryGetValue(currentExperienceMode.Pointer, out float decayScale)) ? decayScale : 0f;
+			}
 		}
 	}
 
