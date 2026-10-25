@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.3";
+		public const string Version = "0.14.4";
 
 		public const string DownloadLink = null;
 
