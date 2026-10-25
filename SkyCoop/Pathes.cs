@@ -5341,6 +5341,7 @@ public class Pathes
 			{
 				return true;
 			}
+			CoopContainerFlow.MarkReopen(__instance);
 			MyMod.OpenFakeContainer(__instance);
 			return false;
 		}
@@ -5368,6 +5369,7 @@ public class Pathes
 				{
 					return true;
 				}
+				CoopContainerFlow.ClearReopen(__instance);
 				MyMod.OpenFakeContainer(__instance);
 				return false;
 			}

@@ -3584,12 +3584,18 @@ public class MyMod : MelonMod
 		{
 			return;
 		}
-		for (int i = 0; i < BaseAiManager.m_BaseAis.Count; i++)
+		for (int i = BaseAiManager.m_BaseAis.Count - 1; i >= 0; i--)
 		{
-			GameObject gameObject = BaseAiManager.m_BaseAis[i].gameObject;
+			BaseAi baseAi = BaseAiManager.m_BaseAis[i];
+			GameObject gameObject = (baseAi != null) ? baseAi.gameObject : null;
 			if (gameObject != null)
 			{
-				ObjectGuidManager.UnRegisterGuid(gameObject.GetComponent<ObjectGuid>().Get());
+				// An AI without ObjectGuid used to throw here and abort Server.StartSteam before the lobby was marked Playing.
+				ObjectGuid objectGuid = gameObject.GetComponent<ObjectGuid>();
+				if (objectGuid != null)
+				{
+					ObjectGuidManager.UnRegisterGuid(objectGuid.Get());
+				}
 				UnityEngine.Object.Destroy(gameObject);
 			}
 		}
@@ -9216,6 +9222,7 @@ public class MyMod : MelonMod
 
 	public static void UpdateMyEquipment()
 	{
+		FlashlightSync.PollHeld();
 		string text = "";
 		MyHasRifle = GameManager.GetInventoryComponent().HasNonRuinedItem("GEAR_Rifle");
 		MyArrows = GameManager.GetInventoryComponent().NumGearInInventory("GEAR_Arrow");

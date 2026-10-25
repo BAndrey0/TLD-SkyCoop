@@ -141,6 +141,16 @@ public static class RegionCompat
 		{
 			text = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 		}
+		// Interior names only match regions by substring (HouseBasementPV -> Pleasant Valley); indoors use the
+		// outdoor scene the player came from.
+		if (!string.IsNullOrEmpty(text) && !GameManager.IsOutDoorsScene(text))
+		{
+			string lastOutdoorScene = GameManager.m_SceneTransitionData?.m_LastOutdoorScene;
+			if (!string.IsNullOrEmpty(lastOutdoorScene))
+			{
+				text = lastOutdoorScene;
+			}
+		}
 		return Shared.GetRegionForSceneName(text);
 	}
 }

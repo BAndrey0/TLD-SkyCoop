@@ -29,6 +29,8 @@ public static class CoopContainerFlow
 
 	private static Container presentation;
 
+	private static Container reopen;
+
 	private static string scene;
 
 	private static string buffered;
@@ -225,8 +227,34 @@ public static class CoopContainerFlow
 		}
 	}
 
+	public static void MarkReopen(Container box)
+	{
+		if (!IsPresenting(box))
+		{
+			reopen = box;
+		}
+	}
+
+	public static void ClearReopen(Container box)
+	{
+		if (reopen == box)
+		{
+			reopen = null;
+		}
+	}
+
 	public static void Present(Container box)
 	{
+		// An already searched container opens the native transfer panel so items can be put back in;
+		// Panel_Container.OnDone -> CloseFakeContainer saves and uploads the contents.
+		if (box != null && reopen == box)
+		{
+			reopen = null;
+			Panel_Container panel = GameCompat.Panel<Panel_Container>();
+			panel.SetContainer(box, box.m_LocalizedDisplayName.Text());
+			panel.Enable(enable: true, resetFilter: true, null);
+			return;
+		}
 		presentation = box;
 		finishRequested = false;
 		if (box == null)
@@ -411,6 +439,7 @@ public static class CoopContainerFlow
 	{
 		request = null;
 		presentation = null;
+		reopen = null;
 		scene = null;
 		buffered = null;
 		ready = (activated = (finishRequested = false));

@@ -28,13 +28,24 @@ public static class ExperienceCompat
 			}
 			IList<GameModeConfig> availableGameModes = experienceModeManagerComponent.GetAvailableGameModes();
 			int num = CountOf(availableGameModes);
+			GameModeConfig fallback = null;
 			for (int i = 0; i < num; i++)
 			{
 				GameModeConfig gameModeConfig = availableGameModes[i];
 				if (gameModeConfig != null && gameModeConfig.m_XPMode != null && gameModeConfig.m_XPMode.m_ModeType == type)
 				{
-					return gameModeConfig;
+					// Co-op is survival only; never pick a challenge/story config sharing the mode type.
+					if (gameModeConfig.m_SaveSlotType == SaveSlotType.SANDBOX)
+					{
+						return gameModeConfig;
+					}
+					fallback ??= gameModeConfig;
 				}
+			}
+			if (fallback != null)
+			{
+				MelonLogger.Warning("[SkyCoop] No survival config for " + type.ToString() + ", using " + fallback.name);
+				return fallback;
 			}
 		}
 		catch (Exception ex)
@@ -66,11 +77,12 @@ public static class ExperienceCompat
 		}
 		try
 		{
-			IList<GameModeConfig> availableGameModes = GameManager.GetExperienceModeManagerComponent().GetAvailableGameModes();
-			int selectedIndex = panel.GetSelectedIndex();
-			if (selectedIndex >= 0 && selectedIndex < CountOf(availableGameModes) && availableGameModes[selectedIndex] != null && availableGameModes[selectedIndex].m_XPMode != null)
+			// The menu row index does not match GetAvailableGameModes(), which also holds story/challenge/event
+			// configs; read the mode from the selected row itself.
+			GameModeConfig sandboxConfig = panel.GetSelectedMenuItem()?.m_SandboxConfig;
+			if (sandboxConfig != null && sandboxConfig.m_XPMode != null)
 			{
-				return availableGameModes[selectedIndex].m_XPMode.m_ModeType;
+				return sandboxConfig.m_XPMode.m_ModeType;
 			}
 		}
 		catch (Exception ex)

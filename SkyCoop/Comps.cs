@@ -1937,6 +1937,7 @@ public class Comps
 			DataStr.MultiPlayerClientData multiPlayerClientData = MyMod.playersData[m_ID];
 			BloodLostUpdate();
 			UpdateOtherAffictions();
+			FlashlightSync.UpdateRemote(this);
 			if (m_IsBeingInteractedWith)
 			{
 				m_InteractTimer -= Time.deltaTime;
