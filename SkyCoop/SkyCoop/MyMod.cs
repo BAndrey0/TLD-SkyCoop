@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.7";
+		public const string Version = "0.14.8";
 
 		public const string DownloadLink = null;
 
@@ -8736,11 +8736,12 @@ public class MyMod : MelonMod
 			CustomizeUi.transform.GetChild(2).gameObject.SetActive(value: false);
 			if (Supporters.IsLoaded())
 			{
-				for (int i = 1; i <= Supporters.FlairSpots; i++)
+				Supporters.EnsureFlairSlots();
+				Transform slots = CustomizeUi.transform.GetChild(1);
+				for (int i = 1; i <= Supporters.FlairSpots && i < slots.childCount; i++)
 				{
-					Sprite overrideSprite = Sprite.Create(BundleAsset<Texture2D>("FlairIcon" + Supporters.ConfiguratedBenefits.m_Flairs[i - 1]), new Rect(0f, 0f, 128f, 128f), new Vector2(0f, 0f));
-					CustomizeUi.transform.GetChild(1).GetChild(i).GetChild(1)
-						.gameObject.GetComponent<Image>().overrideSprite = overrideSprite;
+					Texture2D icon = BundleAsset<Texture2D>("FlairIcon" + Supporters.ConfiguratedBenefits.m_Flairs[i - 1]);
+					slots.GetChild(i).GetChild(1).gameObject.GetComponent<Image>().overrideSprite = (icon == null) ? null : Sprite.Create(icon, new Rect(0f, 0f, 128f, 128f), new Vector2(0f, 0f));
 				}
 			}
 			break;
@@ -11664,6 +11665,7 @@ public class MyMod : MelonMod
 		SaveCheck();
 		CheatConsole.Tick();
 		ItemSpawner.Tick();
+		SteamFriendsWindow.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)
@@ -11808,6 +11810,7 @@ public class MyMod : MelonMod
 		CoopReturnToMenu.Draw();
 		CheatConsole.Draw();
 		ItemSpawner.Draw();
+		SteamFriendsWindow.Draw();
 	}
 
 	public static void SetRevivedStats(bool health = true)

@@ -404,10 +404,31 @@ public class Supporters
 		}
 	}
 
+	// A missing or old saved config can have fewer entries than slots; the customization menu indexes every slot.
+	public static void EnsureFlairSlots()
+	{
+		if (ConfiguratedBenefits == null)
+		{
+			ConfiguratedBenefits = new SupporterBenefits();
+		}
+		if (ConfiguratedBenefits.m_Flairs == null)
+		{
+			ConfiguratedBenefits.m_Flairs = new List<int>();
+		}
+		while (ConfiguratedBenefits.m_Flairs.Count < FlairSpots)
+		{
+			ConfiguratedBenefits.m_Flairs.Add(-1);
+		}
+	}
+
 	public static void EquipFlair(int Slot, int FlairID)
 	{
 		Log("Equip Flair " + FlairID + " To Slot " + Slot);
-		Log("Flaist config " + ConfiguratedBenefits.m_Flairs.Count);
+		EnsureFlairSlots();
+		if (Slot < 1 || Slot > FlairSpots)
+		{
+			return;
+		}
 		ConfiguratedBenefits.m_Flairs[Slot - 1] = FlairID;
 		MPSaveManager.SaveData("ConfiguratedBenefits", JSON.Dump(ConfiguratedBenefits));
 		ApplyFlairsForModel(MyMod.MyPlayerDoll, ConfiguratedBenefits.m_Flairs, "I am");

@@ -640,15 +640,12 @@ internal class SteamConnect
 
 		public static void MakeFriendListUI()
 		{
-			if (MyMod.MyLobby != "")
-			{
-				SteamFriends.ActivateGameOverlayInviteDialog(new CSteamID(ulong.Parse(MyMod.MyLobby)));
-			}
+			SteamFriendsWindow.ShowInvite();
 		}
 
 		public static void OpenFriends()
 		{
-			SteamFriends.ActivateGameOverlay("friends");
+			SteamFriendsWindow.ShowJoin();
 		}
 
 		public static void CopyInviteLink()

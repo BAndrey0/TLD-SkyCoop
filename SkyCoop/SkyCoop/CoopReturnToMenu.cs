@@ -167,6 +167,7 @@ public static class CoopReturnToMenu
 			stage = "menu";
 			status = "";
 			MyMod.TryResetSaveExitForNewSession();
+			ClosePauseMenu();
 			MelonLogger.Msg("[ReturnMenu] Main menu ready; process retained");
 		}
 		else
@@ -413,8 +414,26 @@ public static class CoopReturnToMenu
 			MyMod.RadioIdicator.SetActive(value: false);
 		}
 		MenuChange.MenuMode = "Original";
+		ClosePauseMenu();
 		MelonLogger.Msg("[ReturnMenu] Loading native main menu after checkpoint");
 		GameManager.DoExitToMainMenu();
+	}
+
+	// Panels survive the scene change; the pause menu the exit was started from stayed drawn over the main menu.
+	private static void ClosePauseMenu()
+	{
+		try
+		{
+			Panel_PauseMenu panel = GameCompat.Panel<Panel_PauseMenu>();
+			if (panel != null && panel.isActiveAndEnabled)
+			{
+				panel.Enable(enable: false);
+			}
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[ReturnMenu] Closing pause menu: " + ex.Message);
+		}
 	}
 
 	internal static void LeaveLobby()
