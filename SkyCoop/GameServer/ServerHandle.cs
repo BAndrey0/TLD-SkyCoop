@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.14.2")
+			if (text2 != "0.14.3")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.14.2");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.14.3");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,

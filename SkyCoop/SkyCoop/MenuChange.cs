@@ -966,7 +966,7 @@ public class MenuChange
 			MyMod.DoWaitForConnect(Steam: true);
 			if (flag2)
 			{
-				MyMod.DoKickMessage("Wrong mod version! Server using version 0.14.2");
+				MyMod.DoKickMessage("Wrong mod version! Server using version 0.14.3");
 			}
 		}
 		else if (flag)

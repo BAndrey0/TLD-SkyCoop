@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.2";
+		public const string Version = "0.14.3";
 
 		public const string DownloadLink = null;
 
@@ -1653,6 +1653,7 @@ public class MyMod : MelonMod
 		uConsole.RegisterCommand("set_sanity", (System.Action)SetSanity);
 		uConsole.RegisterCommand("cansee_sanity", (System.Action)SetCanSeeSanity);
 		uConsole.RegisterCommand("play_sound", (System.Action)ConsolePlaySound);
+		CheatConsole.RegisterCommands();
 		Comps.RegisterComponents();
 		ExpeditionManager.InitClues();
 		Shared.LoadInterloperReplace();
@@ -11608,6 +11609,7 @@ public class MyMod : MelonMod
 	public void ModUpdate()
 	{
 		SaveCheck();
+		CheatConsole.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)
@@ -11750,6 +11752,7 @@ public class MyMod : MelonMod
 		DeBugMenu.Render();
 		CoopContainerFlow.Draw();
 		CoopReturnToMenu.Draw();
+		CheatConsole.Draw();
 	}
 
 	public static void SetRevivedStats(bool health = true)

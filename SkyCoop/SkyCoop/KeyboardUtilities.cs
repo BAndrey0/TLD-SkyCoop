@@ -1,3 +1,5 @@
+using System;
+using MelonLoader;
 using UnityEngine;
 
 namespace SkyCoop;
@@ -6,11 +8,44 @@ public static class KeyboardUtilities
 {
 	public static class InputManager
 	{
+		private static bool legacyFailed;
+
 		public static bool GetKey(KeyCode key)
 		{
+			if (!legacyFailed)
+			{
+				try
+				{
+					return Input.GetKey(key);
+				}
+				catch (Exception ex)
+				{
+					LegacyFailed(ex);
+				}
+			}
+			return false;
+		}
+
+		public static bool GetKeyDown(KeyCode key)
+		{
+			if (!legacyFailed)
+			{
+				try
+				{
+					if (Input.GetKeyDown(key))
+					{
+						return true;
+					}
+				}
+				catch (Exception ex)
+				{
+					LegacyFailed(ex);
+				}
+			}
+			// The game's own input wrapper (Rewired) still sees keys when legacy Input does not.
 			try
 			{
-				return Input.GetKey(key);
+				return Il2Cpp.InputManager.GetKeyDown(Il2Cpp.InputManager.m_CurrentContext, key);
 			}
 			catch
 			{
@@ -18,16 +53,10 @@ public static class KeyboardUtilities
 			}
 		}
 
-		public static bool GetKeyDown(KeyCode key)
+		private static void LegacyFailed(Exception ex)
 		{
-			try
-			{
-				return Input.GetKeyDown(key);
-			}
-			catch
-			{
-				return false;
-			}
+			legacyFailed = true;
+			MelonLogger.Warning("[Input] UnityEngine.Input unavailable, using the game's input manager: " + ex.Message);
 		}
 	}
 }
