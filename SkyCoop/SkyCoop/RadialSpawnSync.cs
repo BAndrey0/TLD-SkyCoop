@@ -11,7 +11,7 @@ namespace SkyCoop;
 // Sticks, stones, limbs and similar loose items come from the game's radial spawners: each spawner places its items
 // at random points around itself when a player comes near, with checks against what the camera sees. Every player
 // therefore had a different set. In co-op the spawners use one random sequence per spawner (scene seed, spawner
-// position and how many items it already holds) and skip the camera checks, so both players place the same items in
+// position and how many items it already holds), so both players place the same items in
 // the same spots; saved spawner state is ignored so both start from the same point. Pickups of these items are
 // matched by name and distance (see MyMod.RemovePickedGear) and kept removed for the rest of the scene visit.
 public static class RadialSpawnSync
@@ -69,29 +69,34 @@ public static class RadialSpawnSync
 		}
 	}
 
-	[HarmonyPatch(typeof(RadialObjectSpawner), "SpawnAttemptOnceWithVisCheck")]
-	private static class SpawnWithoutVisChecks
+	// Single attempts are seeded by how many items the spawner already holds, so a retry after a failed camera check
+	// tries the same spot again and every player ends up with the item in the same place, whenever it appears.
+	[HarmonyPatch(typeof(RadialObjectSpawner), "SpawnObjectAttempt")]
+	private static class SeedSingleAttempt
 	{
-		private static bool Prefix(RadialObjectSpawner __instance, ref bool __result)
+		private static void Prefix(RadialObjectSpawner __instance, ref Random.State? __state)
 		{
-			if (!Active)
+			int held = (__instance.m_Spawns != null) ? __instance.m_Spawns.Count : 0;
+			int pending = (__instance.m_PendingSpawns != null) ? __instance.m_PendingSpawns.Count : 0;
+			__state = Seed(__instance, (held + pending) * 7919 + 17);
+			if (__state.HasValue)
 			{
-				return true;
+				SeededAttempts++;
+				SeededSpawners.Add(__instance.GetInstanceID());
 			}
-			// One seeded batch instead of single attempts that depend on where this player looks.
-			int id = __instance.GetInstanceID();
-			float now = Time.realtimeSinceStartup;
-			if (!NextAttempt.TryGetValue(id, out var next) || now >= next)
-			{
-				NextAttempt[id] = now + 2f;
-				__instance.SpawnAttemptAllNoVisChecks();
-			}
-			__result = true;
-			return false;
+		}
+
+		private static void Postfix(Random.State? __state)
+		{
+			Restore(__state);
 		}
 	}
 
-	private static readonly Dictionary<int, float> NextAttempt = new Dictionary<int, float>();
+	private static int SeededAttempts;
+
+	private static readonly HashSet<int> SeededSpawners = new HashSet<int>();
+
+	private static float nextReport;
 
 	private static readonly List<Picked> PickedThisVisit = new List<Picked>();
 
@@ -145,8 +150,63 @@ public static class RadialSpawnSync
 		});
 	}
 
+	private static string reportScene = "";
+
+	private static float looseReportAt = -1f;
+
+	private static int looseReports;
+
+	// Diagnostics for comparing two players' logs: where loose sticks and stones come from and a fingerprint of
+	// their positions. Equal fingerprints mean both players have the same set.
+	private static void ReportLooseGear()
+	{
+		if (MyMod.level_guid != reportScene)
+		{
+			reportScene = MyMod.level_guid;
+			looseReports = 0;
+			looseReportAt = Time.realtimeSinceStartup + 45f;
+		}
+		if (looseReportAt < 0f || Time.realtimeSinceStartup < looseReportAt || GearManager.m_Gear == null || Shared.IsMainMenuScene(MyMod.level_name))
+		{
+			return;
+		}
+		looseReports++;
+		looseReportAt = (looseReports < 3) ? (Time.realtimeSinceStartup + 135f) : (-1f);
+		int total = 0;
+		int radial = 0;
+		List<string> keys = new List<string>();
+		for (int i = 0; i < GearManager.m_Gear.Count; i++)
+		{
+			GearItem gearItem = GearManager.m_Gear[i];
+			if (gearItem == null || gearItem.m_BeenInPlayerInventory || gearItem.m_InsideContainer || !gearItem.gameObject.activeInHierarchy)
+			{
+				continue;
+			}
+			string name = gearItem.GetGearName();
+			if (name != "GEAR_Stick" && name != "GEAR_Stone" && name != "GEAR_Limb" && name != "GEAR_Softwood" && name != "GEAR_Hardwood" && name != "GEAR_ReclaimedWoodB")
+			{
+				continue;
+			}
+			total++;
+			if (gearItem.transform.parent != null && gearItem.transform.parent.GetComponent<RadialObjectSpawner>() != null)
+			{
+				radial++;
+			}
+			Vector3 p = gearItem.transform.position;
+			keys.Add(name + Mathf.RoundToInt(p.x * 2f) + "," + Mathf.RoundToInt(p.z * 2f));
+		}
+		keys.Sort(System.StringComparer.Ordinal);
+		MelonLogger.Msg("[Loose gear] scene=" + MyMod.level_name + " items=" + total + " radial=" + radial + " fingerprint=" + Shared.StableHash(string.Join(";", keys)) + (Active ? "" : " (sync off)"));
+	}
+
 	public static void Tick()
 	{
+		ReportLooseGear();
+		if (SeededAttempts > 0 && Time.realtimeSinceStartup >= nextReport)
+		{
+			nextReport = Time.realtimeSinceStartup + 120f;
+			MelonLogger.Msg("[Radial sync] seeded attempts=" + SeededAttempts + " spawners=" + SeededSpawners.Count + " scene=" + MyMod.level_name);
+		}
 		if (PickedThisVisit.Count == 0 || Time.realtimeSinceStartup < nextSweep)
 		{
 			return;

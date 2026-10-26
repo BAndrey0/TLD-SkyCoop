@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.10";
+		public const string Version = "0.15.0";
 
 		public const string DownloadLink = null;
 
@@ -6422,10 +6422,11 @@ public class MyMod : MelonMod
 
 	// Remote shots used legacy 3D event names that no longer match 2.55 weapons; post the weapon's own fire
 	// event on the remote player so it sounds like the local gun, positioned at the shooter.
-	private static AkAudioListener gunshotListener;
+	private static bool gunshotVolumeLogged;
 
 	// The game's shot events (Play_RifleFire / Play_RevolverFire) are made for the player's own gun and do not fade
-	// with distance, so a remote shot is played on a separate emitter whose output volume is set from the distance.
+	// with distance, so a remote shot is posted on a separate emitter whose output volume towards every listener is
+	// set from the distance. GameAudioManager.Play3DSound posts on its own pooled object, which ignored that volume.
 	public static void PlayRemoteGunshot(string sound, int from)
 	{
 		if (playersData.Count <= 0 || playersData[from] == null || playersData[from].m_Levelid != levelid || players[from] == null || playersData[from].m_LevelGuid != level_guid || GameManager.GetPlayerTransform() == null)
@@ -6434,9 +6435,8 @@ public class MyMod : MelonMod
 		}
 		GameObject shooter = players[from];
 		float distance = Vector3.Distance(GameManager.GetPlayerTransform().position, shooter.transform.position);
-		float far = Mathf.Clamp01((distance - 25f) / 675f);
-		float volume = (1f - far) * (1f - far);
-		if (volume < 0.02f)
+		float volume = GunshotVolume(distance);
+		if (volume <= 0f)
 		{
 			return;
 		}
@@ -6449,23 +6449,50 @@ public class MyMod : MelonMod
 			emitterTransform = created.transform;
 		}
 		GameObject emitter = emitterTransform.gameObject;
+		string result = "";
 		try
 		{
-			if (gunshotListener == null)
+			AkSoundEngine.RegisterGameObj(emitter);
+			Il2CppArrayBase<AkAudioListener> listeners = UnityEngine.Object.FindObjectsOfType<AkAudioListener>();
+			for (int i = 0; i < listeners.Length; i++)
 			{
-				gunshotListener = UnityEngine.Object.FindObjectOfType<AkAudioListener>();
+				if (listeners[i] != null)
+				{
+					result += AkSoundEngine.SetGameObjectOutputBusVolume(emitter, listeners[i].gameObject, volume) + " ";
+				}
 			}
-			if (gunshotListener != null)
+			uint playing = AkSoundEngine.PostEvent(sound, emitter);
+			if (!gunshotVolumeLogged)
 			{
-				AkSoundEngine.RegisterGameObj(emitter);
-				AkSoundEngine.SetGameObjectOutputBusVolume(emitter, gunshotListener.gameObject, volume);
+				gunshotVolumeLogged = true;
+				MelonLogger.Msg("[Shoot sync] Remote gunshot listeners=" + listeners.Length + " volume results=" + result + "playing=" + playing);
+			}
+			if (playing != 0)
+			{
+				return;
 			}
 		}
 		catch (System.Exception ex)
 		{
-			MelonLogger.Warning("[Shoot sync] Gunshot volume: " + ex.Message);
+			MelonLogger.Warning("[Shoot sync] Remote gunshot: " + ex.Message);
 		}
 		GameAudioManager.Play3DSound(sound, emitter);
+	}
+
+	// Full volume up to 30 m, then falling off like a real shot (roughly inverse distance), silent beyond 800 m.
+	public static float GunshotVolume(float distance)
+	{
+		if (distance <= 30f)
+		{
+			return 1f;
+		}
+		if (distance >= 800f)
+		{
+			return 0f;
+		}
+		float volume = 30f / distance;
+		float edge = Mathf.Clamp01((800f - distance) / 200f);
+		return Mathf.Max(volume * edge, 0f);
 	}
 
 	public static void PlayMultiplayer3dAduio(string sound, int from)
@@ -6513,6 +6540,7 @@ public class MyMod : MelonMod
 	public static void BeginRespawn()
 	{
 		MelonLogger.Msg("BeginRespawn");
+		CoopFatigue.ResetForRespawn();
 		GameManager.GetConditionComponent().m_CurrentHP = GameManager.GetConditionComponent().GetAdjustedMaxHP();
 		GameManager.GetFreezingComponent().m_CurrentFreezing = 0f;
 		GameManager.GetHungerComponent().m_CurrentReserveCalories = GameManager.GetHungerComponent().m_MaxReserveCalories;
@@ -11722,6 +11750,7 @@ public class MyMod : MelonMod
 		SteamFriendsWindow.Tick();
 		RadialSpawnSync.Tick();
 		DeathRespawn.Tick();
+		CoopFatigue.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)
@@ -11867,6 +11896,7 @@ public class MyMod : MelonMod
 		CheatConsole.Draw();
 		ItemSpawner.Draw();
 		SteamFriendsWindow.Draw();
+		CoopFatigue.Draw();
 		DeathRespawn.Draw();
 	}
 

@@ -1904,6 +1904,10 @@ public class Shared
 		{
 			RadialSpawnSync.RememberPickup(gearName, spawn);
 		}
+		if (needSync)
+		{
+			PickupSync.MarkSent(isntID);
+		}
 		DataStr.PickedGearSync pickedGearSync = new DataStr.PickedGearSync();
 		pickedGearSync.m_Spawn = spawn;
 		pickedGearSync.m_LevelID = lvl;

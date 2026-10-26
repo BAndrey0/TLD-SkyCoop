@@ -1,0 +1,469 @@
+using System;
+using HarmonyLib;
+using Il2Cpp;
+using MelonLoader;
+using UnityEngine;
+
+namespace SkyCoop;
+
+// Co-op work and fatigue rules (see kit/README-RU.md). In co-op the world clock belongs to the host, so actions
+// (crafting, reading, harvesting, breaking down, repairs, fishing) no longer move time for everyone; what they cost
+// instead is Strength, a 0-100 pool for work, and extra fatigue for heavy work. Sleep needs real tiredness.
+//
+// Every timed action goes through TimeOfDay.Accelerate / AccelerateTime with its game-time length, which gives one
+// place to price it. Strength drains while the action runs; at zero the action is cancelled. Crafting, reading and
+// fishing keep their progress (the game resumes crafting from an in-progress item), so a recipe that costs more
+// than one full pool is built over several sittings. Other actions need their whole cost up front.
+public static class CoopFatigue
+{
+	private enum Weight
+	{
+		Light,
+		Medium,
+		Heavy
+	}
+
+	[HarmonyPatch(typeof(TimeOfDay), "Accelerate")]
+	private static class OnAccelerate
+	{
+		private static void Prefix(float realTimeSeconds, float gameTimeHours)
+		{
+			ActionStarted(gameTimeHours, realTimeSeconds);
+		}
+	}
+
+	[HarmonyPatch(typeof(TimeOfDay), "AccelerateTime")]
+	private static class OnAccelerateTime
+	{
+		private static void Prefix(float minutes, float realtimeDurationSeconds)
+		{
+			ActionStarted(minutes / 60f, realtimeDurationSeconds);
+		}
+	}
+
+	[HarmonyPatch(typeof(Panel_Rest), "OnRest")]
+	private static class SleepGate
+	{
+		private static bool Prefix(Panel_Rest __instance)
+		{
+			return AllowSleep(__instance);
+		}
+	}
+
+	[HarmonyPatch(typeof(Panel_Rest), "OnFullRest")]
+	private static class FullSleepGate
+	{
+		private static bool Prefix(Panel_Rest __instance)
+		{
+			return AllowSleep(__instance);
+		}
+	}
+
+	public const float MaxStrength = 100f;
+
+	private const float RegenFullSeconds = 1200f;
+
+	private const float RestRegenMultiplier = 3f;
+
+	private const float RegenDelaySeconds = 2f;
+
+	public const float SleepThreshold = 0.6f;
+
+	private static MelonPreferences_Entry<bool> enabledPref;
+
+	private static float strength = MaxStrength;
+
+	private static bool actionActive;
+
+	private static float actionStarted;
+
+	private static float actionEnds;
+
+	private static float strengthPerSecond;
+
+	private static float fatiguePerSecond;
+
+	private static bool actionAllowsPartial;
+
+	private static string actionName = "";
+
+	private static float lastActionEnd = -100f;
+
+	private static bool cancelPending;
+
+	private static string cancelMessage = "";
+
+	private static Vector3 lastPosition;
+
+	private static float lastTick;
+
+	private static int fatigueWarning;
+
+	public static float Strength => strength;
+
+	public static bool Active
+	{
+		get
+		{
+			if (enabledPref == null)
+			{
+				MelonPreferences_Category category = MelonPreferences.CreateCategory("SkyCoop");
+				enabledPref = category.CreateEntry("CoopFatigue", default_value: true, "Co-op work and fatigue rules (Strength, sleep threshold)");
+			}
+			if (!enabledPref.Value || !MyMod.InOnline() || MyMod.IsDead)
+			{
+				return false;
+			}
+			if (string.IsNullOrEmpty(MyMod.level_name) || MyMod.level_name == "Empty" || MyMod.level_name == "Boot")
+			{
+				return false;
+			}
+			return !Shared.IsMainMenuScene(MyMod.level_name);
+		}
+	}
+
+	private static float TiredFraction
+	{
+		get
+		{
+			Fatigue fatigue = GameManager.GetFatigueComponent();
+			if (fatigue == null || fatigue.m_MaxFatigue <= 0f)
+			{
+				return 0f;
+			}
+			return Mathf.Clamp01(fatigue.m_CurrentFatigue / fatigue.m_MaxFatigue);
+		}
+	}
+
+	private static bool Sleeping
+	{
+		get
+		{
+			if (GameManager.m_Rest != null && GameManager.m_Rest.IsSleeping())
+			{
+				return true;
+			}
+			Panel_Rest panel = GameCompat.Panel<Panel_Rest>();
+			return panel != null && panel.isActiveAndEnabled;
+		}
+	}
+
+	private static void ActionStarted(float hours, float realSeconds)
+	{
+		try
+		{
+			if (!Active || hours <= 0f || Sleeping)
+			{
+				return;
+			}
+			float now = Time.realtimeSinceStartup;
+			// AccelerateTime may call Accelerate for the same action; price it once.
+			if (actionActive && now - actionStarted < 0.5f)
+			{
+				return;
+			}
+			Weight weight = DetectWeight(out var name, out var partial);
+			float rate = (weight == Weight.Heavy) ? 16f : ((weight == Weight.Medium) ? 10f : 6f);
+			float fatigueMultiplier = (weight == Weight.Heavy) ? 1.5f : ((weight == Weight.Medium) ? 1.25f : 1f);
+			float cost = hours * rate;
+			if (GameManager.GetFatigueComponent() != null && GameManager.GetFatigueComponent().IsExhausted())
+			{
+				Block("Вы слишком устали для работы — нужен сон");
+				return;
+			}
+			if (strength <= 0.5f)
+			{
+				Block("Нет сил на работу — передохните (присядьте)");
+				return;
+			}
+			if (!partial && strength < Mathf.Min(cost, MaxStrength))
+			{
+				Block("Не хватает сил: нужно " + Mathf.CeilToInt(Mathf.Min(cost, MaxStrength)) + ", есть " + Mathf.FloorToInt(strength));
+				return;
+			}
+			Fatigue fatigue = GameManager.GetFatigueComponent();
+			float standingPerHour = (fatigue != null) ? fatigue.m_FatigueIncreasePerHourStanding : 0f;
+			realSeconds = Mathf.Max(realSeconds, 0.5f);
+			actionActive = true;
+			actionStarted = now;
+			actionEnds = now + realSeconds;
+			actionAllowsPartial = partial;
+			actionName = name;
+			strengthPerSecond = cost / realSeconds;
+			fatiguePerSecond = (fatigueMultiplier - 1f) * standingPerHour * hours / realSeconds;
+			MelonLogger.Msg("[Fatigue] " + name + " " + hours.ToString("0.##") + " h, cost " + cost.ToString("0") + ", strength " + strength.ToString("0") + (partial ? " (resumable)" : ""));
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[Fatigue] " + ex.Message);
+		}
+	}
+
+	private static Weight DetectWeight(out string name, out bool partial)
+	{
+		partial = false;
+		Panel_Crafting crafting = GameCompat.Panel<Panel_Crafting>();
+		if (crafting != null && crafting.isActiveAndEnabled)
+		{
+			name = "crafting";
+			partial = true;
+			return Weight.Medium;
+		}
+		Panel_BreakDown breakDown = GameCompat.Panel<Panel_BreakDown>();
+		if (breakDown != null && breakDown.isActiveAndEnabled)
+		{
+			name = "breakdown";
+			return Weight.Heavy;
+		}
+		Panel_SnowShelterBuild shelter = GameCompat.Panel<Panel_SnowShelterBuild>();
+		if (shelter != null && shelter.isActiveAndEnabled)
+		{
+			name = "snow shelter";
+			return Weight.Heavy;
+		}
+		Panel_BodyHarvest harvest = GameCompat.Panel<Panel_BodyHarvest>();
+		if (harvest != null && harvest.isActiveAndEnabled)
+		{
+			if (harvest.IsQuartering())
+			{
+				name = "quartering";
+				return Weight.Heavy;
+			}
+			name = "carcass harvest";
+			return Weight.Medium;
+		}
+		Panel_IceFishing fishing = GameCompat.Panel<Panel_IceFishing>();
+		if (fishing != null && fishing.isActiveAndEnabled)
+		{
+			name = "ice fishing";
+			partial = true;
+			return Weight.Light;
+		}
+		Panel_Inventory_Examine examine = GameCompat.Panel<Panel_Inventory_Examine>();
+		if (examine != null && examine.isActiveAndEnabled)
+		{
+			if (examine.IsReading())
+			{
+				name = "reading";
+				partial = true;
+				return Weight.Light;
+			}
+			if (examine.IsRepairing())
+			{
+				GearItem item = examine.m_GearItem;
+				bool clothing = item != null && item.m_ClothingItem != null;
+				name = clothing ? "clothing repair" : "tool repair";
+				return clothing ? Weight.Light : Weight.Medium;
+			}
+			name = "item work";
+			return Weight.Medium;
+		}
+		name = "action";
+		return Weight.Light;
+	}
+
+	private static void Block(string message)
+	{
+		cancelPending = true;
+		cancelMessage = message;
+		MelonLogger.Msg("[Fatigue] Blocked: " + message);
+	}
+
+	private static void CancelCurrentAction()
+	{
+		try
+		{
+			Panel_Crafting crafting = GameCompat.Panel<Panel_Crafting>();
+			if (crafting != null && crafting.isActiveAndEnabled)
+			{
+				crafting.OnCancelCrafting();
+				return;
+			}
+			Panel_BreakDown breakDown = GameCompat.Panel<Panel_BreakDown>();
+			if (breakDown != null && breakDown.isActiveAndEnabled)
+			{
+				breakDown.OnCancel();
+				return;
+			}
+			Panel_SnowShelterBuild shelter = GameCompat.Panel<Panel_SnowShelterBuild>();
+			if (shelter != null && shelter.isActiveAndEnabled)
+			{
+				shelter.OnCancel();
+				return;
+			}
+			Panel_BodyHarvest harvest = GameCompat.Panel<Panel_BodyHarvest>();
+			if (harvest != null && harvest.isActiveAndEnabled)
+			{
+				harvest.OnCancel();
+				return;
+			}
+			Panel_IceFishing fishing = GameCompat.Panel<Panel_IceFishing>();
+			if (fishing != null && fishing.isActiveAndEnabled)
+			{
+				fishing.OnCancel();
+				return;
+			}
+			Panel_Inventory_Examine examine = GameCompat.Panel<Panel_Inventory_Examine>();
+			if (examine != null && examine.isActiveAndEnabled)
+			{
+				examine.OnProgressBarCancel();
+				return;
+			}
+			Panel_GenericProgressBar progress = GameCompat.Panel<Panel_GenericProgressBar>();
+			if (progress != null && progress.isActiveAndEnabled)
+			{
+				progress.Cancel();
+			}
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[Fatigue] Cancelling action: " + ex.Message);
+		}
+	}
+
+	private static bool AllowSleep(Panel_Rest panel)
+	{
+		try
+		{
+			if (!Active || panel == null || panel.IsPassingTimeOnly())
+			{
+				return true;
+			}
+			float tired = TiredFraction;
+			Fatigue fatigue = GameManager.GetFatigueComponent();
+			if (tired >= SleepThreshold || (fatigue != null && fatigue.IsExhausted()))
+			{
+				return true;
+			}
+			Hud("Вы ещё не устали настолько, чтобы уснуть (" + Mathf.RoundToInt(tired * 100f) + "% из " + Mathf.RoundToInt(SleepThreshold * 100f) + "%)");
+			return false;
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[Fatigue] Sleep check: " + ex.Message);
+			return true;
+		}
+	}
+
+	public static void Tick()
+	{
+		float now = Time.realtimeSinceStartup;
+		float dt = Mathf.Clamp(now - lastTick, 0f, 0.5f);
+		lastTick = now;
+		if (!Active)
+		{
+			actionActive = false;
+			cancelPending = false;
+			return;
+		}
+		if (cancelPending)
+		{
+			cancelPending = false;
+			actionActive = false;
+			lastActionEnd = now;
+			CancelCurrentAction();
+			Hud(cancelMessage);
+			return;
+		}
+		if (actionActive)
+		{
+			TimeOfDay timeOfDay = GameManager.GetTimeOfDayComponent();
+			bool lapse = timeOfDay != null && timeOfDay.IsTimeLapseActive();
+			if ((!lapse && now - actionStarted > 0.5f) || now > actionEnds + 2f)
+			{
+				actionActive = false;
+				lastActionEnd = now;
+			}
+			else
+			{
+				strength = Mathf.Max(0f, strength - strengthPerSecond * dt);
+				if (fatiguePerSecond > 0f && GameManager.GetFatigueComponent() != null)
+				{
+					GameManager.GetFatigueComponent().AddFatigue(fatiguePerSecond * dt);
+				}
+				if (strength <= 0f)
+				{
+					actionActive = false;
+					lastActionEnd = now;
+					CancelCurrentAction();
+					Hud(actionAllowsPartial ? "Силы кончились — работа прервана, прогресс сохранён" : "Силы кончились — работа прервана");
+					MelonLogger.Msg("[Fatigue] Out of strength during " + actionName);
+				}
+				return;
+			}
+		}
+		Transform player = GameManager.GetPlayerTransform();
+		float speed = 0f;
+		if (player != null)
+		{
+			speed = (dt > 0f) ? (Vector3.Distance(player.position, lastPosition) / dt) : 0f;
+			lastPosition = player.position;
+		}
+		if (now - lastActionEnd >= RegenDelaySeconds && speed < 4.5f && strength < MaxStrength)
+		{
+			float multiplier = 1f;
+			PlayerManager playerManager = GameManager.GetPlayerManagerComponent();
+			if (playerManager != null && playerManager.PlayerIsCrouched() && speed < 0.3f)
+			{
+				multiplier = RestRegenMultiplier;
+			}
+			strength = Mathf.Min(MaxStrength, strength + MaxStrength / RegenFullSeconds * multiplier * dt);
+		}
+		WarnFatigue();
+	}
+
+	private static void WarnFatigue()
+	{
+		float tired = TiredFraction;
+		if (tired < 0.8f)
+		{
+			fatigueWarning = 0;
+		}
+		else if (tired >= 0.95f && fatigueWarning < 2)
+		{
+			fatigueWarning = 2;
+			Hud("Вы на пределе — скоро изнеможение, пора спать");
+		}
+		else if (tired >= 0.85f && fatigueWarning < 1)
+		{
+			fatigueWarning = 1;
+			Hud("Вы сильно устали — ищите место для сна");
+		}
+	}
+
+	public static void ResetForRespawn()
+	{
+		strength = MaxStrength;
+		actionActive = false;
+		cancelPending = false;
+	}
+
+	public static void Draw()
+	{
+		if (!Active || (strength >= MaxStrength - 0.01f && !actionActive))
+		{
+			return;
+		}
+		float x = 20f;
+		float y = Screen.height - 46;
+		float width = 180f;
+		GUI.Box(new Rect(x, y, width + 10f, 26f), "");
+		Color color = GUI.color;
+		GUI.color = (strength > 30f) ? new Color(0.85f, 0.8f, 0.55f, 0.9f) : new Color(0.9f, 0.4f, 0.3f, 0.9f);
+		GUI.DrawTexture(new Rect(x + 5f, y + 5f, width * (strength / MaxStrength), 16f), Texture2D.whiteTexture);
+		GUI.color = color;
+		GUI.Label(new Rect(x + 8f, y + 3f, width, 22f), "Сила " + Mathf.FloorToInt(strength));
+	}
+
+	private static void Hud(string text)
+	{
+		try
+		{
+			HUDMessage.AddMessage(text);
+		}
+		catch
+		{
+		}
+		MelonLogger.Msg("[Fatigue] " + text);
+	}
+}
