@@ -102,10 +102,20 @@ public static class RadialSpawnSync
 
 	private static float nextSweep;
 
+	private static MelonPreferences_Entry<bool> enabledPref;
+
 	public static bool Active
 	{
 		get
 		{
+			if (enabledPref == null)
+			{
+				enabledPref = MelonPreferences.CreateCategory("SkyCoop").CreateEntry("RadialSync", default_value: true, "Same sticks and stones for every player in co-op");
+			}
+			if (!enabledPref.Value)
+			{
+				return false;
+			}
 			if (!MyMod.InOnline())
 			{
 				return !string.IsNullOrEmpty(MyMod.MyLobby);
@@ -114,9 +124,15 @@ public static class RadialSpawnSync
 		}
 	}
 
+	// Seeding happens only on the outermost spawner call. The game retries a failed spot by calling itself again;
+	// reseeding there produced the same failed spot every time and recursed until the stack overflowed (0.15.1 crash
+	// at server start). Nested calls continue the outer seeded sequence, which keeps them deterministic.
+	private static int depth;
+
 	private static Random.State? Seed(RadialObjectSpawner spawner, int salt)
 	{
-		if (!Active || spawner == null)
+		depth++;
+		if (depth > 1 || !Active || spawner == null)
 		{
 			return null;
 		}
@@ -129,6 +145,7 @@ public static class RadialSpawnSync
 
 	private static void Restore(Random.State? state)
 	{
+		depth = System.Math.Max(0, depth - 1);
 		if (state.HasValue)
 		{
 			Random.state = state.Value;
@@ -201,6 +218,8 @@ public static class RadialSpawnSync
 
 	public static void Tick()
 	{
+		// Between frames no spawner call is running; recovers if a postfix was skipped by an exception.
+		depth = 0;
 		ReportLooseGear();
 		if (SeededAttempts > 0 && Time.realtimeSinceStartup >= nextReport)
 		{
