@@ -483,9 +483,17 @@ public class Comps
 				if (Time.time > nextActionSync)
 				{
 					nextActionSync += actionSync_perioud;
-					if (MyMod.level_name != "Empty" && !Shared.IsMainMenuScene(MyMod.level_name) && (MyMod.AnimalsController || m_MyControlled))
+					// Skipped while leaving to the main menu: the transport is already gone and every animal threw here.
+					if (MyMod.level_name != "Empty" && !Shared.IsMainMenuScene(MyMod.level_name) && (MyMod.AnimalsController || m_MyControlled) && MyMod.InOnline() && !CoopReturnToMenu.InProgress)
 					{
-						CallSync();
+						try
+						{
+							CallSync();
+						}
+						catch (Exception ex)
+						{
+							MelonLogger.Warning("[Wildlife] Animal sync skipped: " + ex.Message);
+						}
 					}
 				}
 				if (Time.time > nextActionTimeNR)

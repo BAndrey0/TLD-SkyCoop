@@ -401,6 +401,10 @@ internal class SteamConnect
 				{
 					MyMod.RemovePersonFromLobby(request.m_ulSteamIDUserChanged);
 				}
+				if (!MyMod.iAmHost && !string.IsNullOrEmpty(MyMod.SteamServerWorks) && request.m_ulSteamIDUserChanged.ToString() == MyMod.SteamServerWorks)
+				{
+					CoopReturnToMenu.HostLeft();
+				}
 			}
 			SteamFriends.SetRichPresence("steam_player_group", request.m_ulSteamIDLobby.ToString());
 			SteamFriends.SetRichPresence("steam_player_group_size", SteamMatchmaking.GetNumLobbyMembers(new CSteamID(request.m_ulSteamIDLobby)).ToString());

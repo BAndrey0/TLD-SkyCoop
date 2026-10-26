@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.9";
+		public const string Version = "0.14.10";
 
 		public const string DownloadLink = null;
 
@@ -1768,6 +1768,7 @@ public class MyMod : MelonMod
 
 	public static void RequestSaveBeforeQuit()
 	{
+		CoopReturnToMenu.NotifyGuestsHostLeaving();
 		PendingSaveExitAction = SaveExitAction.Quit;
 		AfterSavedDisconnect = null;
 		if (!Pathes.QuitOnSave && !SaveBeforeQuitRequested && !QuitWhenSaveOperationFinished)
@@ -1782,6 +1783,7 @@ public class MyMod : MelonMod
 
 	public override void OnApplicationQuit()
 	{
+		CoopReturnToMenu.NotifyGuestsHostLeaving();
 		if ((!(level_name != "Empty") || !(level_name != "Boot") || Shared.IsMainMenuScene(level_name) || !InOnline() || IReallyWantToQuit || DedicatedServerAppMode || (QuitWithoutSaving && !Pathes.QuitOnSave && !SaveBeforeQuitRequested && !QuitWhenSaveOperationFinished)) && InOnline())
 		{
 			MelonLogger.Msg("[CLIENT] Disconnect cause quit game");
@@ -6420,11 +6422,50 @@ public class MyMod : MelonMod
 
 	// Remote shots used legacy 3D event names that no longer match 2.55 weapons; post the weapon's own fire
 	// event on the remote player so it sounds like the local gun, positioned at the shooter.
-	// The *_SHOOT_3D events the mod used are not in the 2.55 sound banks, and GunItem.m_FireAudio on the prefab
-	// is not the shot either; the game's own shot events (Play_RifleFire / Play_RevolverFire) are positioned on the shooter.
+	private static AkAudioListener gunshotListener;
+
+	// The game's shot events (Play_RifleFire / Play_RevolverFire) are made for the player's own gun and do not fade
+	// with distance, so a remote shot is played on a separate emitter whose output volume is set from the distance.
 	public static void PlayRemoteGunshot(string sound, int from)
 	{
-		PlayMultiplayer3dAduio(sound, from);
+		if (playersData.Count <= 0 || playersData[from] == null || playersData[from].m_Levelid != levelid || players[from] == null || playersData[from].m_LevelGuid != level_guid || GameManager.GetPlayerTransform() == null)
+		{
+			return;
+		}
+		GameObject shooter = players[from];
+		float distance = Vector3.Distance(GameManager.GetPlayerTransform().position, shooter.transform.position);
+		float far = Mathf.Clamp01((distance - 25f) / 675f);
+		float volume = (1f - far) * (1f - far);
+		if (volume < 0.02f)
+		{
+			return;
+		}
+		Transform emitterTransform = shooter.transform.Find("SkyCoopGunshot");
+		if (emitterTransform == null)
+		{
+			GameObject created = new GameObject("SkyCoopGunshot");
+			created.transform.SetParent(shooter.transform, worldPositionStays: false);
+			created.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+			emitterTransform = created.transform;
+		}
+		GameObject emitter = emitterTransform.gameObject;
+		try
+		{
+			if (gunshotListener == null)
+			{
+				gunshotListener = UnityEngine.Object.FindObjectOfType<AkAudioListener>();
+			}
+			if (gunshotListener != null)
+			{
+				AkSoundEngine.RegisterGameObj(emitter);
+				AkSoundEngine.SetGameObjectOutputBusVolume(emitter, gunshotListener.gameObject, volume);
+			}
+		}
+		catch (System.Exception ex)
+		{
+			MelonLogger.Warning("[Shoot sync] Gunshot volume: " + ex.Message);
+		}
+		GameAudioManager.Play3DSound(sound, emitter);
 	}
 
 	public static void PlayMultiplayer3dAduio(string sound, int from)
@@ -11680,6 +11721,7 @@ public class MyMod : MelonMod
 		ItemSpawner.Tick();
 		SteamFriendsWindow.Tick();
 		RadialSpawnSync.Tick();
+		DeathRespawn.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)
@@ -11825,6 +11867,7 @@ public class MyMod : MelonMod
 		CheatConsole.Draw();
 		ItemSpawner.Draw();
 		SteamFriendsWindow.Draw();
+		DeathRespawn.Draw();
 	}
 
 	public static void SetRevivedStats(bool health = true)

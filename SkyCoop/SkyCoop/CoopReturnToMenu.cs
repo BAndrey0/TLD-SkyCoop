@@ -258,6 +258,50 @@ public static class CoopReturnToMenu
 		}
 	}
 
+	// The host closing the game (QUIT GAME, window closed) used to leave guests in a world without a server.
+	public static void NotifyGuestsHostLeaving()
+	{
+		if (!MyMod.iAmHost)
+		{
+			return;
+		}
+		try
+		{
+			foreach (KeyValuePair<int, Client> client in Server.clients)
+			{
+				if (client.Key > 0 && client.Value != null && !client.Value.RCON && client.Value.IsBusy())
+				{
+					ServerSend.KICKMESSAGE(client.Key, "COOP_RETURN_MENU: Host is returning to the main menu.");
+				}
+			}
+			MelonLogger.Msg("[ReturnMenu] Guests told that the host is leaving");
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[ReturnMenu] Notifying guests: " + ex.Message);
+		}
+	}
+
+	// Guest side: the host left the Steam lobby without the return message (crash, killed process, lost connection).
+	public static void HostLeft()
+	{
+		if (MyMod.iAmHost || pending)
+		{
+			return;
+		}
+		MelonLogger.Msg("[ReturnMenu] Host left the session");
+		lastNotice = "Хост вышел из игры. Ваш персонаж сохранён.";
+		noticeUntil = Clock.Elapsed.TotalSeconds + 15.0;
+		if (!Request())
+		{
+			MelonLogger.Warning("[ReturnMenu] Could not start return after host left; canRequest=" + CanRequest);
+		}
+		else
+		{
+			lastNotice = "Хост вышел из игры. Ваш персонаж сохранён.";
+		}
+	}
+
 	private static void NotifyGuests()
 	{
 		peerDeadline = Clock.Elapsed.TotalSeconds + 15.0;
