@@ -125,7 +125,7 @@ public static class RadialSpawnSync
 	}
 
 	// Seeding happens only on the outermost spawner call. The game retries a failed spot by calling itself again;
-	// reseeding there produced the same failed spot every time and recursed until the stack overflowed (0.15.1 crash
+	// reseeding there produced the same failed spot every time and recursed until the stack overflowed (0.15.2 crash
 	// at server start). Nested calls continue the outer seeded sequence, which keeps them deterministic.
 	private static int depth;
 
@@ -181,7 +181,7 @@ public static class RadialSpawnSync
 		{
 			reportScene = MyMod.level_guid;
 			looseReports = 0;
-			looseReportAt = Time.realtimeSinceStartup + 45f;
+			looseReportAt = Time.realtimeSinceStartup + 30f;
 		}
 		if (looseReportAt < 0f || Time.realtimeSinceStartup < looseReportAt || GearManager.m_Gear == null || Shared.IsMainMenuScene(MyMod.level_name))
 		{
@@ -191,6 +191,8 @@ public static class RadialSpawnSync
 		looseReportAt = (looseReports < 3) ? (Time.realtimeSinceStartup + 135f) : (-1f);
 		int total = 0;
 		int radial = 0;
+		int randomGroup = 0;
+		List<string> samples = new List<string>();
 		List<string> keys = new List<string>();
 		for (int i = 0; i < GearManager.m_Gear.Count; i++)
 		{
@@ -209,11 +211,20 @@ public static class RadialSpawnSync
 			{
 				radial++;
 			}
+			else if (gearItem.GetComponentInParent<RandomSpawnObject>() != null)
+			{
+				randomGroup++;
+			}
+			else if (samples.Count < 6)
+			{
+				Transform root = gearItem.transform.parent;
+				samples.Add(name + "@" + ((root != null) ? root.name : "scene root") + (gearItem.m_BeenInPlayerInventory ? "/dropped" : ""));
+			}
 			Vector3 p = gearItem.transform.position;
 			keys.Add(name + Mathf.RoundToInt(p.x * 2f) + "," + Mathf.RoundToInt(p.z * 2f));
 		}
 		keys.Sort(System.StringComparer.Ordinal);
-		MelonLogger.Msg("[Loose gear] scene=" + MyMod.level_name + " items=" + total + " radial=" + radial + " fingerprint=" + Shared.StableHash(string.Join(";", keys)) + (Active ? "" : " (sync off)"));
+		MelonLogger.Msg("[Loose gear] scene=" + MyMod.level_name + " items=" + total + " radial=" + radial + " randomGroup=" + randomGroup + " fingerprint=" + Shared.StableHash(string.Join(";", keys)) + (Active ? "" : " (sync off)") + " other: " + string.Join(", ", samples));
 	}
 
 	public static void Tick()

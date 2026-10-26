@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.1";
+		public const string Version = "0.15.2";
 
 		public const string DownloadLink = null;
 
@@ -11751,6 +11751,7 @@ public class MyMod : MelonMod
 		RadialSpawnSync.Tick();
 		DeathRespawn.Tick();
 		CoopFatigue.Tick();
+		SelfTest.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)

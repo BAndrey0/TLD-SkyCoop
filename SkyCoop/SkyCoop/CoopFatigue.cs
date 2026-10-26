@@ -41,24 +41,6 @@ public static class CoopFatigue
 		}
 	}
 
-	[HarmonyPatch(typeof(Panel_Rest), "OnRest")]
-	private static class SleepGate
-	{
-		private static bool Prefix(Panel_Rest __instance)
-		{
-			return AllowSleep(__instance);
-		}
-	}
-
-	[HarmonyPatch(typeof(Panel_Rest), "OnFullRest")]
-	private static class FullSleepGate
-	{
-		private static bool Prefix(Panel_Rest __instance)
-		{
-			return AllowSleep(__instance);
-		}
-	}
-
 	public const float MaxStrength = 100f;
 
 	private const float RegenFullSeconds = 1200f;
@@ -321,28 +303,32 @@ public static class CoopFatigue
 		}
 	}
 
-	private static bool AllowSleep(Panel_Rest panel)
+	private static bool sleepBlocked;
+
+	// Sleep threshold without patching Panel_Rest: in this build its small methods share code with others, and a
+	// patch on OnFullRest also ran for IsPassingTimeOnly and UI creation, recursing until the stack overflowed at
+	// server start (0.15.0/0.15.2). A sleep started before the player is tired enough is ended right away instead.
+	private static void GateSleep()
 	{
-		try
+		Rest rest = GameManager.m_Rest;
+		if (rest == null || !rest.IsSleeping())
 		{
-			if (!Active || panel == null || panel.IsPassingTimeOnly())
-			{
-				return true;
-			}
-			float tired = TiredFraction;
-			Fatigue fatigue = GameManager.GetFatigueComponent();
-			if (tired >= SleepThreshold || (fatigue != null && fatigue.IsExhausted()))
-			{
-				return true;
-			}
-			Hud("Вы ещё не устали настолько, чтобы уснуть (" + Mathf.RoundToInt(tired * 100f) + "% из " + Mathf.RoundToInt(SleepThreshold * 100f) + "%)");
-			return false;
+			sleepBlocked = false;
+			return;
 		}
-		catch (Exception ex)
+		if (sleepBlocked)
 		{
-			MelonLogger.Warning("[Fatigue] Sleep check: " + ex.Message);
-			return true;
+			return;
 		}
+		float tired = TiredFraction;
+		Fatigue fatigue = GameManager.GetFatigueComponent();
+		if (tired >= SleepThreshold || (fatigue != null && fatigue.IsExhausted()) || MyMod.IsCycleSkiping)
+		{
+			return;
+		}
+		sleepBlocked = true;
+		rest.EndSleeping(interrupted: true);
+		Hud("Вы ещё не устали настолько, чтобы уснуть (" + Mathf.RoundToInt(tired * 100f) + "% из " + Mathf.RoundToInt(SleepThreshold * 100f) + "%)");
 	}
 
 	public static void Tick()
@@ -356,6 +342,7 @@ public static class CoopFatigue
 			cancelPending = false;
 			return;
 		}
+		GateSleep();
 		if (cancelPending)
 		{
 			cancelPending = false;
