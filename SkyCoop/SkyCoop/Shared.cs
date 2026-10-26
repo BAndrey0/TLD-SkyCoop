@@ -1900,6 +1900,10 @@ public class Shared
 
 	public static void AddPickedGear(Vector3 spawn, int lvl, string lvlguid, int pickerId, int isntID, string gearName, bool needSync)
 	{
+		if (lvlguid == MyMod.level_guid)
+		{
+			RadialSpawnSync.RememberPickup(gearName, spawn);
+		}
 		DataStr.PickedGearSync pickedGearSync = new DataStr.PickedGearSync();
 		pickedGearSync.m_Spawn = spawn;
 		pickedGearSync.m_LevelID = lvl;
@@ -1937,7 +1941,7 @@ public class Shared
 		}
 		else if (lvlguid == MyMod.level_guid)
 		{
-			MyMod.RemovePickedGear(pickedGearKey);
+			MyMod.RemovePickedGear(pickedGearKey, spawn, gearName);
 		}
 	}
 
@@ -2275,6 +2279,14 @@ public class Shared
 		saveSlotSync.m_Location = (int)RegionCompat.GetCurrentRegion();
 		saveSlotSync.m_FixedSpawnScene = MyMod.SavedSceneForSpawn;
 		saveSlotSync.m_FixedSpawnPosition = MyMod.SavedPositionForSpawn;
+		if (MyMod.ServerConfig.m_PlayersSpawnType == 0 && !MyMod.DedicatedServerAppMode && !string.IsNullOrEmpty(MyMod.level_name) && MyMod.level_name != "Empty" && MyMod.level_name != "Boot" && !IsMainMenuScene(MyMod.level_name) && GameManager.GetPlayerTransform() != null)
+		{
+			// "Same as host" used to give only the host's region, and the game then picked a random start point in it,
+			// so players sometimes started far apart. A new character now starts next to the host.
+			saveSlotSync.m_FixedSpawnScene = MyMod.level_name;
+			saveSlotSync.m_FixedSpawnPosition = GameManager.GetPlayerTransform().position;
+			Log("[Spawn] New guest character will start next to the host in " + MyMod.level_name);
+		}
 		if (ExperienceModeManager.GetCurrentExperienceModeType() == ExperienceModeType.Custom)
 		{
 			saveSlotSync.m_CustomExperienceStr = GameManager.GetExperienceModeManagerComponent().GetCurrentCustomModeString();

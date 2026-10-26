@@ -1136,12 +1136,12 @@ public class Pathes
 			}
 			if (__instance.m_Weapon.GetAmmoCount() < 1)
 			{
-				MyMod.SendMultiplayerAudio("PLAY_RIFLE_DRY_3D");
+				MyMod.SendMultiplayerAudio("PLAY_RIFLEDRYFIRE");
 				return;
 			}
 			if (__instance.m_Weapon.m_GunItem.m_IsJammed)
 			{
-				MyMod.SendMultiplayerAudio("PLAY_RIFLE_DRY_3D");
+				MyMod.SendMultiplayerAudio("PLAY_RIFLEDRYFIRE");
 				return;
 			}
 			Vector3 position = __instance.m_Camera.transform.position;
@@ -5522,7 +5522,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (isImmediate)
+			if (isImmediate || MyMod.ApplyingRemoteOpenable)
 			{
 				return;
 			}
@@ -5533,6 +5533,7 @@ public class Pathes
 			}
 			if (MyMod.InOnline())
 			{
+				MyMod.MarkLocalOpenableUse(gUID);
 				if (MyMod.iAmHost)
 				{
 					Shared.ChangeOpenableThingState(MyMod.level_guid, gUID, state: true);
@@ -5560,7 +5561,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (isImmediate)
+			if (isImmediate || MyMod.ApplyingRemoteOpenable)
 			{
 				return;
 			}
@@ -5571,6 +5572,7 @@ public class Pathes
 			}
 			if (MyMod.InOnline())
 			{
+				MyMod.MarkLocalOpenableUse(gUID);
 				if (MyMod.iAmHost)
 				{
 					Shared.ChangeOpenableThingState(MyMod.level_guid, gUID, state: false);
@@ -7770,10 +7772,13 @@ public class Pathes
 			System.Collections.Generic.Dictionary<long, DataStr.PickedGearSync> dictionary = MPSaveManager.LoadPickedGearsData(MyMod.level_guid);
 			if (dictionary != null)
 			{
+				// The list of scene gear has to describe this scene before picked items can be found in it;
+				// it used to be baked only afterwards, so items picked in earlier sessions came back on the host.
+				MyMod.BakePreSpawnedGearsList();
 				foreach (System.Collections.Generic.KeyValuePair<long, DataStr.PickedGearSync> item in dictionary)
 				{
 					MyMod.PickedGearsBackup.Add(item.Value);
-					MyMod.RemovePickedGear(MPSaveManager.GetPickedGearKey(item.Value));
+					MyMod.RemovePickedGear(MPSaveManager.GetPickedGearKey(item.Value), item.Value.m_Spawn, item.Value.m_GearName);
 				}
 			}
 			System.Collections.Generic.Dictionary<string, DataStr.BrokenFurnitureSync> dictionary2 = MPSaveManager.LoadFurnsData(MyMod.level_guid);

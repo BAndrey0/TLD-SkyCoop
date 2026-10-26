@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.14.8";
+		public const string Version = "0.14.9";
 
 		public const string DownloadLink = null;
 
@@ -2308,10 +2308,62 @@ public class MyMod : MelonMod
 
 	public static void RemovePickedGear(long Key)
 	{
-		MelonLogger.Msg("[RemovePickedGear] Key " + Key);
-		if (!ServerConfig.m_DuppedSpawns && PreSpawnedGears.TryGetValue(Key, out var value) && (bool)value.GetComponent<GearItem>() && !value.GetComponent<GearItem>().m_BeenInPlayerInventory && value.gameObject.activeSelf)
+		RemovePickedGear(Key, Vector3.zero, "");
+	}
+
+	// The exact position key misses items that were not in the list baked at scene load (sticks and stones the game
+	// spawns around players later) or that settled a little differently on the other machine; those are matched by
+	// name and distance instead.
+	public static void RemovePickedGear(long Key, Vector3 position, string gearName)
+	{
+		if (ServerConfig.m_DuppedSpawns)
+		{
+			return;
+		}
+		if (PreSpawnedGears.TryGetValue(Key, out var value) && value != null && (bool)value.GetComponent<GearItem>() && !value.GetComponent<GearItem>().m_BeenInPlayerInventory && value.gameObject.activeSelf)
 		{
 			value.gameObject.SetActive(value: false);
+			MelonLogger.Msg("[RemovePickedGear] Key " + Key);
+			return;
+		}
+		if (string.IsNullOrEmpty(gearName) || position == Vector3.zero)
+		{
+			MelonLogger.Msg("[RemovePickedGear] Key " + Key + " not found");
+			return;
+		}
+		GearItem best = null;
+		float bestDistance = 0.75f;
+		for (int i = 0; i < GearManager.m_Gear.Count; i++)
+		{
+			GearItem gearItem = GearManager.m_Gear[i];
+			if (gearItem == null || gearItem.m_BeenInPlayerInventory || gearItem.m_InsideContainer || !gearItem.gameObject.activeInHierarchy || gearItem.GetComponent<Comps.DroppedGearDummy>() != null)
+			{
+				continue;
+			}
+			if (!string.Equals(gearItem.GetGearName(), gearName, System.StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
+			float distance = Vector3.Distance(gearItem.transform.position, position);
+			if (distance < bestDistance)
+			{
+				bestDistance = distance;
+				best = gearItem;
+			}
+		}
+		if (best != null)
+		{
+			RadialObjectSpawner spawner = (best.transform.parent != null) ? best.transform.parent.GetComponent<RadialObjectSpawner>() : null;
+			if (spawner != null)
+			{
+				spawner.RemoveFromSpawns(best.gameObject);
+			}
+			best.gameObject.SetActive(value: false);
+			MelonLogger.Msg("[RemovePickedGear] " + gearName + " matched by distance " + bestDistance.ToString("0.00") + (spawner != null ? " (radial spawn)" : ""));
+		}
+		else
+		{
+			MelonLogger.Msg("[RemovePickedGear] Key " + Key + " " + gearName + " not found");
 		}
 	}
 
@@ -2951,7 +3003,7 @@ public class MyMod : MelonMod
 		case "Locksmith1":
 			if ((bool)GameCompat.Panel<Panel_Inventory_Examine>())
 			{
-				GameCompat.Panel<Panel_Inventory_Examine>().m_ProgressBarAudio = GameAudioManager.PlaySound("PLAY_CRAFTINGARROWS", InterfaceManager.GetSoundEmitter());
+				GameCompat.Panel<Panel_Inventory_Examine>().m_ProgressBarAudio = GameAudioManager.PlaySound("PLAY_CRAFTINGARROW", InterfaceManager.GetSoundEmitter());
 			}
 			break;
 		case "ExpInt":
@@ -4983,7 +5035,7 @@ public class MyMod : MelonMod
 			gameObject4 = UnityEngine.Object.Instantiate(PistolBulletPrefab, shoot.m_position, shoot.m_rotation);
 			gameObject4.AddComponent<Comps.ClientProjectile>();
 			gameObject4.GetComponent<Comps.ClientProjectile>().m_ClientID = from;
-			PlayRemoteGunshot(gearItem, "PLAY_RIFLE_SHOOT_3D", from);
+			PlayRemoteGunshot("PLAY_RIFLEFIRE", from);
 			DoShootFX(shoot.m_position);
 			if (players[from] != null && players[from].GetComponent<Comps.MultiplayerPlayerAnimator>() != null)
 			{
@@ -5001,7 +5053,7 @@ public class MyMod : MelonMod
 			gameObject4 = UnityEngine.Object.Instantiate(RevolverBulletPrefab, shoot.m_position, shoot.m_rotation);
 			gameObject4.AddComponent<Comps.ClientProjectile>();
 			gameObject4.GetComponent<Comps.ClientProjectile>().m_ClientID = from;
-			PlayRemoteGunshot(gearItem, "PLAY_REVOLVER_SHOOT_3D", from);
+			PlayRemoteGunshot("PLAY_REVOLVERFIRE", from);
 			DoShootFX(shoot.m_position);
 		}
 		if (gearItem == null || gameObject4 == null)
@@ -6368,24 +6420,11 @@ public class MyMod : MelonMod
 
 	// Remote shots used legacy 3D event names that no longer match 2.55 weapons; post the weapon's own fire
 	// event on the remote player so it sounds like the local gun, positioned at the shooter.
-	public static void PlayRemoteGunshot(GearItem weaponPrefab, string fallbackSound, int from)
+	// The *_SHOOT_3D events the mod used are not in the 2.55 sound banks, and GunItem.m_FireAudio on the prefab
+	// is not the shot either; the game's own shot events (Play_RifleFire / Play_RevolverFire) are positioned on the shooter.
+	public static void PlayRemoteGunshot(string sound, int from)
 	{
-		if (playersData.Count > 0 && playersData[from] != null && playersData[from].m_Levelid == levelid && players[from] != null && playersData[from].m_LevelGuid == level_guid)
-		{
-			try
-			{
-				Il2CppAK.Wwise.Event fireAudio = (weaponPrefab != null && weaponPrefab.m_GunItem != null) ? weaponPrefab.m_GunItem.m_FireAudio : null;
-				if (fireAudio != null && fireAudio.Post(players[from]) != 0)
-				{
-					return;
-				}
-			}
-			catch (System.Exception ex)
-			{
-				MelonLogger.Warning("[Shoot sync] Weapon fire audio failed: " + ex.Message);
-			}
-		}
-		PlayMultiplayer3dAduio(fallbackSound, from);
+		PlayMultiplayer3dAduio(sound, from);
 	}
 
 	public static void PlayMultiplayer3dAduio(string sound, int from)
@@ -8202,90 +8241,42 @@ public class MyMod : MelonMod
 		}
 	}
 
+	public static bool ApplyingRemoteOpenable;
+
+	// Remote open/close through the game's own Open/Close, so the door's state, animation direction, collision and
+	// navmesh stay consistent. Playing the animation by hand left doors whose "closed" pose looked open.
 	public static void FakeClose(OpenClose OpCl)
 	{
 		if (!OpCl.IsOpen())
 		{
 			return;
 		}
-		if (OpCl.m_Animator != null)
+		ApplyingRemoteOpenable = true;
+		try
 		{
-			OpCl.SetAnimationSpeed(OpCl.m_DefaultOpenCloseSpeedMultiplierValue);
-			OpCl.AnimateOpen(isOpen: false);
+			OpCl.Close(isImmediate: false);
 		}
-		if (OpCl.m_ObjectAnim != null)
+		finally
 		{
-			if (!OpCl.m_ObjectAnim.Play(OpCl.m_AnimsReversed ? "open" : "close"))
-			{
-				return;
-			}
-			OpCl.m_Animating = true;
-			if (OpCl.m_DisableCollisionDuringAnimation)
-			{
-				OpCl.SetCollisionEnabled(enabled: false);
-			}
+			ApplyingRemoteOpenable = false;
 		}
-		bool flag = true;
-		if (OpCl.gameObject != null)
-		{
-			Vector3 position = OpCl.gameObject.transform.position;
-			if (Vector3.Distance(GameManager.GetPlayerObject().transform.position, position) > 50f)
-			{
-				flag = false;
-			}
-		}
-		if (flag)
-		{
-			GameAudioManager.PlaySound(OpCl.m_CloseAudio, OpCl.gameObject);
-		}
-		OpCl.m_IsOpen = false;
 		MelonLogger.Msg("Forcing openable thing to close");
 	}
 
 	public static void FakeOpen(OpenClose OpCl)
 	{
-		if (OpCl.IsOpen())
+		if (OpCl.IsOpen() || (OpCl.m_Safe != null && !OpCl.m_Safe.m_Cracked))
 		{
 			return;
 		}
-		if (OpCl.m_Safe != null && !OpCl.m_Safe.m_Cracked)
+		ApplyingRemoteOpenable = true;
+		try
 		{
-			OpCl.m_Safe.EnableSafeCrackingInterface();
+			OpCl.Open(isImmediate: false);
 		}
-		else
+		finally
 		{
-			if (OpCl.m_Animator != null)
-			{
-				OpCl.SetAnimationSpeed(OpCl.m_DefaultOpenCloseSpeedMultiplierValue);
-				OpCl.AnimateOpen(isOpen: true);
-			}
-			if (OpCl.m_ObjectAnim != null)
-			{
-				OpCl.m_AnimsReversed = OpCl.PlayAnimInReverse();
-				if (!OpCl.m_ObjectAnim.Play(OpCl.m_AnimsReversed ? "close" : "open"))
-				{
-					return;
-				}
-				OpCl.m_Animating = true;
-				if (OpCl.m_DisableCollisionDuringAnimation)
-				{
-					OpCl.SetCollisionEnabled(enabled: false);
-				}
-			}
-			bool flag = true;
-			if (OpCl.gameObject != null)
-			{
-				Vector3 position = OpCl.gameObject.transform.position;
-				if (Vector3.Distance(GameManager.GetPlayerObject().transform.position, position) > 50f)
-				{
-					flag = false;
-				}
-			}
-			if (flag)
-			{
-				GameAudioManager.PlaySound(OpCl.m_OpenAudio, OpCl.gameObject);
-			}
-			OpCl.m_IsOpen = true;
+			ApplyingRemoteOpenable = false;
 		}
 		MelonLogger.Msg("Forcing openable thing to open");
 	}
@@ -8321,6 +8312,12 @@ public class MyMod : MelonMod
 				continue;
 			}
 			OpenClose component = value.GetComponent<OpenClose>();
+			// Forcing a door that is still animating, or that this player just used, played a second open/close
+			// animation over the native one and left the door turned the wrong way.
+			if (component == null || component.m_Animating || Time.realtimeSinceStartup - LastLocalOpenableUse(openableThing.Key) < 2f)
+			{
+				continue;
+			}
 			if (component.IsOpen() != openableThing.Value)
 			{
 				if (!openableThing.Value)
@@ -8333,6 +8330,22 @@ public class MyMod : MelonMod
 				}
 			}
 		}
+	}
+
+	private static readonly System.Collections.Generic.Dictionary<string, float> LocalOpenableUse = new System.Collections.Generic.Dictionary<string, float>();
+
+	public static void MarkLocalOpenableUse(string GUID)
+	{
+		LocalOpenableUse[GUID] = Time.realtimeSinceStartup;
+	}
+
+	private static float LastLocalOpenableUse(string GUID)
+	{
+		if (!LocalOpenableUse.TryGetValue(GUID, out var value))
+		{
+			return -100f;
+		}
+		return value;
 	}
 
 	public static void SendOpenableThing(string Scene, string GUID, bool state)
@@ -11666,6 +11679,7 @@ public class MyMod : MelonMod
 		CheatConsole.Tick();
 		ItemSpawner.Tick();
 		SteamFriendsWindow.Tick();
+		RadialSpawnSync.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)

@@ -1928,7 +1928,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.14.8");
+		packet.Write("0.14.9");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));

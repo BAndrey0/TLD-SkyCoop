@@ -199,7 +199,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.14.8")
+				if (text2 != "0.14.9")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
