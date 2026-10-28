@@ -542,6 +542,31 @@ internal sealed class LauncherForm : Form
 		string installDir = state.installDirectory;
 		if (!installed)
 		{
+			DialogResult existing = MessageBox.Show(this, "Кооператив уже ставили раньше (есть папка player с папкой game внутри)?\n\n«Да» — указать эту папку, лаунчер её обновит.\n«Нет» — новая установка из игры Steam.", Text, MessageBoxButtons.YesNoCancel);
+			if (existing == DialogResult.Cancel)
+			{
+				return;
+			}
+			if (existing == DialogResult.Yes)
+			{
+				string folder = AskFolder("Укажите папку кооперативной копии (обычно player)", "game\\tld.exe");
+				if (folder == null)
+				{
+					return;
+				}
+				if (!IsInstalled(folder))
+				{
+					MessageBox.Show(this, "В этой папке нет установленного кооператива (game\\Mods\\SkyCoop.dll и Launch-Coop.ps1).", Text);
+					return;
+				}
+				state.installDirectory = folder;
+				SaveState();
+				installed = true;
+				installDir = folder;
+			}
+		}
+		if (!installed)
+		{
 			gameDir = FindSteamGame();
 			if (gameDir != null && MessageBox.Show(this, "Найдена игра:\n" + gameDir + "\n\nИспользовать её? Оригинал не изменится, мод ставится в отдельную копию (~21 ГБ).", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
 			{
@@ -583,7 +608,12 @@ internal sealed class LauncherForm : Form
 		catch (Exception ex)
 		{
 			Log("ОШИБКА: " + ex.Message);
-			MessageBox.Show(this, ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+			string message = ex.Message;
+			if (message.IndexOf("does not match", StringComparison.OrdinalIgnoreCase) >= 0 || message.IndexOf("mismatch", StringComparison.OrdinalIgnoreCase) >= 0)
+			{
+				message = "Версия игры в Steam отличается от той, на которой проверен мод (Survival 2.55, сборка 22915504). Скорее всего, Steam обновил игру.\n\nЕсли кооператив уже установлен (папка player), запустите установку ещё раз и выберите «Да», указав эту папку: отдельная копия игры не обновляется Steam и продолжит работать.\n\n" + ex.Message;
+			}
+			MessageBox.Show(this, message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
 		}
 		finally
 		{
