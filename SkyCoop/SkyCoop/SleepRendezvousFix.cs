@@ -247,6 +247,30 @@ public static class SleepRendezvousFix
 		return false;
 	}
 
+	// Set while the group's agreed sleep is being started; any other sleep start in co-op is a solo sleep.
+	public static bool GroupStart;
+
+	// Co-op sleep is a group action: a sleep started alone restored only that player and did not move the world clock.
+	public static bool SoloSleepBlocked()
+	{
+		if (!MyMod.InOnline() || GroupStart || MyMod.IsDead)
+		{
+			return false;
+		}
+		if (MyMod.iAmHost)
+		{
+			foreach (System.Collections.Generic.KeyValuePair<int, GameServer.Client> client in GameServer.Server.clients)
+			{
+				if (client.Key > 0 && client.Value != null && !client.Value.RCON && client.Value.IsBusy())
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+		return true;
+	}
+
 	public static void ClickWait()
 	{
 		if (lastClickFrame == Time.frameCount)
@@ -356,7 +380,15 @@ public static class SleepRendezvousFix
 		MyMod.MyCycleSkip = num2;
 		Status = "Начинаем сон";
 		MelonLogger.Msg("[Sleep wait] All participants ready; starting native rest, commonHours=" + num2 + ", requestedHours=" + num);
-		panel_Rest.OnRest();
+		GroupStart = true;
+		try
+		{
+			panel_Rest.OnRest();
+		}
+		finally
+		{
+			GroupStart = false;
+		}
 		MyMod.SyncSleeping();
 	}
 

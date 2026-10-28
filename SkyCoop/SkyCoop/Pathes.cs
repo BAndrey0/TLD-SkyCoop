@@ -775,7 +775,6 @@ public class Pathes
 			if (sync != null && (name == "open" || name == "close") && sync.m_LastAnim != name)
 			{
 				sync.m_LastAnim = name;
-				sync.CallSync();
 			}
 		}
 	}
@@ -4613,6 +4612,11 @@ public class Pathes
 	{
 		internal static bool Prefix(Panel_Rest __instance)
 		{
+			if (SleepRendezvousFix.SoloSleepBlocked())
+			{
+				HUDMessage.AddMessage("В кооперативе спать можно только вместе — нажми кнопку ожидания других игроков");
+				return false;
+			}
 			if (!CoopFatigue.SleepAllowed(explain: true))
 			{
 				return false;

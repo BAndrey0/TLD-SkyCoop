@@ -76,7 +76,7 @@ public static class PickupSync
 		Sent[instanceId] = Time.realtimeSinceStartup;
 	}
 
-	private static bool SentRecently(int instanceId)
+	public static bool SentRecently(int instanceId)
 	{
 		if (Sent.TryGetValue(instanceId, out var time))
 		{

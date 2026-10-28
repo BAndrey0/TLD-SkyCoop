@@ -65,6 +65,18 @@ public static class CoopFatigue
 
 	private static float fatiguePerSecond;
 
+	private static MelonPreferences_Entry<bool> actionFatiguePref;
+
+	private static float fatigueAtActionStart;
+
+	private static bool ActionFatigue => actionFatiguePref != null && actionFatiguePref.Value;
+
+	private static float savedWalking = -1f;
+
+	private static float savedSprintMin;
+
+	private static float savedSprintMax;
+
 	private static bool actionAllowsPartial;
 
 	private static string actionName = "";
@@ -91,6 +103,7 @@ public static class CoopFatigue
 			{
 				MelonPreferences_Category category = MelonPreferences.CreateCategory("SkyCoop");
 				enabledPref = category.CreateEntry("CoopFatigue", default_value: true, "Co-op work and fatigue rules (Strength, sleep threshold)");
+				actionFatiguePref = category.CreateEntry("CoopActionFatigue", default_value: false, "Work also tires (fatigue for the action's game hours, heavier work more). Off: fatigue only grows with time awake");
 			}
 			if (!enabledPref.Value || !MyMod.InOnline() || MyMod.IsDead)
 			{
@@ -168,11 +181,12 @@ public static class CoopFatigue
 			realSeconds = Mathf.Max(realSeconds, 0.5f);
 			actionActive = true;
 			actionStarted = now;
+			fatigueAtActionStart = (fatigue != null) ? fatigue.m_CurrentFatigue : 0f;
 			actionEnds = now + realSeconds;
 			actionAllowsPartial = partial;
 			actionName = name;
 			strengthPerSecond = cost / realSeconds;
-			fatiguePerSecond = (fatigueMultiplier - 1f) * standingPerHour * hours / realSeconds;
+			fatiguePerSecond = ActionFatigue ? ((fatigueMultiplier - 1f) * standingPerHour * hours / realSeconds) : 0f;
 			MelonLogger.Msg("[Fatigue] " + name + " " + hours.ToString("0.##") + " h, cost " + cost.ToString("0") + ", strength " + strength.ToString("0") + (partial ? " (resumable)" : ""));
 		}
 		catch (Exception ex)
@@ -333,8 +347,10 @@ public static class CoopFatigue
 		{
 			actionActive = false;
 			cancelPending = false;
+			RestoreMovementFatigue();
 			return;
 		}
+		FlattenMovementFatigue();
 		if (cancelPending)
 		{
 			cancelPending = false;
@@ -356,9 +372,22 @@ public static class CoopFatigue
 			else
 			{
 				strength = Mathf.Max(0f, strength - strengthPerSecond * dt);
-				if (fatiguePerSecond > 0f && GameManager.GetFatigueComponent() != null)
+				Fatigue workFatigue = GameManager.GetFatigueComponent();
+				if (workFatigue != null)
 				{
-					GameManager.GetFatigueComponent().AddFatigue(fatiguePerSecond * dt);
+					if (fatiguePerSecond > 0f)
+					{
+						workFatigue.AddFatigue(fatiguePerSecond * dt);
+					}
+					else if (!ActionFatigue)
+					{
+						// The game charges fatigue for the action's skipped hours; here fatigue only follows real time awake.
+						float allowed = fatigueAtActionStart + workFatigue.m_FatigueIncreasePerHourStanding * (now - actionStarted) / 300f;
+						if (workFatigue.m_CurrentFatigue > allowed)
+						{
+							workFatigue.m_CurrentFatigue = allowed;
+						}
+					}
 				}
 				if (strength <= 0f)
 				{
@@ -410,6 +439,42 @@ public static class CoopFatigue
 		}
 	}
 
+	// Fatigue works as the time-awake clock in co-op: walking and sprinting tire no faster than standing.
+	private static void FlattenMovementFatigue()
+	{
+		Fatigue fatigue = GameManager.GetFatigueComponent();
+		if (fatigue == null)
+		{
+			return;
+		}
+		if (savedWalking < 0f)
+		{
+			savedWalking = fatigue.m_FatigueIncreasePerHourWalking;
+			savedSprintMin = fatigue.m_FatigueIncreasePerHourSprintingMin;
+			savedSprintMax = fatigue.m_FatigueIncreasePerHourSprintingMax;
+		}
+		float standing = fatigue.m_FatigueIncreasePerHourStanding;
+		fatigue.m_FatigueIncreasePerHourWalking = standing;
+		fatigue.m_FatigueIncreasePerHourSprintingMin = standing;
+		fatigue.m_FatigueIncreasePerHourSprintingMax = standing;
+	}
+
+	private static void RestoreMovementFatigue()
+	{
+		if (savedWalking < 0f)
+		{
+			return;
+		}
+		Fatigue fatigue = GameManager.GetFatigueComponent();
+		if (fatigue != null)
+		{
+			fatigue.m_FatigueIncreasePerHourWalking = savedWalking;
+			fatigue.m_FatigueIncreasePerHourSprintingMin = savedSprintMin;
+			fatigue.m_FatigueIncreasePerHourSprintingMax = savedSprintMax;
+		}
+		savedWalking = -1f;
+	}
+
 	public static void ResetForRespawn()
 	{
 		strength = MaxStrength;
@@ -430,7 +495,13 @@ public static class CoopFatigue
 		{
 			barAlpha = Mathf.MoveTowards(barAlpha, wanted ? 1f : 0f, Time.unscaledDeltaTime * 2f);
 		}
-		if (barAlpha <= 0.01f || !Active)
+		if (!Active)
+		{
+			StrengthBar.HideNow();
+			return;
+		}
+		StrengthBar.Update(Mathf.Clamp01(strength / MaxStrength), barAlpha);
+		if (barAlpha <= 0.01f || StrengthBar.Available)
 		{
 			return;
 		}
@@ -461,8 +532,19 @@ public static class CoopFatigue
 		GUI.color = old;
 	}
 
+	private static string lastHud = "";
+
+	private static float lastHudTime = -100f;
+
 	private static void Hud(string text)
 	{
+		// The same message from repeated clicks or per-frame checks is shown once every few seconds.
+		if (text == lastHud && Time.realtimeSinceStartup - lastHudTime < 4f)
+		{
+			return;
+		}
+		lastHud = text;
+		lastHudTime = Time.realtimeSinceStartup;
 		try
 		{
 			HUDMessage.AddMessage(text);

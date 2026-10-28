@@ -125,7 +125,7 @@ public static class RadialSpawnSync
 	}
 
 	// Seeding happens only on the outermost spawner call. The game retries a failed spot by calling itself again;
-	// reseeding there produced the same failed spot every time and recursed until the stack overflowed (0.15.3 crash
+	// reseeding there produced the same failed spot every time and recursed until the stack overflowed (0.15.0 crash
 	// at server start). Nested calls continue the outer seeded sequence, which keeps them deterministic.
 	private static int depth;
 

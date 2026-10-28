@@ -1900,8 +1900,15 @@ public class Shared
 
 	public static void AddPickedGear(Vector3 spawn, int lvl, string lvlguid, int pickerId, int isntID, string gearName, bool needSync)
 	{
-		if (needSync && PickupSync.TryGetWorldPosition(isntID, out var worldPosition))
+		if (needSync)
 		{
+			// Only items that lay in the world are shared pickups. Items that appear straight in the inventory (wood
+			// from breaking down, harvest results) were sent too, and the host then "cancelled" them as picked later,
+			// taking them away from the player. Each item is sent once; the old patches fired up to three times.
+			if (!PickupSync.TryGetWorldPosition(isntID, out var worldPosition) || PickupSync.SentRecently(isntID))
+			{
+				return;
+			}
 			spawn = worldPosition;
 		}
 		if (lvlguid == MyMod.level_guid)

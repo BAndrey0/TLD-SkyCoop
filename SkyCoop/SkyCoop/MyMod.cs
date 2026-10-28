@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.3";
+		public const string Version = "0.15.4";
 
 		public const string DownloadLink = null;
 
@@ -5084,6 +5084,12 @@ public class MyMod : MelonMod
 
 	public static void DoSyncContainer(DataStr.ContainerOpenSync sync)
 	{
+		// Replaying the other player's lid animation broke the lid more with every repeat, even with the state checks
+		// added in 0.15.4. The lid is cosmetic (contents are synced separately), so remote lid animations are not played.
+		if (sync != null)
+		{
+			return;
+		}
 		Il2CppSystem.Collections.Generic.List<Container> containers = ContainerManager.m_Containers;
 		for (int i = 0; i < containers.Count; i++)
 		{
@@ -6541,6 +6547,7 @@ public class MyMod : MelonMod
 	{
 		MelonLogger.Msg("BeginRespawn");
 		CoopFatigue.ResetForRespawn();
+		TimerWatchdog.ResetForRespawn();
 		GameManager.GetConditionComponent().m_CurrentHP = GameManager.GetConditionComponent().GetAdjustedMaxHP();
 		GameManager.GetFreezingComponent().m_CurrentFreezing = 0f;
 		GameManager.GetHungerComponent().m_CurrentReserveCalories = GameManager.GetHungerComponent().m_MaxReserveCalories;
@@ -11752,6 +11759,7 @@ public class MyMod : MelonMod
 		DeathRespawn.Tick();
 		CoopFatigue.Tick();
 		SelfTest.Tick();
+		TimerWatchdog.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		if (!DedicatedServerAppMode)
