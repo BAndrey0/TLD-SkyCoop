@@ -490,7 +490,8 @@ public static class CoopFatigue
 	// sprint bar so it does not cover the health widget. It fades in while Strength is spent and out when full.
 	public static void Draw()
 	{
-		bool wanted = Active && (strength < MaxStrength - 0.01f || actionActive);
+		// Shown like the game's time and scent indicators: while the HUD key (Tab) is held, and while working.
+		bool wanted = Active && (actionActive || KeyboardUtilities.InputManager.GetKey(KeyCode.Tab));
 		if (Event.current != null && Event.current.type == EventType.Repaint)
 		{
 			barAlpha = Mathf.MoveTowards(barAlpha, wanted ? 1f : 0f, Time.unscaledDeltaTime * 2f);

@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.4";
+		public const string Version = "0.15.5";
 
 		public const string DownloadLink = null;
 
@@ -5085,7 +5085,7 @@ public class MyMod : MelonMod
 	public static void DoSyncContainer(DataStr.ContainerOpenSync sync)
 	{
 		// Replaying the other player's lid animation broke the lid more with every repeat, even with the state checks
-		// added in 0.15.4. The lid is cosmetic (contents are synced separately), so remote lid animations are not played.
+		// added in 0.15.5. The lid is cosmetic (contents are synced separately), so remote lid animations are not played.
 		if (sync != null)
 		{
 			return;
@@ -8388,6 +8388,11 @@ public class MyMod : MelonMod
 				continue;
 			}
 			OpenClose component = value.GetComponent<OpenClose>();
+			// Doors of containers are not driven from the other player's state: replaying those animations broke them.
+			if (component != null && ContainerDoorGuard.ContainerOf(component) != null)
+			{
+				continue;
+			}
 			// Forcing a door that is still animating, or that this player just used, played a second open/close
 			// animation over the native one and left the door turned the wrong way.
 			if (component == null || component.m_Animating || Time.realtimeSinceStartup - LastLocalOpenableUse(openableThing.Key) < 2f)

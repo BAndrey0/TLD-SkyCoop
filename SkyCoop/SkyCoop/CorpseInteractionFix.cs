@@ -19,14 +19,13 @@ public static class CorpseInteractionFix
 	{
 		private static bool Prefix(WildlifeItemInteraction __instance)
 		{
-			BodyHarvest carcass = StrippedCarcass(__instance);
-			if (carcass == null)
+			if (!IsStrippedCorpse(__instance, out var carcass))
 			{
 				return true;
 			}
 			try
 			{
-				__instance.HoverText = Localization.Get("GAMEPLAY_Harvest");
+				__instance.HoverText = Localization.Get((carcass != null) ? "GAMEPLAY_Harvest" : "GAMEPLAY_PickUp");
 			}
 			catch
 			{
@@ -40,47 +39,68 @@ public static class CorpseInteractionFix
 	{
 		private static bool Prefix(WildlifeItemInteraction __instance, ref bool __result)
 		{
-			BodyHarvest carcass = StrippedCarcass(__instance);
-			if (carcass == null)
+			if (!IsStrippedCorpse(__instance, out var carcass))
 			{
 				return true;
 			}
+			__result = true;
 			try
 			{
-				carcass.InteractWithBodyHarvest(false);
-				__result = true;
+				if (carcass != null)
+				{
+					// Same path as the mod's BodyHarvestInteraction patch: in co-op the host hands out the carcass.
+					if (MyMod.InOnline())
+					{
+						MyMod.RequestAnimalCorpseInteration(carcass);
+					}
+					else
+					{
+						carcass.InteractWithBodyHarvest(false);
+					}
+				}
+				else
+				{
+					// Rabbits: the mod removes their BodyHarvest; the dead rabbit is picked up whole through the host.
+					ObjectGuid guid = __instance.GetComponent<ObjectGuid>();
+					if (guid != null)
+					{
+						MyMod.AttemptToPickupRabbit(guid.Get());
+					}
+				}
 			}
 			catch (Exception ex)
 			{
-				MelonLogger.Warning("[Corpse] Harvest interaction: " + ex.Message);
+				MelonLogger.Warning("[Corpse] Interaction: " + ex.Message);
 				__result = false;
 			}
 			return false;
 		}
 	}
 
-	private static BodyHarvest StrippedCarcass(WildlifeItemInteraction interaction)
+	// A corpse made by the mod: no BaseAi any more, but still marked as a co-op corpse.
+	private static bool IsStrippedCorpse(WildlifeItemInteraction interaction, out BodyHarvest carcass)
 	{
+		carcass = null;
 		try
 		{
-			if (interaction == null || interaction.TryCast<WildlifeItemInteraction>() == null)
+			if (interaction == null || interaction.TryCast<WildlifeItemInteraction>() == null || interaction.m_BaseAi != null)
 			{
-				return null;
+				return false;
 			}
-			if (interaction.m_BaseAi != null)
+			if (interaction.GetComponent<Comps.AnimalCorpseObject>() == null && interaction.GetComponent<BodyHarvest>() == null)
 			{
-				return null;
+				return false;
 			}
-			BodyHarvest carcass = interaction.m_BodyHarvest;
+			carcass = interaction.m_BodyHarvest;
 			if (carcass == null)
 			{
 				carcass = interaction.GetComponent<BodyHarvest>();
 			}
-			return carcass;
+			return true;
 		}
 		catch
 		{
-			return null;
+			return false;
 		}
 	}
 }

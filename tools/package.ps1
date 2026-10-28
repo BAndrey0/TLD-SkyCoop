@@ -13,7 +13,7 @@ if (!(Test-Path -LiteralPath (Join-Path $GameDir 'MelonLoader\Il2CppAssemblies\A
 	throw "No MelonLoader Il2Cpp assemblies in $GameDir. Install the kit once and start the game to generate them, or pass -GameDir."
 }
 
-foreach ($project in @('SkyCoop\SkyCoop.csproj', 'CoopProfile\CoopProfile.csproj')) {
+foreach ($project in @('SkyCoop\SkyCoop.csproj', 'CoopProfile\CoopProfile.csproj', 'Launcher\Launcher.csproj')) {
 	& $Dotnet build (Join-Path $root $project) -c Release -nologo "-p:GameDir=$GameDir"
 	if ($LASTEXITCODE -ne 0) { throw "Build failed: $project" }
 }
@@ -47,6 +47,11 @@ $manifest = [ordered]@{
 	modVersion = $version
 }
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $kit 'manifest.json') -Encoding utf8
+
+# The launcher goes into the kit and, as its own release asset, next to the archive (it updates itself from it).
+$launcher = Join-Path $root 'Launcher\bin\Release\net48\TLD-Coop-Launcher.exe'
+Copy-Item -LiteralPath $launcher -Destination $kit
+Copy-Item -LiteralPath $launcher -Destination $out
 
 $zip = Join-Path $out "TLD-SkyCoop-$version.zip"
 Compress-Archive -Path $kit -DestinationPath $zip

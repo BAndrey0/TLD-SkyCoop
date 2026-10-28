@@ -6,8 +6,8 @@ using UnityEngine;
 
 namespace SkyCoop;
 
-// The Strength meter drawn with the game's own HUD pieces: a copy of the sprint bar (same track, fill and glow
-// sprites) placed just above it, with an icon from the HUD atlas instead of the running man. Falls back to the
+// The Strength meter drawn with the game's own HUD pieces: a copy of the sprint ring (same track, fill and glow
+// sprites) to the left of it, with the crafting icon from the HUD atlas instead of the running man. Falls back to the
 // plain IMGUI bar in CoopFatigue when the HUD layout is not what this expects.
 public static class StrengthBar
 {
@@ -49,7 +49,9 @@ public static class StrengthBar
 			GameObject source = hud.m_SprintBar.gameObject;
 			root = UnityEngine.Object.Instantiate(source, source.transform.parent);
 			root.name = "SkyCoopStrengthBar";
-			root.transform.localPosition = source.transform.localPosition + new Vector3(0f, 34f, 0f);
+			// Placed to the left of the sprint ring at the same height, mirrored around it by one ring width.
+			float ring = Mathf.Max(hud.m_Sprite_SprintBar.width, hud.m_SprintBar.width);
+			root.transform.localPosition = source.transform.localPosition + new Vector3(0f - (ring + 12f), 0f, 0f);
 			fill = Counterpart(source.transform, hud.m_Sprite_SprintBar);
 			icon = Counterpart(source.transform, hud.m_Sprite_SprintCenter) ?? Counterpart(source.transform, hud.m_Sprite_SprintBarX);
 			Hide(Counterpart(source.transform, hud.m_Sprite_SprintReductionBar));
@@ -64,7 +66,6 @@ public static class StrengthBar
 				throw new InvalidOperationException("sprint fill sprite not found in the copy");
 			}
 			fillWidth = fill.width;
-			fill.color = new Color(0.86f, 0.74f, 0.52f, fill.color.a);
 			PickIcon();
 			widgets.Clear();
 			baseAlpha.Clear();
