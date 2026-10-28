@@ -260,6 +260,9 @@ public class Comps
 			{
 				return;
 			}
+			// Remember the state before playing: the lid usually sits on a child object, and without this a second
+			// "open" (both players opening together) was played over the first and twisted the lid.
+			m_LastAnim = "open";
 			for (int i = 0; i < m_Cont.m_ObjectAnims.Length; i++)
 			{
 				ObjectAnim objectAnim = m_Cont.m_ObjectAnims[i];
@@ -280,6 +283,7 @@ public class Comps
 			{
 				return;
 			}
+			m_LastAnim = "close";
 			for (int i = 0; i < m_Cont.m_ObjectAnims.Length; i++)
 			{
 				ObjectAnim objectAnim = m_Cont.m_ObjectAnims[i];

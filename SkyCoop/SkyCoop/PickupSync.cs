@@ -56,6 +56,21 @@ public static class PickupSync
 
 	private static readonly Dictionary<int, float> Sent = new Dictionary<int, float>();
 
+	private static readonly Dictionary<int, Candidate> ByInstance = new Dictionary<int, Candidate>();
+
+	// Where the item lay before the game moved it into the inspect view in front of the camera. The pickup patches
+	// read the position after that move, so the others got the camera position and never found the item.
+	public static bool TryGetWorldPosition(int instanceId, out Vector3 position)
+	{
+		if (ByInstance.TryGetValue(instanceId, out var candidate) && Time.realtimeSinceStartup - candidate.Time < 120f)
+		{
+			position = candidate.Position;
+			return true;
+		}
+		position = Vector3.zero;
+		return false;
+	}
+
 	public static void MarkSent(int instanceId)
 	{
 		Sent[instanceId] = Time.realtimeSinceStartup;
@@ -94,13 +109,19 @@ public static class PickupSync
 					Candidates.Remove(key);
 				}
 			}
-			Candidates[item.Pointer] = new Candidate
+			Candidate remembered = new Candidate
 			{
 				Position = item.transform.position,
 				Gear = item.GetGearName(),
 				InstanceId = item.m_InstanceID,
 				Time = now
 			};
+			Candidates[item.Pointer] = remembered;
+			if (ByInstance.Count > 128)
+			{
+				ByInstance.Clear();
+			}
+			ByInstance[remembered.InstanceId] = remembered;
 		}
 		catch (Exception ex)
 		{

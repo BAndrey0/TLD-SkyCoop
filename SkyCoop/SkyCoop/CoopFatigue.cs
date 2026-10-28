@@ -303,32 +303,25 @@ public static class CoopFatigue
 		}
 	}
 
-	private static bool sleepBlocked;
-
-	// Sleep threshold without patching Panel_Rest: in this build its small methods share code with others, and a
-	// patch on OnFullRest also ran for IsPassingTimeOnly and UI creation, recursing until the stack overflowed at
-	// server start (0.15.0/0.15.2). A sleep started before the player is tired enough is ended right away instead.
-	private static void GateSleep()
+	// Sleep threshold, checked before a sleep starts (Panel_Rest.DoRest and the group sleep wait). Ending a sleep
+	// that already began left the screen faded to black, and a patch on Panel_Rest.OnFullRest recursed (0.15.0/0.15.1).
+	public static bool SleepAllowed(bool explain)
 	{
-		Rest rest = GameManager.m_Rest;
-		if (rest == null || !rest.IsSleeping())
+		if (!Active)
 		{
-			sleepBlocked = false;
-			return;
-		}
-		if (sleepBlocked)
-		{
-			return;
+			return true;
 		}
 		float tired = TiredFraction;
 		Fatigue fatigue = GameManager.GetFatigueComponent();
-		if (tired >= SleepThreshold || (fatigue != null && fatigue.IsExhausted()) || MyMod.IsCycleSkiping)
+		if (tired >= SleepThreshold || (fatigue != null && fatigue.IsExhausted()))
 		{
-			return;
+			return true;
 		}
-		sleepBlocked = true;
-		rest.EndSleeping(interrupted: true);
-		Hud("Вы ещё не устали настолько, чтобы уснуть (" + Mathf.RoundToInt(tired * 100f) + "% из " + Mathf.RoundToInt(SleepThreshold * 100f) + "%)");
+		if (explain)
+		{
+			Hud("Вы ещё не устали настолько, чтобы уснуть (" + Mathf.RoundToInt(tired * 100f) + "% из " + Mathf.RoundToInt(SleepThreshold * 100f) + "%)");
+		}
+		return false;
 	}
 
 	public static void Tick()
@@ -342,7 +335,6 @@ public static class CoopFatigue
 			cancelPending = false;
 			return;
 		}
-		GateSleep();
 		if (cancelPending)
 		{
 			cancelPending = false;
@@ -425,21 +417,48 @@ public static class CoopFatigue
 		cancelPending = false;
 	}
 
+	private static float barAlpha;
+
+	private static GUIStyle labelStyle;
+
+	// A thin bar in the style of the game's own meters (dark track, pale fill, small caps label), centred above the
+	// sprint bar so it does not cover the health widget. It fades in while Strength is spent and out when full.
 	public static void Draw()
 	{
-		if (!Active || (strength >= MaxStrength - 0.01f && !actionActive))
+		bool wanted = Active && (strength < MaxStrength - 0.01f || actionActive);
+		if (Event.current != null && Event.current.type == EventType.Repaint)
+		{
+			barAlpha = Mathf.MoveTowards(barAlpha, wanted ? 1f : 0f, Time.unscaledDeltaTime * 2f);
+		}
+		if (barAlpha <= 0.01f || !Active)
 		{
 			return;
 		}
-		float x = 20f;
-		float y = Screen.height - 46;
-		float width = 180f;
-		GUI.Box(new Rect(x, y, width + 10f, 26f), "");
-		Color color = GUI.color;
-		GUI.color = (strength > 30f) ? new Color(0.85f, 0.8f, 0.55f, 0.9f) : new Color(0.9f, 0.4f, 0.3f, 0.9f);
-		GUI.DrawTexture(new Rect(x + 5f, y + 5f, width * (strength / MaxStrength), 16f), Texture2D.whiteTexture);
-		GUI.color = color;
-		GUI.Label(new Rect(x + 8f, y + 3f, width, 22f), "Сила " + Mathf.FloorToInt(strength));
+		float scale = Screen.height / 1080f;
+		float width = 300f * scale;
+		float height = Mathf.Max(3f, 5f * scale);
+		float x = (Screen.width - width) / 2f;
+		float y = Screen.height * 0.865f;
+		if (labelStyle == null)
+		{
+			labelStyle = new GUIStyle(GUI.skin.label);
+			labelStyle.alignment = TextAnchor.LowerCenter;
+			labelStyle.fontStyle = FontStyle.Bold;
+		}
+		labelStyle.fontSize = Mathf.Max(10, Mathf.RoundToInt(15f * scale));
+		Color old = GUI.color;
+		float fill = Mathf.Clamp01(strength / MaxStrength);
+		Color fillColor = (fill > 0.25f) ? new Color(0.88f, 0.85f, 0.76f) : new Color(0.85f, 0.32f, 0.25f);
+		GUI.color = new Color(0f, 0f, 0f, 0.55f * barAlpha);
+		GUI.DrawTexture(new Rect(x - 1f, y - 1f, width + 2f, height + 2f), Texture2D.whiteTexture);
+		GUI.color = new Color(fillColor.r, fillColor.g, fillColor.b, 0.9f * barAlpha);
+		GUI.DrawTexture(new Rect(x, y, width * fill, height), Texture2D.whiteTexture);
+		Rect label = new Rect(x, y - 24f * scale, width, 22f * scale);
+		GUI.color = new Color(0f, 0f, 0f, 0.6f * barAlpha);
+		GUI.Label(new Rect(label.x + 1f, label.y + 1f, label.width, label.height), "СИЛА", labelStyle);
+		GUI.color = new Color(0.88f, 0.85f, 0.76f, 0.95f * barAlpha);
+		GUI.Label(label, "СИЛА", labelStyle);
+		GUI.color = old;
 	}
 
 	private static void Hud(string text)

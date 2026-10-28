@@ -770,10 +770,12 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (__instance.gameObject != null && __instance.gameObject.GetComponent<Comps.ContainersSync>() != null && __instance.gameObject.GetComponent<Comps.ContainersSync>().m_LastAnim != name)
+			// The animated lid is often a child of the container, so look for the sync component upwards too.
+			Comps.ContainersSync sync = (__instance.gameObject != null) ? __instance.gameObject.GetComponentInParent<Comps.ContainersSync>() : null;
+			if (sync != null && (name == "open" || name == "close") && sync.m_LastAnim != name)
 			{
-				__instance.gameObject.GetComponent<Comps.ContainersSync>().m_LastAnim = name;
-				__instance.gameObject.GetComponent<Comps.ContainersSync>().CallSync();
+				sync.m_LastAnim = name;
+				sync.CallSync();
 			}
 		}
 	}
@@ -4609,8 +4611,12 @@ public class Pathes
 	[HarmonyPatch(typeof(Panel_Rest), "DoRest")]
 	private static class Panel_Rest_DoRest
 	{
-		internal static void Prefix(Panel_Rest __instance)
+		internal static bool Prefix(Panel_Rest __instance)
 		{
+			if (!CoopFatigue.SleepAllowed(explain: true))
+			{
+				return false;
+			}
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -4623,6 +4629,7 @@ public class Pathes
 				MelonLogger.Msg("[Rest] Saving link on fake bed");
 				FakeBedRoll = __instance.m_Bed.gameObject;
 			}
+			return true;
 		}
 	}
 

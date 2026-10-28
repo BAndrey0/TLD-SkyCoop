@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.2";
+		public const string Version = "0.15.3";
 
 		public const string DownloadLink = null;
 
@@ -2334,7 +2334,7 @@ public class MyMod : MelonMod
 			return;
 		}
 		GearItem best = null;
-		float bestDistance = 0.75f;
+		float bestDistance = 1.25f;
 		for (int i = 0; i < GearManager.m_Gear.Count; i++)
 		{
 			GearItem gearItem = GearManager.m_Gear[i];

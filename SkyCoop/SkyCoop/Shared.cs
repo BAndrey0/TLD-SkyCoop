@@ -1900,6 +1900,10 @@ public class Shared
 
 	public static void AddPickedGear(Vector3 spawn, int lvl, string lvlguid, int pickerId, int isntID, string gearName, bool needSync)
 	{
+		if (needSync && PickupSync.TryGetWorldPosition(isntID, out var worldPosition))
+		{
+			spawn = worldPosition;
+		}
 		if (lvlguid == MyMod.level_guid)
 		{
 			RadialSpawnSync.RememberPickup(gearName, spawn);

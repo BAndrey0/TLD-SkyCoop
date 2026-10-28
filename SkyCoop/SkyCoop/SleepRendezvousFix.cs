@@ -225,6 +225,10 @@ public static class SleepRendezvousFix
 			}
 			return false;
 		}
+		if (!CoopFatigue.SleepAllowed(explain))
+		{
+			return false;
+		}
 		if (MyMod.CanSleep(domessage: false))
 		{
 			return true;
