@@ -4,6 +4,7 @@ namespace SkyCoop;
 
 public static class WildlifeSpawnAuthorityPolicy
 {
+	public static bool LocalReady(bool loading, bool dead, string scene) => !loading && !dead && WorldScene(scene);
 	public static bool WorldScene(string scene)
 	{
 		if (!string.IsNullOrEmpty(scene) && scene != "null" && scene != "Boot" && scene != "Empty" && scene != "MainMenu")

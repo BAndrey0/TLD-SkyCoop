@@ -289,17 +289,7 @@ public static class CoopReturnToMenu
 		{
 			return;
 		}
-		MelonLogger.Msg("[ReturnMenu] Host left the session");
-		lastNotice = "Хост вышел из игры. Ваш персонаж сохранён.";
-		noticeUntil = Clock.Elapsed.TotalSeconds + 15.0;
-		if (!Request())
-		{
-			MelonLogger.Warning("[ReturnMenu] Could not start return after host left; canRequest=" + CanRequest);
-		}
-		else
-		{
-			lastNotice = "Хост вышел из игры. Ваш персонаж сохранён.";
-		}
+		ConnectionLost("Хост покинул сессию.");
 	}
 
 	private static void NotifyGuests()
@@ -342,9 +332,23 @@ public static class CoopReturnToMenu
 		}
 	}
 
-	private static void LoadMenuAfterCheckpoint()
+	public static void ConnectionLost(string reason)
 	{
-		if (!localSaved)
+		if (MyMod.iAmHost || unloading || Shared.IsMainMenuScene(MyMod.level_name)) return;
+		lastNotice = reason + " Возврат в меню. Доступно последнее сохранение.";
+		noticeUntil = Clock.Elapsed.TotalSeconds + 60;
+		MelonLogger.Warning("[Connection] " + reason);
+		pending = false;
+		SleepRendezvousFix.CancelWaiting(explain: false);
+		// Do not keep simulating or commit an isolated copy of the server world.
+		MyMod.QuitWithoutSaving = true;
+		GameManager.CancelPendingSave();
+		LoadMenuAfterCheckpoint(requireCheckpoint: false);
+	}
+
+	private static void LoadMenuAfterCheckpoint(bool requireCheckpoint = true)
+	{
+		if (requireCheckpoint && !localSaved)
 		{
 			throw new InvalidOperationException("Return-to-menu checkpoint was not committed");
 		}
@@ -459,7 +463,7 @@ public static class CoopReturnToMenu
 		}
 		MenuChange.MenuMode = "Original";
 		ClosePauseMenu();
-		MelonLogger.Msg("[ReturnMenu] Loading native main menu after checkpoint");
+		MelonLogger.Msg("[ReturnMenu] Loading native main menu; checkpoint=" + localSaved + ", connectionLost=" + !requireCheckpoint);
 		GameManager.DoExitToMainMenu();
 	}
 

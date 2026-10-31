@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.6";
+		public const string Version = "0.15.7";
 
 		public const string DownloadLink = null;
 
@@ -954,7 +954,9 @@ public class MyMod : MelonMod
 
 	public static bool WildlifeSceneReady()
 	{
-		if (WildlifeSpawnAuthorityPolicy.Ready(connected: true, LoadingScreenIsOn, IsDead, knocked: false, MyTicksOnScene, level_guid) && !Shared.IsMainMenuScene(level_name) && level_name != "Boot" && level_name != "Empty")
+		// MyTicksOnScene is maintained by the server, so it stays zero on guests.
+		// Requiring it here made every scene-specific authority grant get rejected.
+		if (WildlifeSpawnAuthorityPolicy.LocalReady(LoadingScreenIsOn, IsDead, level_guid) && !Shared.IsMainMenuScene(level_name) && level_name != "Boot" && level_name != "Empty")
 		{
 			return GameManager.GetPlayerManagerComponent() != null;
 		}
@@ -6883,6 +6885,11 @@ public class MyMod : MelonMod
 
 	public static void DoKickMessage(string txt, bool integrityFailure = false)
 	{
+		if (!iAmHost && CoopReturnToMenu.CanRequest)
+		{
+			CoopReturnToMenu.ConnectionLost("Отключено от сервера: " + txt);
+			return;
+		}
 		RemoveWaitForConnect();
 		if (m_InterfaceManager != null && GameCompat.Panel<Panel_Confirmation>() != null)
 		{
@@ -11767,6 +11774,8 @@ public class MyMod : MelonMod
 		TimerWatchdog.Tick();
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
+		ConnectionWatchdog.Tick();
+		DroppedInspectSync.Tick();
 		if (!DedicatedServerAppMode)
 		{
 			if (Flag1)

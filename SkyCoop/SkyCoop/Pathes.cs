@@ -2102,6 +2102,8 @@ public class Pathes
 
 		private static bool PrefixInternal(BodyHarvest bh)
 		{
+			// A portable rabbit carcass is inventory gear, not a world wildlife record.
+			if (bh.GetComponent<GearItem>() != null) return true;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -2135,6 +2137,7 @@ public class Pathes
 	{
 		internal static void Prefix(Panel_BodyHarvest __instance)
 		{
+			if (__instance != null && __instance.m_BodyHarvest != null && __instance.m_BodyHarvest.GetComponent<GearItem>() != null) return;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -3626,6 +3629,14 @@ public class Pathes
 	{
 		internal static bool Prefix(PlayerManager __instance)
 		{
+			var target = __instance.GetInteractiveObjectUnderCrosshair();
+			var corpse = target != null ? target.GetComponentInParent<Comps.AnimalCorpseObject>() : null;
+			if (MyMod.InOnline() && corpse != null && corpse.gameObject.name.Contains("Rabbit"))
+			{
+				// The postfix below handles pickup. Do not let the native interaction
+				// dereference the BaseAi/interaction removed when this corpse was made.
+				return false;
+			}
 			if (__instance.GetInteractiveObjectUnderCrosshair() != null && __instance.GetInteractiveObjectUnderCrosshair().GetComponent<Comps.FakeRockCache>() != null)
 			{
 				return false;
@@ -3706,11 +3717,12 @@ public class Pathes
 				MyMod.PickupSpecialItem(interactiveObjectUnderCrosshair, interactiveObjectUnderCrosshair.GetComponent<Comps.SpecialItemDummy>().m_Extra.m_PhotoGUID);
 				__result = true;
 			}
-			else if (interactiveObjectUnderCrosshair.GetComponent<Comps.AnimalCorpseObject>() != null && interactiveObjectUnderCrosshair.name.Contains("Rabbit"))
+			else if (interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>() != null && interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>().gameObject.name.Contains("Rabbit"))
 			{
-				if (interactiveObjectUnderCrosshair.GetComponent<ObjectGuid>() != null)
+				var corpse = interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>();
+				if (corpse.GetComponent<ObjectGuid>() != null)
 				{
-					MyMod.AttemptToPickupRabbit(interactiveObjectUnderCrosshair.GetComponent<ObjectGuid>().Get());
+					MyMod.AttemptToPickupRabbit(corpse.GetComponent<ObjectGuid>().Get());
 				}
 				__result = true;
 			}
@@ -7669,8 +7681,9 @@ public class Pathes
 				continue;
 			}
 			BasicMenu.BasicMenuItemView menuRow = MenuChange.GetMenuRow(basicMenu, i);
-			if (basicMenuItemModel.m_Id == "Sandbox" || basicMenuItemModel.m_Id == "Story" || basicMenuItemModel.m_Id == "TFTFTUpsell")
+			if (basicMenuItemModel.m_Id != "31" && basicMenuItemModel.m_Id != "Quit" && basicMenuItemModel.m_Id != "Options" && basicMenuItemModel.m_Id != "Settings" && basicMenuItemModel.m_LabelText != "Donaters")
 			{
+				basicMenuItemModel.m_Selectable = false;
 				if (menuRow != null && menuRow.m_Display != null)
 				{
 					menuRow.m_Display.SetActive(value: false);

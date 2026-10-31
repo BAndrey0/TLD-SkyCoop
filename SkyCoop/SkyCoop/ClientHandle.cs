@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.15.6");
+			packet.Write("0.15.7");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -254,6 +254,7 @@ public class ClientHandle
 
 	public static void KEEPITALIVE(Packet _packet)
 	{
+		ConnectionWatchdog.ReceivedHeartbeat();
 		MyMod.LastResponceTime = Time.time;
 		MyMod.NoHostResponceSeconds = 0;
 	}

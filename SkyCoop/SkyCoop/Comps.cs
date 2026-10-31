@@ -2040,6 +2040,7 @@ public class Comps
 
 	public class MultiplayerPlayerClothingManager : MonoBehaviour
 	{
+		private int lastCharacter = -1;
 		public string m_Hat = "";
 
 		public string m_Top = "";
@@ -2095,7 +2096,10 @@ public class Comps
 					flag = true;
 				}
 				int iD = m_Player.GetComponent<MultiplayerPlayer>().m_ID;
+				if (iD < 0 || iD >= MyMod.playersData.Count || MyMod.playersData[iD] == null) return;
+				flag |= lastCharacter != MyMod.playersData[iD].m_Character;
 				DataStr.PlayerClothingData playerClothingData = MyMod.playersData[iD].m_PlayerClothingData;
+				if (playerClothingData == null) return;
 				if (playerClothingData.m_Hat != m_Hat || playerClothingData.m_Top != m_Top || playerClothingData.m_Bottom != m_Bottom || playerClothingData.m_Boots != m_Boots || playerClothingData.m_Scarf != m_Scarf || playerClothingData.m_Balaclava != m_Balaclava || flag)
 				{
 					m_Hat = playerClothingData.m_Hat;
@@ -2105,6 +2109,7 @@ public class Comps
 					m_Scarf = playerClothingData.m_Scarf;
 					m_Balaclava = playerClothingData.m_Balaclava;
 					UpdateClothing();
+					lastCharacter = MyMod.playersData[iD].m_Character;
 				}
 			}
 		}
@@ -2348,11 +2353,11 @@ public class Comps
 			num5 = ((!(m_Scarf != "")) ? (-1) : ((num2 != 0) ? 3 : 2));
 			if (num != -1)
 			{
-				clothing.transform.GetChild(0).transform.GetChild(num).gameObject.SetActive(value: true);
+				GameCompat.SetChildActive(clothing.transform.GetChild(0), num, true);
 			}
 			if (num5 != -1)
 			{
-				clothing.transform.GetChild(0).transform.GetChild(num5).gameObject.SetActive(value: true);
+				GameCompat.SetChildActive(clothing.transform.GetChild(0), num5, true);
 			}
 			if (flag)
 			{
@@ -2371,9 +2376,9 @@ public class Comps
 					gameObject2.SetActive(value: false);
 				}
 			}
-			clothing.transform.GetChild(1).transform.GetChild(num2).gameObject.SetActive(value: true);
-			clothing.transform.GetChild(2).transform.GetChild(num3).gameObject.SetActive(value: true);
-			clothing.transform.GetChild(3).transform.GetChild(num4).gameObject.SetActive(value: true);
+			GameCompat.SetChildActive(clothing.transform.GetChild(1), num2, true);
+			GameCompat.SetChildActive(clothing.transform.GetChild(2), num3, true);
+			GameCompat.SetChildActive(clothing.transform.GetChild(3), num4, true);
 		}
 	}
 

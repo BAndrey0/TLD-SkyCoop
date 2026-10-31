@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using Il2Cpp;
+using UnityEngine;
 
 namespace SkyCoop;
 
@@ -113,6 +114,29 @@ public static class DroppedInspectSync
 	private static readonly Dictionary<int, GearItem> pending = new Dictionary<int, GearItem>();
 
 	private static readonly HashSet<int> taking = new HashSet<int>();
+	private static readonly Dictionary<int, (GearItem item, int variant, int frame)> returns = new();
+
+	public static void Tick()
+	{
+		if (returns.Count == 0) return;
+		var player = GameManager.GetPlayerManagerComponent();
+		var harvest = GameCompat.Panel<Panel_BodyHarvest>();
+		foreach (int id in new List<int>(returns.Keys))
+		{
+			var entry = returns[id];
+			if (entry.item == null || entry.item.m_InPlayerInventory)
+			{
+				returns.Remove(id);
+				continue;
+			}
+			if (Time.frameCount <= entry.frame + 2 || taking.Contains(id)) continue;
+			if (player != null && player.IsInspectModeActive() && player.GearItemBeingInspected() == entry.item) continue;
+			if (harvest != null && harvest.isActiveAndEnabled && harvest.m_BodyHarvest != null &&
+				(harvest.m_BodyHarvest.gameObject == entry.item.gameObject || harvest.m_BodyHarvest.transform.IsChildOf(entry.item.transform))) continue;
+			returns.Remove(id);
+			PublishReturn(entry.item, entry.variant);
+		}
+	}
 
 	public static bool Begin(PlayerManager player, GearItem item)
 	{
@@ -141,6 +165,16 @@ public static class DroppedInspectSync
 	}
 
 	public static bool ReturnOnce(GearItem item, int variant = -1)
+	{
+		if (item == null || item.m_InPlayerInventory) return false;
+		var marker = item.GetComponent<Comps.DropFakeOnLeave>();
+		if (marker == null || marker.m_ReturnedToWorld) return false;
+		int id = item.GetInstanceID();
+		if (!returns.ContainsKey(id)) returns[id] = (item, variant, Time.frameCount);
+		return true;
+	}
+
+	private static bool PublishReturn(GearItem item, int variant)
 	{
 		if (item == null)
 		{

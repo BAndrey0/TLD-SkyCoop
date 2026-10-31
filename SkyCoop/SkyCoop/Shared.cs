@@ -735,8 +735,8 @@ public class Shared
 			MPSaveManager.SaveRecentStuff();
 		}
 		MPSaveManager.UpdateKnockDoorRequests();
-		ServerSend.KEEPITALIVE(0, _msg: true);
 		UpdateStunnedRabbits();
+		UpdateTicksOnScenes();
 		MyMod.UpdatePlayerStatusMenu(SleepTrackerAndTimeOutAndAnimalControllers());
 		WeatherUpdateSecond();
 		SafeZoneManager.UpdatePlayersSafeZoneStatus();
@@ -777,7 +777,6 @@ public class Shared
 		{
 			MyMod.MinutesFromStartServer++;
 			ServerSend.GAMETIME(MyMod.OveridedTime);
-			UpdateTicksOnScenes();
 			WeatherUpdate(MinutesSkipped);
 		}
 	}

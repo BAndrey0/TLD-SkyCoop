@@ -87,10 +87,13 @@ public static class CorpseInteractionFix
 			{
 				return false;
 			}
-			if (interaction.GetComponent<Comps.AnimalCorpseObject>() == null && interaction.GetComponent<BodyHarvest>() == null)
+			var root = interaction.GetComponentInParent<Comps.AnimalCorpseObject>();
+			if (root == null && interaction.GetComponent<BodyHarvest>() == null)
 			{
 				return false;
 			}
+			// Rabbit bodies are picked up whole, even if an old component wrapper remains.
+			if (root != null && root.gameObject.name.Contains("Rabbit")) return true;
 			carcass = interaction.m_BodyHarvest;
 			if (carcass == null)
 			{

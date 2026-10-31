@@ -84,7 +84,7 @@ internal class ClientUser
 				{
 					endPoint = null;
 					socket.Close();
-					MyMod.Disconnect();
+					ReportLost("Соединение с сервером закрыто.");
 					MelonLogger.Msg("Connection failed");
 				}
 				else
@@ -95,10 +95,19 @@ internal class ClientUser
 			catch
 			{
 				endPoint = null;
-				socket.Close();
-				MyMod.Disconnect();
+				socket?.Close();
+				ReportLost("Ошибка соединения с сервером.");
 				MelonLogger.Msg("Connection failed");
 			}
+		}
+
+		private void ReportLost(string reason)
+		{
+			ThreadManager.ExecuteOnMainThread(() =>
+			{
+				if (ReferenceEquals(ClientUser.udp, this) && MyMod.sendMyPosition && !MyMod.IReallyWantToQuit)
+					CoopReturnToMenu.ConnectionLost(reason);
+			});
 		}
 
 		private void HandleData(byte[] _data)
@@ -123,7 +132,7 @@ internal class ClientUser
 
 		private void Disconnect()
 		{
-			Disconnect();
+			socket?.Close();
 			endPoint = null;
 			socket = null;
 		}
@@ -199,7 +208,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.15.6")
+				if (text2 != "0.15.7")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
