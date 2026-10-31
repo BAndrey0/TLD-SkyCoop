@@ -10,6 +10,29 @@ namespace SkyCoop;
 
 public static class GameCompat
 {
+	private static readonly Dictionary<string, GameObject> AssetCache = new();
+	// Survival 2.59 moved object identity to PdidObjectBase.
+	public static string Get(this ObjectGuid guid) => guid != null ? guid.PDID : "";
+
+	public static bool TryLoadAsset(string name, out GameObject prefab)
+	{
+		if (AssetCache.TryGetValue(name, out prefab) && prefab != null) return true;
+		var handle = Il2CppTLD.AddressableAssets.AssetHelper.SafeLoadAssetAsync<GameObject>(name);
+		prefab = handle.WaitForCompletion();
+		if (prefab != null) AssetCache[name] = prefab;
+		return prefab != null;
+	}
+
+	public static GearItem LoadGearItemPrefab(string name)
+	{
+		return TryLoadAsset(name, out var prefab) ? prefab.GetComponent<GearItem>() : null;
+	}
+
+	public static string GetGearDisplayName(string name)
+	{
+		var gear = LoadGearItemPrefab(name);
+		return gear != null ? gear.DisplayName : name;
+	}
 	public const float InteractionRange = 2.5f;
 
 	private static readonly Dictionary<string, Texture2D> s_TextureCache = new Dictionary<string, Texture2D>();

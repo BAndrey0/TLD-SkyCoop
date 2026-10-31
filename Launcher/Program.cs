@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -592,6 +593,29 @@ internal sealed class LauncherForm : Form
 		try
 		{
 			await FetchKit(latest);
+			string previousInstall = null;
+			if (installed)
+			{
+				var manifest = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(KitDir, "manifest.json")));
+				string assembly = Path.Combine(installDir, "game", "GameAssembly.dll");
+				string expected = Convert.ToString(manifest["gameAssemblySHA256"]);
+				string actual;
+				using (var sha = SHA256.Create())
+				using (var input = File.OpenRead(assembly))
+					actual = BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "");
+				if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+				{
+					previousInstall = installDir;
+					gameDir = FindSteamGame() ?? AskFolder("Укажите оригинальную игру из Steam", "tld.exe");
+					if (gameDir == null) return;
+					installDir = Path.Combine(root, "player-" + latest.Tag.TrimStart('v'));
+					int suffix = 1;
+					string baseDir = installDir;
+					while (Directory.Exists(installDir)) installDir = baseDir + "-" + suffix++;
+					installed = false;
+					Log("Обновилась игра: создаю новую копию. Предыдущая установка сохранена: " + previousInstall);
+				}
+			}
 			if (installed)
 			{
 				await RunScript(Path.Combine(KitDir, "Update-Coop.ps1"), "-InstallDirectory \"" + installDir + "\"");
@@ -600,6 +624,16 @@ internal sealed class LauncherForm : Form
 			{
 				await RunScript(Path.Combine(KitDir, "Install-Lab.ps1"), "-GameDirectory \"" + gameDir + "\" -InstallDirectory \"" + installDir + "\"");
 				await RunScript(Path.Combine(KitDir, "Update-Coop.ps1"), "-InstallDirectory \"" + installDir + "\"");
+			}
+			if (previousInstall != null && Directory.Exists(Path.Combine(previousInstall, "saves")))
+			{
+				string sourceSaves = Path.Combine(previousInstall, "saves");
+				foreach (string file in Directory.GetFiles(sourceSaves, "*", SearchOption.AllDirectories))
+				{
+					string destination = Path.Combine(installDir, "saves", file.Substring(sourceSaves.Length + 1));
+					Directory.CreateDirectory(Path.GetDirectoryName(destination));
+					File.Copy(file, destination, false);
+				}
 			}
 			state.installDirectory = installDir;
 			SaveState();
@@ -611,7 +645,7 @@ internal sealed class LauncherForm : Form
 			string message = ex.Message;
 			if (message.IndexOf("does not match", StringComparison.OrdinalIgnoreCase) >= 0 || message.IndexOf("mismatch", StringComparison.OrdinalIgnoreCase) >= 0)
 			{
-				message = "Версия игры в Steam отличается от той, на которой проверен мод (Survival 2.55, сборка 22915504). Скорее всего, Steam обновил игру.\n\nЕсли кооператив уже установлен (папка player), запустите установку ещё раз и выберите «Да», указав эту папку: отдельная копия игры не обновляется Steam и продолжит работать.\n\n" + ex.Message;
+				message = "Версия выбранной игры не соответствует этому выпуску мода. Проверьте обновления Steam и лаунчера. Предыдущая копия кооператива сохранена.\n\n" + ex.Message;
 			}
 			MessageBox.Show(this, message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
 		}

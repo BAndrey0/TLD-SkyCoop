@@ -304,7 +304,7 @@ public class MPSaveManager
 			{
 				KeySeed = "broken";
 			}
-			key.m_ObjectGuid.m_Guid = Name + "_" + KeySeed.ToLower();
+			key.m_ObjectGuid.Set(Name + "_" + KeySeed.ToLower());
 			key.m_DisplayNameOverrideLocID = Name;
 		}
 	}

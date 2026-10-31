@@ -40,8 +40,8 @@ public static class WildlifeCompat
 			parentName = ((transform3 != null) ? transform3.name : ""),
 			parentActive = (transform3 != null && transform3.gameObject.activeInHierarchy),
 			regionActive = (region != null && region.gameObject.activeInHierarchy),
-			legacyPrefabPresent = (region != null && region.m_SpawnablePrefab != null),
-			tablePresent = (region != null && region.m_SpawnRegionAnimalTableSO != null),
+			spawnListPresent = (region != null && region.m_SpawnList != null),
+			spawnListCount = (region != null && region.m_SpawnList != null ? region.m_SpawnList.Count : 0),
 			regionSpawnCount = ((region != null && region.m_Spawns != null) ? region.m_Spawns.Count : 0),
 			registeredNativeCount = ((BaseAiManager.m_BaseAis != null) ? BaseAiManager.m_BaseAis.Count : 0)
 		};
@@ -121,7 +121,7 @@ public static class WildlifeCompat
 		value = Resources.Load<GameObject>(prefabName);
 		if (value == null)
 		{
-			AssetHelper.TryLoadAsset<GameObject>(prefabName, out value);
+			GameCompat.TryLoadAsset(prefabName, out value);
 		}
 		if (value != null)
 		{

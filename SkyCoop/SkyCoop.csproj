@@ -4,7 +4,7 @@
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>netcoreapp6.0</TargetFramework>
     <!-- MelonLoader-installed co-op game copy; override with -p:GameDir=... -->
-    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\..\player\game</GameDir>
+    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\..\player-2.59\game</GameDir>
   </PropertyGroup>
   <PropertyGroup>
     <LangVersion>12.0</LangVersion>
@@ -110,5 +110,7 @@
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
+    <Reference Include="Il2CppTLD.GameplayTag"><HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\Il2CppTLD.GameplayTag.dll</HintPath></Reference>
+    <Reference Include="Unity.ResourceManager"><HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\Unity.ResourceManager.dll</HintPath></Reference>
   </ItemGroup>
 </Project>

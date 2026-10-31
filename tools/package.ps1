@@ -3,12 +3,16 @@
 #   out\TLD-SkyCoop-<version>.zip
 # Requires a MelonLoader-installed co-op game copy (for the generated Il2Cpp assemblies), see README.md.
 param(
-	[string]$GameDir = (Join-Path $PSScriptRoot '..\..\player\game'),
+	[string]$GameDir = (Join-Path $PSScriptRoot '..\..\player-2.59\game'),
 	[string]$Dotnet = 'dotnet'
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $GameDir = [IO.Path]::GetFullPath($GameDir)
+$assemblyHash = (Get-FileHash -LiteralPath (Join-Path $GameDir 'GameAssembly.dll') -Algorithm SHA256).Hash
+if ($assemblyHash -ne 'DDEDD8FCB4A06A440EA6C9D07CEDDEBD47BC855E2873D553461B1D9A47EEDFB8') {
+	throw 'This source targets Survival 2.59 / Steam build 26312993. Select the matching game copy.'
+}
 if (!(Test-Path -LiteralPath (Join-Path $GameDir 'MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll'))) {
 	throw "No MelonLoader Il2Cpp assemblies in $GameDir. Install the kit once and start the game to generate them, or pass -GameDir."
 }
@@ -22,6 +26,7 @@ $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'SkyCoop\Pr
 
 $out = Join-Path $root 'out'
 $kit = Join-Path $out 'friend-kit'
+if ([IO.Path]::GetFullPath($out) -ne (Join-Path $root 'out')) { throw 'Unsafe package output path' }
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $kit 'files'), (Join-Path $kit 'licenses') | Out-Null
 
@@ -37,13 +42,15 @@ $files = foreach ($name in @('CoopProfile.dll', 'SkyCoop.dll', 'Steamworks.NET.d
 	[ordered]@{ sha256 = (Get-FileHash -LiteralPath (Join-Path $kit "files\$name") -Algorithm SHA256).Hash; name = $name }
 }
 $commit = (& git -C $root rev-parse --short HEAD 2>$null)
+$gameVersion = ((Get-Content -LiteralPath (Join-Path $GameDir 'tld_Data\StreamingAssets\version.txt') -Raw).Trim() -split '\s+')[0]
 $manifest = [ordered]@{
-	gameAssemblySHA256 = '4CFA661139B20C257853D0EFA4F69B5BD394D12EC1484DB73BC824129C192C6F'
+	gameExecutableSHA256 = (Get-FileHash -LiteralPath (Join-Path $GameDir 'tld.exe') -Algorithm SHA256).Hash
+	gameAssemblySHA256 = (Get-FileHash -LiteralPath (Join-Path $GameDir 'GameAssembly.dll') -Algorithm SHA256).Hash
 	files = @($files)
 	source = 'https://github.com/BAndrey0/TLD-SkyCoop'
 	sourceCommit = "$commit"
-	targetGame = 'Steam 22915504 / Survival 2.55'
-	localRevision = "survival-2.55-$version"
+	targetGame = "Steam 26312993 / Survival $gameVersion"
+	localRevision = "survival-$gameVersion-$version"
 	modVersion = $version
 }
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $kit 'manifest.json') -Encoding utf8

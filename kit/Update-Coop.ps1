@@ -15,8 +15,8 @@ $target=[IO.Path]::GetFullPath($InstallDirectory)
 $game=Join-Path $target 'game'
 if(!(Test-Path -LiteralPath (Join-Path $game 'Mods\CoopProfile.dll')) -or !(Test-Path -LiteralPath (Join-Path $target 'runtime\dotnet.exe'))){throw 'Installed co-op copy not found. Run Install.cmd first, or specify -InstallDirectory.'}
 if(Test-Path -LiteralPath (Join-Path $game 'Mods\CoopLab.dll')){throw 'Refusing to update a test-bot profile'}
-if((Get-FileHash -LiteralPath (Join-Path $game 'tld.exe') -Algorithm SHA256).Hash -ne '5FC2F9B9BB041C90E1F45FB6DA44D3E36464B7C3DFCF2A958687C85286613020'){throw 'Game version mismatch; requires Steam build 22915504 / Survival 2.55'}
-if((Get-FileHash -LiteralPath (Join-Path $game 'GameAssembly.dll') -Algorithm SHA256).Hash -ne $manifest.gameAssemblySHA256){throw 'GameAssembly version mismatch'}
+if((Get-FileHash -LiteralPath (Join-Path $game 'tld.exe') -Algorithm SHA256).Hash -ne $manifest.gameExecutableSHA256){throw "Game version mismatch; requires $($manifest.targetGame)"}
+if((Get-FileHash -LiteralPath (Join-Path $game 'GameAssembly.dll') -Algorithm SHA256).Hash -ne $manifest.gameAssemblySHA256){throw "GameAssembly version mismatch; requires $($manifest.targetGame)"}
 foreach($process in @(Get-Process tld -ErrorAction SilentlyContinue)){
  if(!$process.Path -or $process.Path -eq (Join-Path $game 'tld.exe')){throw 'Close the co-op game normally through its pause menu, then run Update.cmd again.'}
 }

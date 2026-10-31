@@ -344,7 +344,7 @@ public static class ItemSpawner
 		string name = gear.Substring(5);
 		try
 		{
-			GearItem prefab = GearItem.LoadGearItemPrefab(gear);
+			GearItem prefab = GameCompat.LoadGearItemPrefab(gear);
 			if (prefab != null && !string.IsNullOrEmpty(prefab.DisplayName))
 			{
 				name = prefab.DisplayName;

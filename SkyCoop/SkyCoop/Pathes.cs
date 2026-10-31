@@ -1131,7 +1131,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (__instance.m_Weapon == null || (double)Time.time < (double)__instance.m_NextAllowedFireTime || __instance.m_Weapon.ReloadInProgress() || !GameManager.GetPlayerAnimationComponent().IsAllowedToFire(__instance.m_Weapon.m_GunItem.m_AllowHipFire) || GameManager.GetPlayerAnimationComponent().IsReloading())
+			if (__instance.m_Weapon == null || (double)Time.time < (double)__instance.m_NextAllowedFireTime || __instance.m_Weapon.ReloadInProgress() || !GameManager.GetPlayerAnimationComponent().IsAllowedToFire(__instance.m_Weapon.m_GunItem.m_AllowHipFire, __instance.m_Weapon.m_GunItem.m_GunType) || GameManager.GetPlayerAnimationComponent().IsReloading())
 			{
 				return;
 			}
@@ -1321,8 +1321,8 @@ public class Pathes
 				{
 					if (__instance.m_ObjectGuid != null)
 					{
-						MelonLogger.Msg("Going render photo " + __instance.m_ObjectGuid.m_Guid);
-						Texture2D photoTexture = MPSaveManager.GetPhotoTexture(__instance.m_ObjectGuid.m_Guid, __instance.GetGearName());
+						MelonLogger.Msg("Going render photo " + __instance.m_ObjectGuid.Get());
+						Texture2D photoTexture = MPSaveManager.GetPhotoTexture(__instance.m_ObjectGuid.Get(), __instance.GetGearName());
 						if ((bool)photoTexture)
 						{
 							__instance.gameObject.transform.GetChild(0).gameObject.GetComponent<Renderer>().material.mainTexture = photoTexture;
@@ -1383,9 +1383,9 @@ public class Pathes
 					{
 						__instance.m_ObjectGuid = __instance.gameObject.AddComponent<ObjectGuid>();
 					}
-					else if (!string.IsNullOrEmpty(__instance.m_ObjectGuid.m_Guid) && __instance.m_ObjectGuid.m_Guid.Contains('_'))
+					else if (!string.IsNullOrEmpty(__instance.m_ObjectGuid.Get()) && __instance.m_ObjectGuid.Get().Contains('_'))
 					{
-						__instance.m_DisplayNameOverrideLocID = __instance.m_ObjectGuid.m_Guid.Split('_')[0];
+						__instance.m_DisplayNameOverrideLocID = __instance.m_ObjectGuid.Get().Split('_')[0];
 					}
 				}
 				if (__instance.name == "GEAR_SCSanityBook")
@@ -5442,12 +5442,12 @@ public class Pathes
 
 	[HarmonyPatch(typeof(PlayerManager), "InstantiateItemAtPlayersFeet", new System.Type[]
 	{
-		typeof(GearItem),
+		typeof(string),
 		typeof(int)
 	})]
 	internal static class PlayerManager_InstantiateItemAtPlayersFeet
 	{
-		private static void Postfix(GearItem gearItemPrefab, int numUnits, GearItem __result)
+		private static void Postfix(GearItem __result)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -5884,7 +5884,7 @@ public class Pathes
 			stoneItem.m_GearItem = gi;
 			stoneItem.m_CanThrow = false;
 			gi.m_StoneItem = stoneItem;
-			if (!gi.m_ObjectGuid || string.IsNullOrEmpty(gi.m_ObjectGuid.m_Guid))
+			if (!gi.m_ObjectGuid || string.IsNullOrEmpty(gi.m_ObjectGuid.Get()))
 			{
 				return;
 			}
@@ -8147,7 +8147,7 @@ public class Pathes
 			presentRarity = PresentRarity.Shit;
 			text = ShitTier[random.Next(0, ShitTier.Count)];
 		}
-		GearItem gearItem = GameManager.GetPlayerManagerComponent().InstantiateItemAtPlayersFeet(MyMod.GetGearItemPrefab(text), 1);
+		GearItem gearItem = GameManager.GetPlayerManagerComponent().InstantiateItemAtPlayersFeet(text, 1);
 		if (!(gearItem == null))
 		{
 			Comps.DropFakeOnLeave dropFakeOnLeave = gearItem.gameObject.AddComponent<Comps.DropFakeOnLeave>();
@@ -8207,15 +8207,15 @@ public class Pathes
 		}
 		else if (!flag && !flag2)
 		{
-			HUDMessage.AddMessage("Requires " + GearItem.GetGearDisplayName("GEAR_ScrapLead") + " and " + GearItem.GetGearDisplayName("GEAR_RecycledCan"));
+			HUDMessage.AddMessage("Requires " + GameCompat.GetGearDisplayName("GEAR_ScrapLead") + " and " + GameCompat.GetGearDisplayName("GEAR_RecycledCan"));
 		}
 		else if (!flag && flag2)
 		{
-			HUDMessage.AddMessage("Requires " + GearItem.GetGearDisplayName("GEAR_ScrapLead"));
+			HUDMessage.AddMessage("Requires " + GameCompat.GetGearDisplayName("GEAR_ScrapLead"));
 		}
 		else if (flag && !flag2)
 		{
-			HUDMessage.AddMessage("Requires " + GearItem.GetGearDisplayName("GEAR_RecycledCan"));
+			HUDMessage.AddMessage("Requires " + GameCompat.GetGearDisplayName("GEAR_RecycledCan"));
 		}
 	}
 

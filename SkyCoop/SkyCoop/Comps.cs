@@ -266,9 +266,9 @@ public class Comps
 			for (int i = 0; i < m_Cont.m_ObjectAnims.Length; i++)
 			{
 				ObjectAnim objectAnim = m_Cont.m_ObjectAnims[i];
-				if ((bool)objectAnim && !objectAnim.Play("open"))
+				if ((bool)objectAnim)
 				{
-					return;
+					objectAnim.Play("open");
 				}
 			}
 			if (m_Cont.gameObject != null && GameManager.GetPlayerObject() != null && Vector3.Distance(GameManager.GetPlayerObject().transform.position, m_Cont.gameObject.transform.position) < 30f)
@@ -287,10 +287,9 @@ public class Comps
 			for (int i = 0; i < m_Cont.m_ObjectAnims.Length; i++)
 			{
 				ObjectAnim objectAnim = m_Cont.m_ObjectAnims[i];
-				if ((bool)objectAnim && !objectAnim.Play("close"))
+				if ((bool)objectAnim)
 				{
-					m_Cont.m_PendingClose = true;
-					return;
+					objectAnim.Play("close");
 				}
 			}
 			if (m_Cont.gameObject != null && GameManager.GetPlayerObject() != null && Vector3.Distance(GameManager.GetPlayerObject().transform.position, m_Cont.gameObject.transform.position) < 30f)
@@ -3302,22 +3301,22 @@ public class Comps
 			{
 				if (m_Data.m_MaterialCount > 1)
 				{
-					HUDMessage.AddMessage("Requires " + GearItem.GetGearDisplayName(m_Data.m_Tool) + " and " + m_Data.m_MaterialCount + " " + GearItem.GetGearDisplayName(m_Data.m_Material));
+					HUDMessage.AddMessage("Requires " + GameCompat.GetGearDisplayName(m_Data.m_Tool) + " and " + m_Data.m_MaterialCount + " " + GameCompat.GetGearDisplayName(m_Data.m_Material));
 				}
 				else
 				{
-					HUDMessage.AddMessage("Requires " + GearItem.GetGearDisplayName(m_Data.m_Tool) + " and " + GearItem.GetGearDisplayName(m_Data.m_Material));
+					HUDMessage.AddMessage("Requires " + GameCompat.GetGearDisplayName(m_Data.m_Tool) + " and " + GameCompat.GetGearDisplayName(m_Data.m_Material));
 				}
 				GameAudioManager.PlayGUIError();
 			}
 			else if (!flag && flag2)
 			{
-				HUDMessage.AddMessage("Requires " + GearItem.GetGearDisplayName(m_Data.m_Tool));
+				HUDMessage.AddMessage("Requires " + GameCompat.GetGearDisplayName(m_Data.m_Tool));
 				GameAudioManager.PlayGUIError();
 			}
 			else if (flag && !flag2)
 			{
-				HUDMessage.AddMessage("Requires " + m_Data.m_MaterialCount + " " + GearItem.GetGearDisplayName(m_Data.m_Material));
+				HUDMessage.AddMessage("Requires " + m_Data.m_MaterialCount + " " + GameCompat.GetGearDisplayName(m_Data.m_Material));
 				GameAudioManager.PlayGUIError();
 			}
 			return flag && flag2;

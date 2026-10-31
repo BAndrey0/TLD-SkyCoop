@@ -8,11 +8,11 @@ $game=Join-Path $target 'game';$cache=[IO.Path]::GetFullPath((Join-Path $PSScrip
 if($game -match '[^\x00-\x7F]'){throw 'The co-op installation path must use English letters/numbers. Move friend-kit to a folder such as D:\TLD-Coop\friend-kit and run Install.cmd there. The original Steam installation can stay where it is.'}
 if($game.StartsWith($source.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $game -eq $source){throw 'The separate copy must be outside your original game folder'}
 $exe=Join-Path $source 'tld.exe'
-if(!(Test-Path -LiteralPath $exe) -or (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ne '5FC2F9B9BB041C90E1F45FB6DA44D3E36464B7C3DFCF2A958687C85286613020'){throw 'This kit requires Steam The Long Dark build 22915504 / Survival 2.55. Executable does not match.'}
-if((Get-FileHash -LiteralPath (Join-Path $source 'GameAssembly.dll') -Algorithm SHA256).Hash -ne '4CFA661139B20C257853D0EFA4F69B5BD394D12EC1484DB73BC824129C192C6F'){throw 'GameAssembly does not match tested Steam build 22915504. Do not install this kit on another game update.'}
+if(!(Test-Path -LiteralPath $exe) -or (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ne $manifest.gameExecutableSHA256){throw "This kit requires Steam The Long Dark $($manifest.targetGame). Executable does not match."}
+if((Get-FileHash -LiteralPath (Join-Path $source 'GameAssembly.dll') -Algorithm SHA256).Hash -ne $manifest.gameAssemblySHA256){throw "GameAssembly does not match tested $($manifest.targetGame). Do not install this kit on another game update."}
 if(Test-Path -LiteralPath (Join-Path $source 'MelonLoader')){throw 'Select the original unmodified Steam game, not another modded copy'}
 if(Test-Path -LiteralPath $game){throw 'Target game folder already exists. Select a new empty installation directory.'}
-if($PlanOnly){[pscustomobject]@{source=$source;target=$target;gameVersion='2.55 / build 22915504';copyGameGB=21.4;downloadMB=103;originalSaves='untouched';testBots='excluded'};return}
+if($PlanOnly){[pscustomobject]@{source=$source;target=$target;gameVersion=$manifest.targetGame;copyGameGB=21.4;downloadMB=103;originalSaves='untouched';testBots='excluded'};return}
 New-Item -ItemType Directory -Force -Path $target,$cache|Out-Null
 $marker=Join-Path $target '.install-incomplete';'Installation in progress'|Set-Content -LiteralPath $marker
 function Fetch($name,$url,$hash){$p=Join-Path $cache $name;if(!(Test-Path -LiteralPath $p)){[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $p};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne $hash){throw "Checksum mismatch: $name"};return $p}

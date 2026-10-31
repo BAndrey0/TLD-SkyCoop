@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.5";
+		public const string Version = "0.15.6";
 
 		public const string DownloadLink = null;
 
@@ -1129,7 +1129,7 @@ public class MyMod : MelonMod
 			{
 				string photoGUID = jData.m_Extra.m_PhotoGUID;
 				ObjectGuid objectGuid = gameObject.AddComponent<ObjectGuid>();
-				objectGuid.m_Guid = photoGUID;
+				objectGuid.Set(photoGUID);
 				component2.m_ObjectGuid = objectGuid;
 				if (component2.GetGearName() != "GEAR_SCMapReveal")
 				{
@@ -3236,11 +3236,11 @@ public class MyMod : MelonMod
 				GameManager.GetPlayerManagerComponent().AddItemCONSOLE(data.m_Yield, data.m_YieldCount);
 				if (data.m_YieldCount > 1)
 				{
-					GearMessage.AddMessage(GearItem.GetGearDisplayName(data.m_Yield), Localization.Get("GAMEPLAY_Added"), data.m_Yield + " (" + data.m_YieldCount + ")");
+					GearMessage.AddMessage(GameCompat.GetGearDisplayName(data.m_Yield), Localization.Get("GAMEPLAY_Added"), data.m_Yield + " (" + data.m_YieldCount + ")");
 				}
 				else
 				{
-					GearMessage.AddMessage(GearItem.GetGearDisplayName(data.m_Yield), Localization.Get("GAMEPLAY_Added"), data.m_Yield);
+					GearMessage.AddMessage(GameCompat.GetGearDisplayName(data.m_Yield), Localization.Get("GAMEPLAY_Added"), data.m_Yield);
 				}
 			}
 			if (!string.IsNullOrEmpty(data.m_ObjectGroupToRemove))
@@ -4578,13 +4578,13 @@ public class MyMod : MelonMod
 		MelonLogger.Msg("[Gear load] Native lookup " + name + " scene=" + level_name);
 		if (name.StartsWith("GEAR_", System.StringComparison.Ordinal))
 		{
-			GearItem gearItem = GearItem.LoadGearItemPrefab(name);
+			GearItem gearItem = GameCompat.LoadGearItemPrefab(name);
 			if (gearItem != null)
 			{
 				return gearItem.gameObject;
 			}
 		}
-		AssetHelper.TryLoadAsset<GameObject>(name, out var asset);
+		GameCompat.TryLoadAsset(name, out var asset);
 		return asset;
 	}
 
@@ -7166,15 +7166,15 @@ public class MyMod : MelonMod
 		return result;
 	}
 
-	public static bool SnareCanTrap(Vector3 pos, string prefabname)
+	public static bool SnareCanTrap(Vector3 pos, Il2Cpp.AssetReferenceBaseAi animalReference)
 	{
 		SpawnRegionManager spawnRegionManager = GameManager.GetSpawnRegionManager();
 		for (int i = 0; i < spawnRegionManager.m_SpawnRegions.Count; i++)
 		{
 			float num = Vector3.Distance(pos, spawnRegionManager.m_SpawnRegions[i].m_Center);
 			float radius = spawnRegionManager.m_SpawnRegions[i].m_Radius;
-			string spawnablePrefabName = spawnRegionManager.m_SpawnRegions[i].GetSpawnablePrefabName();
-			if (num <= radius && prefabname == spawnablePrefabName)
+			bool matchesAnimal = spawnRegionManager.m_SpawnRegions[i].HasSpawnAnimal(animalReference);
+			if (num <= radius && matchesAnimal)
 			{
 				return true;
 			}
@@ -7407,7 +7407,7 @@ public class MyMod : MelonMod
 					{
 						string photoGUID = extra.m_PhotoGUID;
 						ObjectGuid objectGuid = gameObject.AddComponent<ObjectGuid>();
-						objectGuid.m_Guid = photoGUID;
+						objectGuid.Set(photoGUID);
 						component.m_ObjectGuid = objectGuid;
 						if (component.GetGearName() != "GEAR_SCMapReveal")
 						{
@@ -7582,7 +7582,7 @@ public class MyMod : MelonMod
 					{
 						string photoGUID = component.m_Extra.m_PhotoGUID;
 						ObjectGuid objectGuid = gameObject.AddComponent<ObjectGuid>();
-						objectGuid.m_Guid = photoGUID;
+						objectGuid.Set(photoGUID);
 						component2.m_ObjectGuid = objectGuid;
 						if (component.m_Extra.m_GearName != "gear_scmapreveal")
 						{
@@ -8121,9 +8121,9 @@ public class MyMod : MelonMod
 		{
 			variant = 5;
 		}
-		if (IsUserGeneratedHandItem(gear.GetGearName()) && gear.m_ObjectGuid != null && !string.IsNullOrEmpty(gear.m_ObjectGuid.m_Guid))
+		if (IsUserGeneratedHandItem(gear.GetGearName()) && gear.m_ObjectGuid != null && !string.IsNullOrEmpty(gear.m_ObjectGuid.Get()))
 		{
-			text = gear.m_ObjectGuid.m_Guid;
+			text = gear.m_ObjectGuid.Get();
 			MelonLogger.Msg("Dropped photo " + text);
 		}
 		string name = gameObject.name;
@@ -8169,7 +8169,7 @@ public class MyMod : MelonMod
 			variant = (int)gear.m_SnareItem.m_State;
 			if (variant == 1)
 			{
-				if (SnareCanTrap(position2, gear.m_SnareItem.m_RabbitPrefab.name))
+				if (SnareCanTrap(position2, gear.m_SnareItem.m_RabbitAssetReference))
 				{
 					num2 = 720;
 					if (GameManager.GetFeatExpertTrapper().IsUnlockedAndEnabled())
@@ -13235,9 +13235,9 @@ public class MyMod : MelonMod
 		while (enumerator.MoveNext())
 		{
 			GearItemObject current = enumerator.Current;
-			if ((current.m_GearItemName == "GEAR_SCDoorKey" || current.m_GearItemName == "GEAR_SCDoorKeyLead") && (bool)current.m_GearItem.m_ObjectGuid && !string.IsNullOrEmpty(current.m_GearItem.m_ObjectGuid.m_Guid))
+			if ((current.m_GearItemName == "GEAR_SCDoorKey" || current.m_GearItemName == "GEAR_SCDoorKeyLead") && (bool)current.m_GearItem.m_ObjectGuid && !string.IsNullOrEmpty(current.m_GearItem.m_ObjectGuid.Get()))
 			{
-				string guid = current.m_GearItem.m_ObjectGuid.m_Guid;
+				string guid = current.m_GearItem.m_ObjectGuid.Get();
 				if (guid.Contains('_'))
 				{
 					string[] array = guid.Split('_');
@@ -13254,9 +13254,9 @@ public class MyMod : MelonMod
 		while (enumerator.MoveNext())
 		{
 			GearItemObject current = enumerator.Current;
-			if (current.m_GearItemName == "GEAR_SCDoorKeyLead" && (bool)current.m_GearItem.m_ObjectGuid && !string.IsNullOrEmpty(current.m_GearItem.m_ObjectGuid.m_Guid))
+			if (current.m_GearItemName == "GEAR_SCDoorKeyLead" && (bool)current.m_GearItem.m_ObjectGuid && !string.IsNullOrEmpty(current.m_GearItem.m_ObjectGuid.Get()))
 			{
-				string guid = current.m_GearItem.m_ObjectGuid.m_Guid;
+				string guid = current.m_GearItem.m_ObjectGuid.Get();
 				if (guid.Contains('_') && guid.Split('_')[1] == Seed)
 				{
 					UnityEngine.Object.Destroy(current.m_GearItem.gameObject);
@@ -13693,7 +13693,7 @@ public class MyMod : MelonMod
 		{
 			Note.m_ObjectGuid = Note.gameObject.AddComponent<ObjectGuid>();
 		}
-		Note.m_ObjectGuid.m_Guid = guid;
+		Note.m_ObjectGuid.Set(guid);
 	}
 
 	public static void WriteNote(CharcoalItem Coal)
@@ -13937,7 +13937,7 @@ public class MyMod : MelonMod
 			{
 				gearItem.m_ObjectGuid = gearItem.gameObject.AddComponent<ObjectGuid>();
 			}
-			gearItem.m_ObjectGuid.m_Guid = text2;
+			gearItem.m_ObjectGuid.Set(text2);
 			Texture2D texture2D2 = new Texture2D(gearResolution.X, gearResolution.Y);
 			texture2D2.LoadImage(System.Convert.FromBase64String(text));
 			gearItem.gameObject.transform.GetChild(0).gameObject.GetComponent<Renderer>().material.mainTexture = texture2D2;

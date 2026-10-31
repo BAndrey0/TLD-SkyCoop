@@ -38,7 +38,10 @@ public static class SelfTest
 		{
 			menuSince = Time.realtimeSinceStartup;
 		}
-		if (Time.realtimeSinceStartup - menuSince < 8f)
+		// The menu scene exists while startup movies are still showing; loading a save
+		// during them leaves their overlay/camera above the world. Give the UI test time
+		// to finish the startup screens before automatically hosting.
+		if (Time.realtimeSinceStartup - menuSince < 60f)
 		{
 			return;
 		}
