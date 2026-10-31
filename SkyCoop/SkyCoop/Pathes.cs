@@ -5728,6 +5728,11 @@ public class Pathes
 	{
 		private static void Postfix(SpawnRegion __instance)
 		{
+			if (MyMod.InOnline() && __instance != null)
+			{
+				var region = __instance.GetComponent<Comps.SpawnRegionSimple>();
+				if (region != null) region.UpdateFromManager();
+			}
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));

@@ -12,7 +12,7 @@ public class Profile : MelonMod
 
 	public override void OnInitializeMelon()
 	{
-		root = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "..", "saves"));
+		root = Path.GetFullPath(Environment.GetEnvironmentVariable("SKYCOOP_TEST_SAVE_ROOT") ?? Path.Combine(Environment.CurrentDirectory, "..", "saves"));
 		string[] array = new string[2] { "Init", "CreatePersistentDataFolders" };
 		foreach (string name in array)
 		{

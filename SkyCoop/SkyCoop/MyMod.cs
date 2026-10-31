@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.7";
+		public const string Version = "0.15.8";
 
 		public const string DownloadLink = null;
 
@@ -1606,6 +1606,7 @@ public class MyMod : MelonMod
 	{
 		SetAppBackgroundMode();
 		MelonPreferences_Category coopPreferences = MelonPreferences.CreateCategory("SkyCoop");
+		SurvivorModels.Preference = coopPreferences.CreateEntry("UseNewSurvivorModels", false, "New survivor models (experimental)", "Use the new faceted skinned survivor meshes. Can be toggled in F2 Commands.");
 		ItemDecayPreference = coopPreferences.CreateEntry("EnableItemDecay", false, "Enable item decay", "Co-op forces the decay scale to 0 (no spoilage or wear over time). true keeps the difficulty decay rate for this player.");
 		DedicatedServerAppMode = System.Environment.GetCommandLineArgs().Contains("-dedicated") || Application.isBatchMode;
 		ModsValidation.GetModsHash(Force: true);
@@ -4313,31 +4314,28 @@ public class MyMod : MelonMod
 		{
 			foreach (System.Collections.Generic.KeyValuePair<string, GameObject> regionAnimal in regionAnimals)
 			{
-				if (regionAnimal.Value != null && (regionAnimal.Value.activeInHierarchy || regionAnimal.Value.GetComponent<Comps.AnimalCorpseObject>() != null) && !string.IsNullOrEmpty(regionAnimal.Key))
+				if (regionAnimal.Value != null && regionAnimal.Value.activeInHierarchy && regionAnimal.Value.GetComponent<Comps.AnimalCorpseObject>() == null && !string.IsNullOrEmpty(regionAnimal.Key))
 				{
+					var ai = regionAnimal.Value.GetComponent<BaseAi>();
+					if (ai != null && (ai.GetAiMode() == AiMode.Dead || ai.m_CurrentHP <= 0)) continue;
+					var actor = regionAnimal.Value.GetComponent<Comps.AnimalActor>();
+					if (actor != null && actor.m_Hp <= 0) continue;
 					hashSet.Add(regionAnimal.Key);
 				}
 			}
 		}
 		foreach (System.Collections.Generic.KeyValuePair<string, Comps.AnimalActor> actors in ActorsList)
 		{
-			if (actors.Value != null && actors.Value.m_Animal != null && actors.Value.m_Animal.activeInHierarchy && actors.Value.m_RegionGUID == regionGuid && !string.IsNullOrEmpty(actors.Key))
+			if (actors.Value != null && actors.Value.m_Animal != null && actors.Value.m_Animal.activeInHierarchy && actors.Value.m_Hp > 0 && actors.Value.m_RegionGUID == regionGuid && !string.IsNullOrEmpty(actors.Key))
 			{
 				hashSet.Add(actors.Key);
-			}
-		}
-		foreach (System.Collections.Generic.KeyValuePair<string, Comps.AnimalCorpseObject> animalCorples in AnimalCorplesList)
-		{
-			if (animalCorples.Value != null && animalCorples.Value.m_Animal != null && animalCorples.Value.m_RegionGUID == regionGuid && !string.IsNullOrEmpty(animalCorples.Key))
-			{
-				hashSet.Add(animalCorples.Key);
 			}
 		}
 		Il2CppSystem.Collections.Generic.List<BaseAi>.Enumerator enumerator4 = BaseAiManager.m_BaseAis.GetEnumerator();
 		while (enumerator4.MoveNext())
 		{
 			BaseAi current4 = enumerator4.Current;
-			if (current4 == null || current4.gameObject == null || !current4.gameObject.activeInHierarchy)
+			if (current4 == null || current4.gameObject == null || !current4.gameObject.activeInHierarchy || current4.GetAiMode() == AiMode.Dead || current4.m_CurrentHP <= 0)
 			{
 				continue;
 			}
@@ -4527,7 +4525,7 @@ public class MyMod : MelonMod
 
 	public static int CalculateTargetPopulation(SpawnRegion m_Region)
 	{
-		return 1;
+		return m_Region != null ? System.Math.Max(0, m_Region.CalculateTargetPopulation()) : 0;
 	}
 
 	public static bool SpawnInBlizzard(SpawnRegion m_Region)
@@ -11776,6 +11774,7 @@ public class MyMod : MelonMod
 		CoopReturnToMenu.Tick();
 		ConnectionWatchdog.Tick();
 		DroppedInspectSync.Tick();
+		WildlifeSpawnerAudit.Tick();
 		if (!DedicatedServerAppMode)
 		{
 			if (Flag1)

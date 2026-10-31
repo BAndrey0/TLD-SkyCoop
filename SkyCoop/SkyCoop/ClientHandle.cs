@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.15.7");
+			packet.Write("0.15.8");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1399,7 +1399,7 @@ public class ClientHandle
 					}
 				}
 				WeatherSetData weatherSetData = null;
-				if (weatherComponent.m_WeatherSetsForScene.Count - 1 <= Indx)
+				if (Indx >= 0 && Indx < weatherComponent.m_WeatherSetsForScene.Count)
 				{
 					weatherSetData = weatherComponent.m_WeatherSetsForScene[Indx];
 				}
@@ -1442,7 +1442,7 @@ public class ClientHandle
 				for (int l = 0; l < weatherSetData4.m_WeatherStages.Length; l++)
 				{
 					WeatherSetStage weatherSetStage = weatherSetData4.m_WeatherStages[l];
-					if (Durations.Count - 1 >= l)
+					if (Durations.Count > l && Transitions.Count > l)
 					{
 						weatherSetStage.m_CurrentDuration = Durations[l];
 						weatherSetStage.m_CurrentTransitionTime = Transitions[l];

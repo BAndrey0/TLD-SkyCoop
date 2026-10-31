@@ -225,6 +225,7 @@ public static class ItemSpawner
 			Close();
 			CheatConsole.OpenFromWindow();
 		});
+		Button(SurvivorModels.Enabled ? "Новые модели: ВКЛ" : "Новые модели: выкл", SurvivorModels.Toggle);
 	}
 
 	private static void Run(string command)

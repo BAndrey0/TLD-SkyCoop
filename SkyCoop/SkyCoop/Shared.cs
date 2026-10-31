@@ -2132,10 +2132,12 @@ public class Shared
 
 	public static void BanSpawnRegion(string GUID, int BanDuration = 1440)
 	{
+		if (string.IsNullOrEmpty(GUID)) return;
 		int value = MyMod.MinutesFromStartServer + BanDuration;
-		if (!MyMod.BannedSpawnRegions.ContainsKey(GUID))
+		if (!MyMod.BannedSpawnRegions.TryGetValue(GUID, out int expires) || expires < value)
 		{
-			MyMod.BannedSpawnRegions.Add(GUID, value);
+			MyMod.BannedSpawnRegions[GUID] = value;
+			ObjectGuidManager.Lookup(GUID)?.GetComponent<Comps.SpawnRegionSimple>()?.SetBanned(true);
 			ServerSend.SPAWNREGIONBANCHECK(GUID);
 		}
 	}
@@ -2144,17 +2146,12 @@ public class Shared
 	{
 		if (MyMod.BannedSpawnRegions.TryGetValue(GUID, out var value))
 		{
-			if (MyMod.MinutesFromStartServer > value)
+			if (MyMod.MinutesFromStartServer >= value)
 			{
 				MyMod.BannedSpawnRegions.Remove(GUID);
 				return false;
 			}
-			if (new System.Random(default(Guid).GetHashCode()).Next(0, 100) <= 23)
-			{
-				BanSpawnRegion(GUID);
-				return true;
-			}
-			return false;
+			return true;
 		}
 		return false;
 	}

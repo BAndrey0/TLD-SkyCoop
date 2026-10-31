@@ -1243,6 +1243,8 @@ public class Comps
 
 	public class SpawnRegionSimple : MonoBehaviour
 	{
+		private float nextSpawnCheck;
+		private float nextBanCheck;
 		public SpawnRegion m_Region;
 
 		public string m_GUID = "";
@@ -1268,10 +1270,12 @@ public class Comps
 
 		public void SetBanned(bool Banned)
 		{
+			bool changed = !m_CheckedForBan || m_Banned != Banned;
 			m_CheckedForBan = true;
 			m_PendingBanCheck = false;
 			m_Banned = Banned;
-			if (m_Banned)
+			nextBanCheck = Time.realtimeSinceStartup + 15f;
+			if (m_Banned && changed)
 			{
 				MelonLogger.Msg(ConsoleColor.Cyan, "SpawnRegion " + m_Region.GetComponent<ObjectGuid>().Get() + " is banned");
 			}
@@ -1280,6 +1284,7 @@ public class Comps
 		public void BanCheck()
 		{
 			m_PendingBanCheck = true;
+			nextBanCheck = Time.realtimeSinceStartup + 15f;
 			if (MyMod.iAmHost)
 			{
 				SetBanned(Shared.CheckSpawnRegionBanned(m_Region.GetComponent<ObjectGuid>().Get()));
@@ -1296,6 +1301,8 @@ public class Comps
 
 		public void UpdateFromManager()
 		{
+			if (Time.realtimeSinceStartup < nextSpawnCheck) return;
+			nextSpawnCheck = Time.realtimeSinceStartup + 2f;
 			if (!MyMod.CanSpawnWildlifeInCurrentScene() || m_Region == null || !m_Region.isActiveAndEnabled)
 			{
 				return;
@@ -1303,10 +1310,6 @@ public class Comps
 			if (!m_ChanceRolled)
 			{
 				float percent = m_Region.m_ChanceActive;
-				if (m_Region.m_ChanceActive > 85f)
-				{
-					percent = 85f;
-				}
 				System.Random rNG = new System.Random(GameManager.GetRandomSeed((int)m_Region.m_Center.x + (int)m_Region.m_Center.y + (int)m_Region.m_Center.z));
 				if (!MyMod.RollChanceSeeded(percent, rNG))
 				{
@@ -1320,18 +1323,20 @@ public class Comps
 			}
 			if (MyMod.AnyOneClose(m_Region.m_Radius + MyMod.MinimalDistanceForSpawn, m_Region.m_Center) != -1 && MyMod.SpawnInBlizzard(m_Region))
 			{
-				if (!(m_Region != null) || !MyMod.AnimalsController || Math.Max(m_Spawned, MyMod.CountKnownWildlifeInRegion(m_GUID, m_Animals)) >= MyMod.CalculateTargetPopulation(m_Region))
+				m_Spawned = MyMod.CountKnownWildlifeInRegion(m_GUID, m_Animals);
+				if (!(m_Region != null) || !MyMod.AnimalsController || m_Spawned >= MyMod.CalculateTargetPopulation(m_Region))
 				{
 					return;
 				}
 				if (m_CheckedForBan)
 				{
+					if (Time.realtimeSinceStartup >= nextBanCheck) BanCheck();
 					if (!m_Banned)
 					{
 						MyMod.SimulateSpawnFromRegionSpawn(m_Region.GetComponent<ObjectGuid>().Get(), m_Region);
 					}
 				}
-				else if (!m_PendingBanCheck)
+				else if (!m_PendingBanCheck || Time.realtimeSinceStartup >= nextBanCheck)
 				{
 					BanCheck();
 				}
@@ -2379,6 +2384,7 @@ public class Comps
 			GameCompat.SetChildActive(clothing.transform.GetChild(1), num2, true);
 			GameCompat.SetChildActive(clothing.transform.GetChild(2), num3, true);
 			GameCompat.SetChildActive(clothing.transform.GetChild(3), num4, true);
+			SurvivorModels.Apply(m_Player, m_Hat, m_Top, m_Bottom, m_Boots, m_Scarf, MyMod.playersData[iD].m_Character);
 		}
 	}
 
