@@ -1019,21 +1019,22 @@ public class Shared
 
 	public static void SkipRTTime(int h)
 	{
-		int num = MyMod.OverridedHourse + h;
+		if (h <= 0) return;
+		int minute = CoopBalancePolicy.AdvanceClock(MyMod.OverridedHourse, MyMod.OverridedMinutes, h);
 		MyMod.PlayedHoursInOnline += h;
-		if (num > 24)
-		{
-			MyMod.OverridedHourse = num - 24;
-		}
-		else
-		{
-			MyMod.OverridedHourse += h;
-		}
+		MyMod.OverridedHourse = minute / 60;
+		MyMod.OverridedMinutes = minute % 60;
 		int minutesFromStartServer = MyMod.MinutesFromStartServer;
 		MyMod.MinutesFromStartServer += h * 60;
 		Log("Skipping " + h + " hour(s) now should be " + MyMod.OverridedHourse);
 		Log("MinutesFromStartServer " + minutesFromStartServer + " now it " + MyMod.MinutesFromStartServer + " because " + h * 60 + " been added");
-		EveryInGameMinute(h * 60);
+		MyMod.OveridedTime = MyMod.OverridedHourse + ":" + MyMod.OverridedMinutes;
+		UpdateTimeOfDayState();
+		if (MyMod.iAmHost)
+		{
+			ServerSend.GAMETIME(MyMod.OveridedTime);
+			WeatherUpdate(h * 60);
+		}
 	}
 
 	public static void ProcessSleep(int Sleepers, int SleepersNeed, int Deads, int FinalHours)
@@ -1090,7 +1091,7 @@ public class Shared
 			return false;
 		}
 		string levelGuid = multiPlayerClientData.m_LevelGuid;
-		if (!WildlifeSpawnAuthorityPolicy.Ready(Server.clients[_From].IsBusy(), multiPlayerClientData.m_IsLoading, multiPlayerClientData.m_Dead, multiPlayerClientData.m_AnimState == "Knock", multiPlayerClientData.m_TicksOnScene, levelGuid))
+		if (!WildlifeSpawnAuthorityPolicy.Ready(Server.clients[_From].IsBusy(), !multiPlayerClientData.m_WildlifeSceneReady, multiPlayerClientData.m_Dead, multiPlayerClientData.m_AnimState == "Knock", multiPlayerClientData.m_TicksOnScene, levelGuid))
 		{
 			return false;
 		}
@@ -1103,7 +1104,7 @@ public class Shared
 			if (i < MyMod.playersData.Count && Server.clients.ContainsKey(i))
 			{
 				DataStr.MultiPlayerClientData multiPlayerClientData2 = MyMod.playersData[i];
-				if (multiPlayerClientData2 != null && multiPlayerClientData2.m_LevelGuid == levelGuid && WildlifeSpawnAuthorityPolicy.Ready(Server.clients[i].IsBusy(), multiPlayerClientData2.m_IsLoading, multiPlayerClientData2.m_Dead, multiPlayerClientData2.m_AnimState == "Knock", multiPlayerClientData2.m_TicksOnScene, multiPlayerClientData2.m_LevelGuid))
+					if (multiPlayerClientData2 != null && multiPlayerClientData2.m_LevelGuid == levelGuid && WildlifeSpawnAuthorityPolicy.Ready(Server.clients[i].IsBusy(), !multiPlayerClientData2.m_WildlifeSceneReady, multiPlayerClientData2.m_Dead, multiPlayerClientData2.m_AnimState == "Knock", multiPlayerClientData2.m_TicksOnScene, multiPlayerClientData2.m_LevelGuid))
 				{
 					return false;
 				}

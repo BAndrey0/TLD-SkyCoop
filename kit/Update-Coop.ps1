@@ -26,7 +26,7 @@ if($CheckOnly){[pscustomobject]@{installRoot=$target;version=$manifest.localRevi
 $backup=Join-Path $target ('updates\'+[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmssfff'))
 New-Item -ItemType Directory -Path $backup | Out-Null
 foreach($entry in $manifest.files){$old=Join-Path $game $destinations[[string]$entry.name];if(Test-Path -LiteralPath $old){Copy-Item -LiteralPath $old -Destination (Join-Path $backup $entry.name)}}
-foreach($name in @('Launch-Coop.ps1','Play-Coop.cmd')){if(Test-Path -LiteralPath (Join-Path $target $name)){Copy-Item -LiteralPath (Join-Path $target $name) -Destination (Join-Path $backup $name)}}
+foreach($name in @('Launch-Coop.ps1','Play-Coop.cmd','Sync-GameContent.ps1')){if(Test-Path -LiteralPath (Join-Path $target $name)){Copy-Item -LiteralPath (Join-Path $target $name) -Destination (Join-Path $backup $name)}}
 $marker=Join-Path $target '.update-incomplete'
 'Update in progress. Run Update.cmd again if interrupted.' | Set-Content -LiteralPath $marker
 foreach($entry in $manifest.files){
@@ -34,7 +34,7 @@ foreach($entry in $manifest.files){
  Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('files\'+$entry.name)) -Destination $destination -Force
  if((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $entry.sha256){throw "Installed file checksum mismatch: $($entry.name)"}
 }
-foreach($name in @('Launch-Coop.ps1','Play-Coop.cmd')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $target $name) -Force}
+foreach($name in @('Launch-Coop.ps1','Play-Coop.cmd','Sync-GameContent.ps1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $target $name) -Force}
 # SkyCoopHotfix.dll fixes are built into SkyCoop.dll 0.14.2; keeping it would patch the same code twice.
 $obsolete=Join-Path $game 'Mods\SkyCoopHotfix.dll'
 if(Test-Path -LiteralPath $obsolete){Move-Item -LiteralPath $obsolete -Destination (Join-Path $backup 'SkyCoopHotfix.dll') -Force}

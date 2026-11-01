@@ -80,9 +80,10 @@ internal sealed class ReleaseInfo
 	public string ZipName = "";
 
 	public string LauncherUrl = "";
+	public string ZipHash = "", LauncherHash = "";
 }
 
-internal sealed class LauncherForm : Form
+internal sealed partial class LauncherForm : Form
 {
 	private const string Repository = "BAndrey0/TLD-SkyCoop";
 
@@ -127,6 +128,7 @@ internal sealed class LauncherForm : Form
 	private ReleaseInfo latest;
 
 	private bool busy;
+	private bool initializing;
 
 	private string StatePath => Path.Combine(root, "launcher.json");
 
@@ -136,38 +138,7 @@ internal sealed class LauncherForm : Form
 
 	public LauncherForm()
 	{
-		Text = "TLD-SkyCoop — лаунчер";
-		ClientSize = new Size(640, 470);
-		FormBorderStyle = FormBorderStyle.FixedSingle;
-		MaximizeBox = false;
-		StartPosition = FormStartPosition.CenterScreen;
-		Font = new Font("Segoe UI", 9.5f);
-		BackColor = Color.FromArgb(24, 26, 28);
-		ForeColor = Color.FromArgb(225, 222, 212);
-
-		Label title = new Label { Text = "The Long Dark — кооператив", Font = new Font("Segoe UI Semibold", 16f), AutoSize = true, Location = new Point(18, 14) };
-		versionLabel.SetBounds(20, 52, 600, 22);
-		pathLabel.SetBounds(20, 74, 600, 22);
-		pathLabel.ForeColor = Color.FromArgb(150, 150, 145);
-		statusLabel.SetBounds(20, 100, 600, 40);
-
-		StyleButton(playButton, "ИГРАТЬ", 20, 146, 200, 46, primary: true);
-		StyleButton(installButton, "Установить", 232, 146, 180, 46, primary: false);
-		StyleButton(checkButton, "Проверить обновления", 424, 146, 196, 22, primary: false);
-		StyleButton(folderButton, "Открыть папку", 424, 170, 196, 22, primary: false);
-		testBuilds.Text = "Получать тестовые версии";
-		testBuilds.SetBounds(20, 200, 300, 24);
-		progress.SetBounds(20, 228, 600, 14);
-		log.SetBounds(20, 250, 600, 206);
-		log.Multiline = true;
-		log.ReadOnly = true;
-		log.ScrollBars = ScrollBars.Vertical;
-		log.BackColor = Color.FromArgb(14, 15, 16);
-		log.ForeColor = Color.FromArgb(190, 188, 180);
-		log.BorderStyle = BorderStyle.FixedSingle;
-		log.Font = new Font("Consolas", 8.5f);
-
-		Controls.AddRange(new Control[] { title, versionLabel, pathLabel, statusLabel, playButton, installButton, checkButton, folderButton, testBuilds, progress, log });
+		InitializeModernView();
 
 		playButton.Click += async delegate { await Play(); };
 		installButton.Click += async delegate { await InstallOrUpdate(); };
@@ -175,6 +146,7 @@ internal sealed class LauncherForm : Form
 		folderButton.Click += delegate { Process.Start("explorer.exe", "\"" + root + "\""); };
 		testBuilds.CheckedChanged += async delegate
 		{
+			if (initializing) return;
 			state.includeTestBuilds = testBuilds.Checked;
 			SaveState();
 			if (!busy)
@@ -205,14 +177,16 @@ internal sealed class LauncherForm : Form
 	{
 		ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 		LoadState();
+		initializing = true;
 		testBuilds.Checked = state.includeTestBuilds;
+		initializing = false;
 		Log("Лаунчер " + LauncherVersion.ToString(3) + ", папка: " + root);
 		if (Regex.IsMatch(root, "[^\\x00-\\x7F]"))
 		{
 			Log("ВНИМАНИЕ: в пути к лаунчеру есть русские буквы. MelonLoader с таким путём работает ненадёжно. Перенесите папку лаунчера, например, в D:\\TLD-Coop.");
 		}
 		RefreshView();
-		await CheckForUpdates();
+		if (Environment.GetEnvironmentVariable("SKYCOOP_LAUNCHER_PREVIEW") != "1") await CheckForUpdates();
 	}
 
 	private void LoadState()
@@ -310,6 +284,7 @@ internal sealed class LauncherForm : Form
 		versionLabel.Text = "Установлено: " + ((current != null) ? current.ToString(3) : (installed ? "неизвестно" : "нет")) + "    •    Последняя: " + latestText;
 		pathLabel.Text = installed ? ("Игра: " + state.installDirectory) : "Кооперативная копия игры ещё не установлена";
 		bool updateAvailable = installed && latest != null && (current == null || latest.Version > current);
+		RefreshDashboard(installed,current,updateAvailable);
 		playButton.Enabled = !busy && installed;
 		installButton.Enabled = !busy && latest != null && (!installed || updateAvailable);
 		installButton.Text = !installed ? "Установить" : (updateAvailable ? ("Обновить до " + latest.Version.ToString(3)) : "Обновлений нет");
@@ -326,6 +301,7 @@ internal sealed class LauncherForm : Form
 		busy = value;
 		progress.Style = value ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
 		progress.Value = 0;
+		progress.Visible = value;
 		if (status != null)
 		{
 			statusLabel.Text = status;
@@ -375,6 +351,8 @@ internal sealed class LauncherForm : Form
 	{
 		WebClient client = new WebClient();
 		client.Headers[HttpRequestHeader.UserAgent] = "TLD-Coop-Launcher";
+		client.CachePolicy = new System.Net.Cache.RequestCachePolicy(System.Net.Cache.RequestCacheLevel.NoCacheNoStore);
+		client.Headers[HttpRequestHeader.CacheControl] = "no-cache";
 		return client;
 	}
 
@@ -415,14 +393,18 @@ internal sealed class LauncherForm : Form
 					}
 					string name = asset.TryGetValue("name", out object an) ? (an as string ?? "") : "";
 					string url = asset.TryGetValue("browser_download_url", out object au) ? (au as string ?? "") : "";
+					string digest = asset.TryGetValue("digest", out object ad) ? (ad as string ?? "") : "";
+					string hash = digest.StartsWith("sha256:",StringComparison.OrdinalIgnoreCase) ? digest.Substring(7) : "";
 					if (Regex.IsMatch(name, "^TLD-SkyCoop-.*\\.zip$", RegexOptions.IgnoreCase))
 					{
 						info.ZipName = name;
 						info.ZipUrl = url;
+						info.ZipHash = hash;
 					}
 					else if (name.Equals("TLD-Coop-Launcher.exe", StringComparison.OrdinalIgnoreCase))
 					{
 						info.LauncherUrl = url;
+						info.LauncherHash = hash;
 					}
 				}
 			}
@@ -434,7 +416,7 @@ internal sealed class LauncherForm : Form
 		return candidates.OrderByDescending((ReleaseInfo r) => r.Version).FirstOrDefault();
 	}
 
-	private async Task<string> Download(string url, string fileName)
+	private async Task<string> Download(string url, string fileName, string expectedHash = "")
 	{
 		Directory.CreateDirectory(DownloadsDir);
 		string target = Path.Combine(DownloadsDir, fileName);
@@ -455,6 +437,12 @@ internal sealed class LauncherForm : Form
 			};
 			await client.DownloadFileTaskAsync(new Uri(url), partial);
 		}
+		if (!string.IsNullOrEmpty(expectedHash))
+		{
+			using(var sha=SHA256.Create()) using(var input=File.OpenRead(partial))
+				if(!string.Equals(BitConverter.ToString(sha.ComputeHash(input)).Replace("-",""),expectedHash,StringComparison.OrdinalIgnoreCase))
+					throw new InvalidOperationException("Контрольная сумма загрузки не совпала. Повторите скачивание.");
+		}
 		if (File.Exists(target))
 		{
 			File.Delete(target);
@@ -469,7 +457,7 @@ internal sealed class LauncherForm : Form
 	{
 		try
 		{
-			string file = await Download(release.LauncherUrl, "TLD-Coop-Launcher.new.exe");
+			string file = await Download(release.LauncherUrl, "TLD-Coop-Launcher.new.exe",release.LauncherHash);
 			Version version = AssemblyNameVersion(file);
 			if (version == null || version <= LauncherVersion)
 			{
@@ -504,7 +492,7 @@ internal sealed class LauncherForm : Form
 
 	private async Task FetchKit(ReleaseInfo release)
 	{
-		string zip = await Download(release.ZipUrl, release.ZipName);
+		string zip = await Download(release.ZipUrl, release.ZipName,release.ZipHash);
 		string staging = Path.Combine(DownloadsDir, "kit-" + release.Version.ToString(3));
 		if (Directory.Exists(staging))
 		{
@@ -516,11 +504,26 @@ internal sealed class LauncherForm : Form
 		{
 			throw new InvalidOperationException("в архиве релиза нет friend-kit\\manifest.json");
 		}
-		if (Directory.Exists(KitDir))
+		var manifest=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(extracted,"manifest.json")));
+		if(manifest==null||!manifest.TryGetValue("files",out var entries)||!(entries is System.Collections.IEnumerable entryList))throw new InvalidOperationException("Неполный манифест обновления");
+		foreach(object entry in entryList)
 		{
-			Directory.Delete(KitDir, recursive: true);
+			var file=entry as Dictionary<string,object>;if(file==null)throw new InvalidOperationException("Некорректный манифест обновления");
+			string name=Convert.ToString(file["name"]);if(Path.GetFileName(name)!=name)throw new InvalidOperationException("Некорректный путь в обновлении");
+			using(var sha=SHA256.Create())using(var input=File.OpenRead(Path.Combine(extracted,"files",name)))
+				if(!string.Equals(BitConverter.ToString(sha.ComputeHash(input)).Replace("-",""),Convert.ToString(file["sha256"]),StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Повреждён файл обновления: "+name);
 		}
-		Directory.Move(extracted, KitDir);
+		string previousKit = KitDir + ".previous";
+		if (Directory.Exists(previousKit)) Directory.Delete(previousKit, true);
+		bool hadKit = Directory.Exists(KitDir);
+		if (hadKit) Directory.Move(KitDir, previousKit);
+		try { Directory.Move(extracted, KitDir); }
+		catch
+		{
+			if (hadKit && !Directory.Exists(KitDir)) Directory.Move(previousKit, KitDir);
+			throw;
+		}
+		if (hadKit) Directory.Delete(previousKit, true);
 		Directory.Delete(staging, recursive: true);
 		Log("Набор мода " + release.Version.ToString(3) + " распакован в friend-kit.");
 	}
@@ -636,7 +639,9 @@ internal sealed class LauncherForm : Form
 				}
 			}
 			state.installDirectory = installDir;
+			if (gameDir != null) state.gameDirectory = gameDir;
 			SaveState();
+			await SyncInstalledContent();
 			Log(installed ? "Обновление установлено." : "Установка завершена.");
 		}
 		catch (Exception ex)
@@ -674,10 +679,13 @@ internal sealed class LauncherForm : Form
 			MessageBox.Show(this, "Сначала запустите Steam и войдите в аккаунт.", Text);
 			return;
 		}
-		SetBusy(true, "Запускаю игру…");
+		SetBusy(true, "Проверяю дополнения и запускаю игру…");
+		bool launched = false;
 		try
 		{
-			await RunScript(Path.Combine(state.installDirectory, "Launch-Coop.ps1"), "");
+			await SyncInstalledContent();
+			await RunScript(Path.Combine(state.installDirectory, "Launch-Coop.ps1"), "-SkipContentSync");
+			launched = true;
 			Log("Игра запущена.");
 		}
 		catch (Exception ex)
@@ -687,7 +695,7 @@ internal sealed class LauncherForm : Form
 		}
 		finally
 		{
-			SetBusy(false, "Игра запущена. Лаунчер можно закрыть.");
+			SetBusy(false, launched ? "Игра запущена. Лаунчер можно закрыть." : null);
 		}
 	}
 

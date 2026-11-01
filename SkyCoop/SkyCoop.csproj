@@ -15,7 +15,7 @@
       <Private>False</Private>
     </Reference>
   </ItemDefinitionGroup>
-  <ItemGroup />
+  <ItemGroup><Reference Include="AssetsTools.NET"><HintPath>$(GameDir)\MelonLoader\net6\AssetsTools.NET.dll</HintPath></Reference></ItemGroup>
   <ItemGroup>
     <Reference Include="MelonLoader">
       <HintPath>$(GameDir)\MelonLoader\net6\MelonLoader.dll</HintPath>

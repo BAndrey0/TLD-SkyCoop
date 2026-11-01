@@ -104,7 +104,7 @@ internal class Server
 				if (packet.UnreadLength() <= 12)
 				{
 					Log("Client without SubNetworkGUID trying to connect, rejecting, _clientId " + num);
-					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.15.8");
+					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.0");
 					return;
 				}
 				text = packet.ReadString();
@@ -824,7 +824,9 @@ internal class Server
 			{
 				193,
 				ServerHandle.NOISEMAKERIGNITE
-			}
+			},
+			{ 194, ServerHandle.WILDLIFESCENEREADY },
+		{ 195, NativeAppearance.ReceiveClient }
 		};
 		Log("Initialized packets.");
 	}

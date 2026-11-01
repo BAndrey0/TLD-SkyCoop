@@ -2384,7 +2384,7 @@ public class Comps
 			GameCompat.SetChildActive(clothing.transform.GetChild(1), num2, true);
 			GameCompat.SetChildActive(clothing.transform.GetChild(2), num3, true);
 			GameCompat.SetChildActive(clothing.transform.GetChild(3), num4, true);
-			SurvivorModels.Apply(m_Player, m_Hat, m_Top, m_Bottom, m_Boots, m_Scarf, MyMod.playersData[iD].m_Character);
+			NativeAppearance.Apply(m_Player);
 		}
 	}
 

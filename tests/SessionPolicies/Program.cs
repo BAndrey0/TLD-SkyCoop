@@ -8,6 +8,15 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  Check(CoopBalancePolicy.Cost(30, 10) == 300, "Long recipe must cost three bars, never cap at 100");
+  Check(!CoopBalancePolicy.CanStart(100, 160, false), "Non-resumable work cannot start unaffordable");
+  Check(CoopBalancePolicy.CanStart(25, 300, true), "Long recipes must allow partial work");
+  Check(CoopBalancePolicy.WorkCharge(10, 9, 12, 0, 10) == 10, "Final work frame cannot overcharge beyond completion");
+  Check(CoopBalancePolicy.WorkCharge(10, -1, 1, 0, 10) == 10, "Work cannot charge before start");
+  Check(CoopBalancePolicy.AdvanceClock(23, 42, 1) == 42, "Sleep must wrap midnight without adding a minute");
+  Check(CoopBalancePolicy.AdvanceClock(16, 25, 8) == 25, "Exactly midnight must be 00 not 24");
+  Check(CoopBalancePolicy.AdvanceClock(16, 25, 26) == 18*60+25, "Long skip must wrap multiple days");
+  Check(CoopBalancePolicy.RecoveryRate(false, true, .9f) < CoopBalancePolicy.RecoveryRate(false, true, 0), "Severe tiredness must slow work recovery");
   GameServer.ClientUser.myId = 1;
   ConnectionWatchdog.Tick(0);
   ConnectionWatchdog.Tick(19);
@@ -38,6 +47,8 @@ static class Program
   Check(GameServer.ServerSend.Beats == 2, "Host heartbeat must follow real time even if world time is paused");
   Check(CoopReturnToMenu.Losses == 2, "Host must never disconnect itself");
   Check(WildlifeSpawnAuthorityPolicy.AcceptGrant(true, "LakeRegion", "LakeRegion"), "Guest can own its own scene");
+  Check(WildlifeSpawnAuthorityPolicy.Ready(true,false,false,false,0,"RavineTransitionZone"), "Explicitly loaded guest must not wait for a host scene tick");
+  Check(!WildlifeSpawnAuthorityPolicy.Ready(true,true,false,false,100,"RavineTransitionZone"), "Host tick history must never override guest loading");
   Check(!WildlifeSpawnAuthorityPolicy.AcceptGrant(true, "LakeRegion", "RavineTransitionZone"), "Stale authority grant must be rejected");
   Check(!WildlifeSpawnAuthorityPolicy.AcceptGrant(false, "LakeRegion", "LakeRegion"), "Loading guest must not accept authority");
   Check(!WildlifeSpawnAuthorityPolicy.WorldScene("MainMenu"), "Menu must never spawn wildlife");

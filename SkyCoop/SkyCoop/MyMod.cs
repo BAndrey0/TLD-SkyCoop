@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.15.8";
+		public const string Version = "0.16.0";
 
 		public const string DownloadLink = null;
 
@@ -11764,6 +11764,7 @@ public class MyMod : MelonMod
 		SaveCheck();
 		CheatConsole.Tick();
 		ItemSpawner.Tick();
+		NativeAppearance.Tick();
 		SteamFriendsWindow.Tick();
 		RadialSpawnSync.Tick();
 		DeathRespawn.Tick();
@@ -11775,6 +11776,7 @@ public class MyMod : MelonMod
 		ConnectionWatchdog.Tick();
 		DroppedInspectSync.Tick();
 		WildlifeSpawnerAudit.Tick();
+		WildlifeSceneHandshake.Tick();
 		if (!DedicatedServerAppMode)
 		{
 			if (Flag1)
@@ -11917,6 +11919,7 @@ public class MyMod : MelonMod
 		CoopReturnToMenu.Draw();
 		CheatConsole.Draw();
 		ItemSpawner.Draw();
+		NativeAppearance.Draw();
 		SteamFriendsWindow.Draw();
 		CoopFatigue.Draw();
 		DeathRespawn.Draw();

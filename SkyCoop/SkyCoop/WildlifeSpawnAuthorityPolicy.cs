@@ -16,7 +16,9 @@ public static class WildlifeSpawnAuthorityPolicy
 
 	public static bool Ready(bool connected, bool loading, bool dead, bool knocked, int ticks, string scene)
 	{
-		if (connected && !loading && !dead && !knocked && ticks > 0)
+		// Loading now reflects the explicit scene-ready handshake. A host-side
+		// tick count is neither necessary nor proof that the remote scene loaded.
+		if (connected && !loading && !dead && !knocked)
 		{
 			return WorldScene(scene);
 		}

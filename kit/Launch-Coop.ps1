@@ -1,4 +1,4 @@
-param([switch]$CheckOnly)
+param([switch]$CheckOnly, [switch]$SkipContentSync)
 $ErrorActionPreference='Stop'
 $parent=Split-Path -Parent $PSScriptRoot
 $candidates=@($PSScriptRoot)
@@ -17,6 +17,12 @@ if(!(Test-Path -LiteralPath (Join-Path $installRoot 'runtime\dotnet.exe'))){thro
 if(Test-Path -LiteralPath (Join-Path $game 'Mods\CoopLab.dll')){throw 'Test bot found. Use a production copy without CoopLab.dll'}
 if($CheckOnly){[pscustomobject]@{installRoot=$installRoot;game=$game;runtime=(Join-Path $installRoot 'runtime');ready=$true};return}
 foreach($running in @(Get-Process tld -ErrorAction SilentlyContinue)){throw 'The Long Dark is already running. Close it normally before starting the co-op copy.'}
+$sourceRecord=Join-Path $installRoot 'game-source.json'
+$syncScript=Join-Path $installRoot 'Sync-GameContent.ps1'
+if(!$SkipContentSync -and (Test-Path -LiteralPath $sourceRecord) -and (Test-Path -LiteralPath $syncScript)){
+ $sourceGame=[string](Get-Content -LiteralPath $sourceRecord -Raw|ConvertFrom-Json).gameDirectory
+ if($sourceGame -and (Test-Path -LiteralPath (Join-Path $sourceGame 'GameAssembly.dll'))){& $syncScript -GameDirectory $sourceGame -InstallDirectory $installRoot}
+}
 Write-Host ("Starting co-op copy: "+$game)
 if(!(Get-Process steam -ErrorAction SilentlyContinue)){throw 'Start Steam and sign in first'}
 foreach($v in @('COOP_QA_MODE','COOP_QA_STEAM_WIRE','COOP_QA_NATIVE_GENDER','COOP_QA_DROP_FIRST_WELCOME','COOP_QA_DROP_FIRST_ACK','COOP_QA_RUN_ID','COOP_QA_REJOIN','COOP_QA_SEED','COOP_QA_STEAM_HOST_SAVE','COOP_QA_QUIT_STYLE','SKYCOOP_BIND_ADDRESS')){[Environment]::SetEnvironmentVariable($v,$null,'Process')}

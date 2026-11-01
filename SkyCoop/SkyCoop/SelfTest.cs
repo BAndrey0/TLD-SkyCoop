@@ -17,9 +17,55 @@ public static class SelfTest
 	private static float menuSince = -1f;
 	private static bool dumpedAvatar;
 	private static bool previewCreated;
+	private static bool nativePreviewCreated;
+	private static bool nativeAssetsProbed;
+	private static float balanceSampleAt=-1, balanceFatigue;
 
 	public static void Tick()
 	{
+		if(!nativeAssetsProbed && Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_AVATAR_TEST")=="1" && Time.realtimeSinceStartup>60 && MyMod.BundleAsset<GameObject>("multiplayerPlayer")!=null)
+		{
+			nativeAssetsProbed=true;NativeCharacterLibrary.Load(0);
+		}
+		if(Environment.GetEnvironmentVariable("SKYCOOP_BALANCE_TEST")=="1"&&MyMod.iAmHost&&MyMod.WildlifeSceneReady())
+		{
+			var fatigue=GameManager.GetFatigueComponent();
+			if(fatigue!=null&&balanceSampleAt==-1){
+				GameManager.GetConditionComponent().m_CurrentHP=GameManager.GetConditionComponent().GetAdjustedMaxHP();
+				GameManager.GetHungerComponent().m_CurrentReserveCalories=GameManager.GetHungerComponent().m_MaxReserveCalories;
+				GameManager.GetThirstComponent().m_CurrentThirst=0;
+				GameManager.GetFreezingComponent().m_CurrentFreezing=0;
+				fatigue.m_CurrentFatigue=0;
+				MyMod.OverridedHourse=12;MyMod.OverridedMinutes=0;MyMod.OveridedTime="12:00";Shared.UpdateTimeOfDayState();
+			balanceSampleAt=Time.realtimeSinceStartup;balanceFatigue=fatigue.m_CurrentFatigue;}
+			else if(fatigue!=null&&balanceSampleAt>=0&&Time.realtimeSinceStartup-balanceSampleAt>=10)
+			{
+				MelonLogger.Msg("[Balance test] fatigueDelta="+(fatigue.m_CurrentFatigue-balanceFatigue)+" elapsed="+(Time.realtimeSinceStartup-balanceSampleAt)+" nativeRate="+fatigue.GetCurrentTotalFatigueBurnPerHour()+" configuredRate="+fatigue.m_TotalFatigueBurnPerHour+" strength="+CoopFatigue.Strength);
+				balanceSampleAt=-2;
+			}
+		}
+		if (!nativePreviewCreated && Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_AVATAR_TEST") == "1" && MyMod.iAmHost && MyMod.WildlifeSceneReady())
+		{
+			nativePreviewCreated=true;
+			var prefab=NativeCharacterLibrary.Load(0);
+			if(prefab!=null)
+			{
+				var camera=GameManager.GetMainCamera();var forward=camera.transform.forward;forward.y=0;forward.Normalize();
+				for(int choice=0;choice<4;choice++)
+				{
+				var avatar=UnityEngine.Object.Instantiate(MyMod.BundleAsset<GameObject>("multiplayerPlayer"),GameManager.GetPlayerTransform().position+forward*3+camera.transform.right*((choice-1.5f)*1.2f),Quaternion.Euler(0,camera.transform.eulerAngles.y+180,0));
+				foreach(var collider in avatar.GetComponentsInChildren<Collider>(true))collider.enabled=false;
+				NativeAppearance.ApplyChoice(avatar,choice);
+				var nativeDump=new System.Text.StringBuilder();
+				foreach(var renderer in avatar.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+				{
+					nativeDump.AppendLine("MESH "+renderer.name+" root="+renderer.rootBone?.name+" vertices="+renderer.sharedMesh?.vertexCount);
+					foreach(var bone in renderer.bones)if(bone!=null)nativeDump.AppendLine(bone.name+";"+bone.parent?.name+";"+bone.position.ToString("F3"));
+				}
+				System.IO.File.WriteAllText(Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_AVATAR_DUMP") ?? System.IO.Path.Combine(Environment.CurrentDirectory,"..","native-model-test.txt"),nativeDump.ToString());
+				}
+			}
+		}
 		if (!previewCreated && Environment.GetEnvironmentVariable("SKYCOOP_AVATAR_PREVIEW") == "1" && MyMod.WildlifeSceneReady() && !Shared.IsMainMenuScene(MyMod.level_name))
 		{
 			var prefab = MyMod.BundleAsset<GameObject>("multiplayerPlayer");
@@ -74,7 +120,8 @@ public static class SelfTest
 		// The menu scene exists while startup movies are still showing; loading a save
 		// during them leaves their overlay/camera above the world. Give the UI test time
 		// to finish the startup screens before automatically hosting.
-		if (Time.realtimeSinceStartup - menuSince < 60f)
+		float delay = float.TryParse(Environment.GetEnvironmentVariable("SKYCOOP_SELFTEST_DELAY"), out float requestedDelay) ? Math.Max(5, requestedDelay) : 60f;
+		if (Time.realtimeSinceStartup - menuSince < delay)
 		{
 			return;
 		}

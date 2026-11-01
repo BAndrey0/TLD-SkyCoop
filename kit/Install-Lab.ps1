@@ -36,6 +36,8 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'files\Steamworks.NET.dll') -Des
 [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'),'305620',[Text.Encoding]::ASCII)
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Launch-Coop.ps1') -Destination (Join-Path $target 'Launch-Coop.ps1')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Play-Coop.cmd') -Destination (Join-Path $target 'Play-Coop.cmd')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Sync-GameContent.ps1') -Destination (Join-Path $target 'Sync-GameContent.ps1')
+@{gameDirectory=$source}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $target 'game-source.json') -Encoding utf8
 # The archive launcher can find custom installation directories too.
 $locationFile=Join-Path (Split-Path -Parent $PSScriptRoot) 'coop-install-location.json'
 @{installDirectory=$target}|ConvertTo-Json|Set-Content -LiteralPath $locationFile -Encoding utf8

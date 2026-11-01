@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.15.8");
+			packet.Write("0.16.0");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1247,11 +1247,8 @@ public class ClientHandle
 	{
 		string guid = _packet.ReadString();
 		bool banned = _packet.ReadBool();
-		GameObject gameObject = ObjectGuidManager.Lookup(guid);
-		if (gameObject != null && (bool)gameObject.GetComponent<Comps.SpawnRegionSimple>())
-		{
-			gameObject.GetComponent<Comps.SpawnRegionSimple>().SetBanned(banned);
-		}
+		var region = WildlifeSpawnerAudit.ResolveRegion(guid);
+		if (region != null) region.SetBanned(banned);
 	}
 
 	public static void CAIRNS(Packet _packet)

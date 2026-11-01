@@ -208,7 +208,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.15.8")
+				if (text2 != "0.16.0")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
@@ -931,6 +931,7 @@ internal class ClientUser
 				ClientHandle.NOISEMAKERIGNITE
 			}
 		};
+		packetHandlers[193] = NativeAppearance.Receive;
 		MelonLogger.Msg("Initialized packets.");
 	}
 }

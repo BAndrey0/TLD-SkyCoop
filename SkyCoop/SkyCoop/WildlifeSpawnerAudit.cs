@@ -7,12 +7,26 @@ namespace SkyCoop;
 // Drive the replacement population controller independently of native re-roll frequency.
 public static class WildlifeSpawnerAudit
 {
+	public static Comps.SpawnRegionSimple ResolveRegion(string guid)
+	{
+		var regions = GameManager.GetSpawnRegionManager()?.m_SpawnRegions;
+		if (regions == null) return null;
+		foreach (var region in regions)
+			if (region != null && region.GetComponent<ObjectGuid>()?.Get() == guid)
+				return region.GetComponent<Comps.SpawnRegionSimple>();
+		return null;
+	}
 	private static float nextTick, nextReport;
 	public static void Tick()
 	{
-		if (!MyMod.InOnline() || !MyMod.CanSpawnWildlifeInCurrentScene() || Time.realtimeSinceStartup < nextTick) return;
+		if (!MyMod.InOnline() || Time.realtimeSinceStartup < nextTick) return;
 		nextTick = Time.realtimeSinceStartup + 2;
 		bool report = Time.realtimeSinceStartup >= nextReport;
+		if (!MyMod.CanSpawnWildlifeInCurrentScene())
+		{
+			if(report){nextReport=Time.realtimeSinceStartup+30;MelonLogger.Msg($"[Wildlife gate] scene={MyMod.level_guid} ready={MyMod.WildlifeSceneReady()} controller={MyMod.AnimalsController} grant={MyMod.WildlifeAuthorityScene}");}
+			return;
+		}
 		var manager = GameManager.GetSpawnRegionManager();
 		if (manager == null || manager.m_SpawnRegions == null) return;
 		int active = 0, nearby = 0, population = 0, target = 0;

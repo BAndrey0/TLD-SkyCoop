@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.15.8")
+			if (text2 != "0.16.0")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.15.8");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.0");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -214,11 +214,12 @@ internal class ServerHandle
 		int num = _packet.ReadInt();
 		if (MyMod.playersData[_fromClient] != null)
 		{
-			MyMod.playersData[_fromClient].m_Levelid = num;
 			if (MyMod.playersData[_fromClient].m_Levelid != num)
 			{
+				MyMod.playersData[_fromClient].m_WildlifeSceneReady = false;
 				Log("Player " + _fromClient + "  transition to level " + num);
 			}
+			MyMod.playersData[_fromClient].m_Levelid = num;
 			if (num == 0)
 			{
 				Shared.AddLoadingClient(_fromClient);
@@ -232,11 +233,13 @@ internal class ServerHandle
 		string text = _packet.ReadString();
 		if (MyMod.playersData[_fromClient] != null)
 		{
-			MyMod.playersData[_fromClient].m_LevelGuid = text;
 			if (MyMod.playersData[_fromClient].m_LevelGuid != text)
 			{
+				MyMod.playersData[_fromClient].m_WildlifeSceneReady = false;
+				MyMod.playersData[_fromClient].m_TicksOnScene = 0;
 				Log("Player " + _fromClient + "  transition to level with GUID " + text);
 			}
+			MyMod.playersData[_fromClient].m_LevelGuid = text;
 		}
 		ServerSend.LEVELGUID(_fromClient, text, toEveryOne: false);
 	}
@@ -1386,6 +1389,22 @@ internal class ServerHandle
 		string gUID = _packet.ReadString();
 		bool result = Shared.CheckSpawnRegionBanned(gUID);
 		ServerSend.SPAWNREGIONBANCHECK(gUID, result, _fromClient);
+	}
+
+	public static void WILDLIFESCENEREADY(int from, Packet packet)
+	{
+		string scene = packet.ReadString(); int sceneId = packet.ReadInt(); bool ready = packet.ReadBool();
+		if (from <= 0 || from >= MyMod.playersData.Count || MyMod.playersData[from] == null) return;
+		var data = MyMod.playersData[from];
+		ready &= WildlifeSpawnAuthorityPolicy.WorldScene(scene);
+		if (ready)
+		{
+			if (data.m_LevelGuid != scene) data.m_TicksOnScene = 0;
+			data.m_LevelGuid = scene; data.m_Levelid = sceneId;
+		}
+		if (data.m_WildlifeSceneReady != ready) Log("[Wildlife ready] client=" + from + " ready=" + ready + " scene=" + scene);
+		data.m_WildlifeSceneReady = ready;
+		ServerSend.ANIMALROLE(from, Shared.ShouldbeAnimalController(data.m_TicksOnScene, data.m_Levelid, from));
 	}
 
 	public static void ADDDOORLOCK(int _fromClient, Packet _packet)

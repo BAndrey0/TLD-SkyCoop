@@ -322,6 +322,7 @@ public class DataStr
 		public int m_TicksOnScene;
 
 		public int m_PreviousLevelId;
+		public bool m_WildlifeSceneReady;
 
 		public string m_LevelGuid = "";
 
