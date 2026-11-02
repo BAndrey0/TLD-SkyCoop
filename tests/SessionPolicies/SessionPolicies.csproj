@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup>
   <ItemGroup>
+	<Compile Include="../../SkyCoop/SkyCoop/MotionTiming.cs" Link="MotionTiming.cs" />
+	<Compile Include="../../SkyCoop/SkyCoop/MotionWire.cs" Link="MotionWire.cs" />
 	<Compile Include="../../SkyCoop/SkyCoop/FatigueTravelLedger.cs" Link="FatigueTravelLedger.cs" />
     <Compile Include="../../SkyCoop/SkyCoop/CoopBalancePolicy.cs" Link="CoopBalancePolicy.cs" />
     <Compile Include="../../SkyCoop/SkyCoop/ConnectionWatchdog.cs" Link="ConnectionWatchdog.cs" />

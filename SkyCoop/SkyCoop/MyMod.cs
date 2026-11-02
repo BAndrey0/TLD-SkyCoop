@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.1";
+		public const string Version = "0.16.2";
 
 		public const string DownloadLink = null;
 
@@ -8567,7 +8567,8 @@ public class MyMod : MelonMod
 			{
 				MelonLogger.Msg("Opening with loot, loading loot to the container");
 				Il2CppSystem.Collections.Generic.List<GearItem> loadedItems = new Il2CppSystem.Collections.Generic.List<GearItem>();
-				goingToOpenContinaer.Deserialize(InterloperFilterContainer(text), loadedItems);
+				using(new ContainerContentRestore(goingToOpenContinaer))
+					goingToOpenContinaer.Deserialize(InterloperFilterContainer(text), loadedItems);
 			}
 			GameCompat.Panel<Panel_Container>().SetContainer(goingToOpenContinaer, goingToOpenContinaer.m_LocalizedDisplayName.Text());
 			ContainerLootSync.AcceptedOpen(goingToOpenContinaer);
@@ -8606,7 +8607,8 @@ public class MyMod : MelonMod
 		else
 		{
 			Il2CppSystem.Collections.Generic.List<GearItem> loadedItems = new Il2CppSystem.Collections.Generic.List<GearItem>();
-			box.Deserialize(InterloperFilterContainer(text), loadedItems);
+			using(new ContainerContentRestore(box))
+				box.Deserialize(InterloperFilterContainer(text), loadedItems);
 		}
 		box.m_Inspected = true;
 		box.m_StartInspected = true;
@@ -9831,52 +9833,9 @@ public class MyMod : MelonMod
 				MyAnimState = "RopeMoving";
 			}
 		}
-		Vector3 position = target.position;
-		if (GameManager.GetRestComponent().IsSleeping() && GameManager.GetRestComponent().m_Bed != null)
-		{
-			Bed bed = GameManager.GetRestComponent().m_Bed;
-			if (bed != null && bed.m_BodyPlacementTransform != null)
-			{
-				position = bed.m_BodyPlacementTransform.position;
-			}
-		}
-		if (sendMyPosition)
-		{
-			using Packet packet = new Packet(2);
-			packet.Write(position);
-			SendUDPData(packet);
-		}
-		if (iAmHost)
-		{
-			ServerSend.XYZ(0, position, toEveryOne: true);
-		}
 	}
 
-	public static void SyncRotation(Transform target)
-	{
-		Quaternion quaternion = target.rotation;
-		if (GameManager.GetRestComponent().IsSleeping() && GameManager.GetRestComponent().m_Bed != null)
-		{
-			Bed bed = GameManager.GetRestComponent().m_Bed;
-			if (bed != null)
-			{
-				quaternion = GetBedRotation(bed);
-			}
-		}
-		if (sendMyPosition)
-		{
-			using Packet packet = new Packet(3);
-			packet.Write(quaternion);
-			SendUDPData(packet);
-		}
-		if (iAmHost)
-		{
-			using (new Packet(3))
-			{
-				ServerSend.XYZW(0, quaternion, toEveryOne: true);
-			}
-		}
-	}
+	public static void SyncRotation(Transform target) { /* MotionSync sends rotation with position. */ }
 
 	public static void SetCurrentAnimation(bool InFight)
 	{
@@ -10052,19 +10011,6 @@ public class MyMod : MelonMod
 			if (playersData[0].m_Mimic && players[0] != null)
 			{
 				playersData[0].m_AnimState = MyAnimState;
-			}
-			if (sendMyPosition)
-			{
-				using Packet packet = new Packet(11);
-				packet.Write(MyAnimState);
-				SendUDPData(packet);
-			}
-			if (iAmHost)
-			{
-				using (new Packet(11))
-				{
-					ServerSend.ANIMSTATE(0, MyAnimState, toEveryOne: true);
-				}
 			}
 		}
 		bool flag = false;
@@ -11788,6 +11734,8 @@ public class MyMod : MelonMod
 		CoopContainerFlow.Tick();
 		CoopReturnToMenu.Tick();
 		ConnectionWatchdog.Tick();
+		MotionSync.Tick();
+		SessionPing.Tick();
 		DroppedInspectSync.Tick();
 		WildlifeSpawnerAudit.Tick();
 		WildlifeSceneHandshake.Tick();
@@ -11936,6 +11884,7 @@ public class MyMod : MelonMod
 		CheatConsole.Draw();
 		ItemSpawner.Draw();
 		NativeAppearance.Draw();
+		SessionPing.Draw();
 		SteamFriendsWindow.Draw();
 		CoopFatigue.Draw();
 		DeathRespawn.Draw();
@@ -12142,38 +12091,14 @@ public class MyMod : MelonMod
 		{
 			return;
 		}
-		Vector3 position = GameManager.GetPlayerTransform().position;
-		Quaternion quaternion = GameManager.GetPlayerTransform().rotation;
-		if (GameManager.GetRestComponent().IsSleeping() && GameManager.GetRestComponent().m_Bed != null)
-		{
-			Bed bed = GameManager.GetRestComponent().m_Bed;
-			if (bed != null)
-			{
-				quaternion = GetBedRotation(bed);
-				position = bed.m_BodyPlacementTransform.position;
-			}
-		}
 		if (iAmHost)
 		{
-			ServerSend.XYZ(0, position, toEveryOne: true);
-			ServerSend.XYZW(0, quaternion, toEveryOne: true);
 			ServerSend.LEVELID(0, levelid, toEveryOne: true);
 			ServerSend.LEVELGUID(0, level_guid, toEveryOne: true);
-			ServerSend.ANIMSTATE(0, MyAnimState, toEveryOne: true);
 		}
 		if (!sendMyPosition)
 		{
 			return;
-		}
-		using (Packet packet = new Packet(2))
-		{
-			packet.Write(position);
-			SendUDPData(packet);
-		}
-		using (Packet packet2 = new Packet(3))
-		{
-			packet2.Write(quaternion);
-			SendUDPData(packet2);
 		}
 		using (Packet packet3 = new Packet(6))
 		{
@@ -12185,9 +12110,7 @@ public class MyMod : MelonMod
 			packet4.Write(level_guid);
 			SendUDPData(packet4);
 		}
-		using Packet packet5 = new Packet(11);
-		packet5.Write(MyAnimState);
-		SendUDPData(packet5);
+
 	}
 
 	public static void SendSpawnData(bool AskResponce = false)

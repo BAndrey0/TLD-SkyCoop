@@ -13,6 +13,7 @@ internal sealed class NativeCostumeRig
 		public Transform source, target;
 		public Quaternion axis;
 		public int depth;
+		public bool root;
 	}
 	private readonly List<Link> links = new();
 	public int Count => links.Count;
@@ -45,7 +46,7 @@ internal sealed class NativeCostumeRig
 			string sourceName=Map(bone.name);
 			if(sourceName==null||!sources.TryGetValue(sourceName,out var source)||!nativeRest.TryGetValue(bone.name,out var rest))continue;
 			int depth=0;for(var parent=bone.parent;parent!=null;parent=parent.parent)depth++;
-			links.Add(new Link{source=source,target=bone,axis=Quaternion.Inverse(sourceRest[sourceName])*rest,depth=depth});
+			links.Add(new Link{source=source,target=bone,axis=Quaternion.Inverse(sourceRest[sourceName])*rest,depth=depth,root=bone.name=="Hips_jnt"});
 		}
 		links.Sort((a,b)=>a.depth.CompareTo(b.depth));
 		if(links.Count<15)throw new InvalidOperationException("Incomplete costume rig: "+links.Count+" mapped bones");
@@ -57,7 +58,9 @@ internal sealed class NativeCostumeRig
 			if(link.source!=null&&link.target!=null)
 			{
 				link.target.rotation=link.source.rotation*link.axis;
-				link.target.position=link.source.position;
+				// Keep authored segment lengths. World-position copying every joint
+				// stretches the story mesh onto the unrelated co-op proportions.
+				if(link.root)link.target.position=link.source.position;
 			}
 	}
 	internal static string Map(string name)

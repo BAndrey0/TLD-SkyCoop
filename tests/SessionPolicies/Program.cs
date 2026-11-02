@@ -8,6 +8,21 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  Check(MotionTiming.Newer(11,10),"Fresh motion snapshot accepted");
+  Check(!MotionTiming.Newer(9,10),"Reordered snapshot must not rewind a player");
+  Check(!MotionTiming.Newer(10,10),"Duplicate snapshot rejected");
+  Check(MotionTiming.Newer(int.MinValue,int.MaxValue),"Sequence wrap must not freeze movement");
+  Check(Math.Abs(MotionTiming.Factor(1.1,1,1.05)-.5f)<.001,"75ms interpolation buffer");
+  Check(MotionTiming.Factor(20,1,1.05)<=3.001f,"Prediction must stop after 100ms, not run on through a disconnect");
+  Check(MotionTiming.Factor(2,1,2)==1,"Long reception gap must snap without extreme extrapolation");
+  var hostWire=new byte[12];BitConverter.GetBytes(194).CopyTo(hostWire,4);
+  Check(MotionWire.IsMotion(hostWire,true),"Host motion uses the independent unreliable channel");
+  BitConverter.GetBytes(193).CopyTo(hostWire,4);
+  Check(!MotionWire.IsMotion(hostWire,true),"Character choice remains reliable");
+  var guestWire=new byte[24];BitConverter.GetBytes(4).CopyTo(guestWire,4);BitConverter.GetBytes(196).CopyTo(guestWire,16);
+  Check(MotionWire.IsMotion(guestWire,false),"Guest motion header includes client and GUID");
+  BitConverter.GetBytes(int.MaxValue).CopyTo(guestWire,4);
+  Check(!MotionWire.IsMotion(guestWire,false),"Malformed header cannot select a traffic channel");
 	var travel=new FatigueTravelLedger();
 	Check(travel.Enter("Coast",1)==null,"First load must use the saved character fatigue");
 	travel.Remember(42);

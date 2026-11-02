@@ -4,7 +4,8 @@
 # Requires a MelonLoader-installed co-op game copy (for the generated Il2Cpp assemblies), see README.md.
 param(
 	[string]$GameDir = (Join-Path $PSScriptRoot '..\..\player-2.59\game'),
-	[string]$Dotnet = 'dotnet'
+	[string]$Dotnet = 'dotnet',
+	[switch]$NoRestore
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -18,7 +19,9 @@ if (!(Test-Path -LiteralPath (Join-Path $GameDir 'MelonLoader\Il2CppAssemblies\A
 }
 
 foreach ($project in @('SkyCoop\SkyCoop.csproj', 'CoopProfile\CoopProfile.csproj', 'Launcher\Launcher.csproj')) {
-	& $Dotnet build (Join-Path $root $project) -c Release -nologo "-p:GameDir=$GameDir"
+	$buildArgs=@('build',(Join-Path $root $project),'-c','Release','-nologo',"-p:GameDir=$GameDir")
+	if($NoRestore){$buildArgs+=@('--no-restore','-p:NuGetAudit=false')}
+	& $Dotnet @buildArgs
 	if ($LASTEXITCODE -ne 0) { throw "Build failed: $project" }
 }
 

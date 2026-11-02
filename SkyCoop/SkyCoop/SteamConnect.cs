@@ -789,7 +789,9 @@ internal class SteamConnect
 		public static void SendUDPData(Packet _packet, CSteamID receiver)
 		{
 			byte[] array = _packet.ToArray();
-			bool sent = SteamNetworking.SendP2PPacket(receiver, array, (uint)array.Length, EP2PSend.k_EP2PSendReliable);
+			bool motion = MotionWire.IsMotion(array, MyMod.iAmHost);
+			bool sent = SteamNetworking.SendP2PPacket(receiver, array, (uint)array.Length,
+				motion ? EP2PSend.k_EP2PSendUnreliableNoDelay : EP2PSend.k_EP2PSendReliable, motion ? 1 : 0);
 			SteamGameJoin.TracePacket(receiver, array, incoming: false, sent);
 		}
 
@@ -852,11 +854,14 @@ internal class SteamConnect
 			{
 				return;
 			}
-			uint pcubMsgSize;
-			while (SteamNetworking.IsP2PPacketAvailable(out pcubMsgSize))
+			// Drain fresh poses first, independently of reliable inventory traffic.
+			for(int channel=1;channel>=0;channel--)
+			{
+			uint pcubMsgSize; int budget=512;
+			while (budget-- > 0 && SteamNetworking.IsP2PPacketAvailable(out pcubMsgSize, channel))
 			{
 				byte[] array = new byte[pcubMsgSize];
-				if (!SteamNetworking.ReadP2PPacket(array, pcubMsgSize, out var pcubMsgSize2, out var psteamIDRemote))
+				if (!SteamNetworking.ReadP2PPacket(array, pcubMsgSize, out var pcubMsgSize2, out var psteamIDRemote, channel))
 				{
 					continue;
 				}
@@ -872,6 +877,7 @@ internal class SteamConnect
 						HandleData(array);
 					}
 				}
+			}
 			}
 		}
 	}

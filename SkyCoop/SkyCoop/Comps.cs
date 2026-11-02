@@ -1983,16 +1983,16 @@ public class Comps
 				m_BlueFlares = playerEquipmentData.m_BlueFlares;
 				UpdateVisualItems();
 			}
-			Vector3 position = multiPlayerClientData.m_Position;
+			Vector3 position = MotionSync.Position(m_ID, multiPlayerClientData.m_Position);
 			Quaternion rotation = multiPlayerClientData.m_Rotation;
-			if (!multiPlayerClientData.m_Female)
+			if (!multiPlayerClientData.m_Female || NativeAppearance.HasCostume(m_Player))
 			{
-				position = multiPlayerClientData.m_Position;
+				// Position is supplied by the sequenced motion sample.
 				m_Player.transform.localScale = new Vector3(1f, 1f, 1f);
 			}
 			else
 			{
-				position = new Vector3(multiPlayerClientData.m_Position.x, multiPlayerClientData.m_Position.y - 0.194f, multiPlayerClientData.m_Position.z);
+				position.y -= 0.194f;
 				m_Player.transform.localScale = new Vector3(0.867f, 1f, 0.867f);
 			}
 			if (m_HoldingItem == "Book")

@@ -48,6 +48,7 @@ public static class NativeAppearance
 		selectionPanel=panel;selectionFemale=female;panel.Enable(false);Open();return false;
 	}
 	public static int Choice => preference?.Value ?? -1;
+	public static bool HasCostume(GameObject player) => player!=null&&Visuals.ContainsKey(player.GetInstanceID());
 	public static void Open()
 	{
 		if (open) return;
