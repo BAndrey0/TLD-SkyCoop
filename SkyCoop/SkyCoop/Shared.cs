@@ -2108,6 +2108,7 @@ public class Shared
 			bodyHarvestUnits.m_Guts = 10;
 			break;
 		case "WILDLIFE_Stag":
+		case "WILDLIFE_Doe":
 			bodyHarvestUnits.m_Meat = NextFloat(8f, 10f);
 			bodyHarvestUnits.m_Guts = 2;
 			break;

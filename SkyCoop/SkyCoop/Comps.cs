@@ -1168,7 +1168,7 @@ public class Comps
 					SetAnimations();
 					SetPosition();
 				}
-				if (m_ClientController == ClientUser.myId && Time.time >= m_NextTakeoverAttempt)
+				if (m_ClientController == ClientUser.myId && m_Hp > 0 && !AP_Dead && Time.time >= m_NextTakeoverAttempt)
 				{
 					m_NextTakeoverAttempt = Time.time + 1f;
 					if (MyMod.RecreateAnimalToSyncable(m_Animal, m_RegionGUID, m_Hp, m_Arrows))
@@ -1258,6 +1258,8 @@ public class Comps
 		public bool m_Banned;
 
 		public bool m_CheckedForBan;
+		public int m_TargetPopulation = -1;
+		public int m_TargetPopulationDay = -1;
 
 		public bool m_PendingBanCheck;
 
@@ -1301,6 +1303,7 @@ public class Comps
 
 		public void UpdateFromManager()
 		{
+			if (Time.realtimeSinceStartup < WildlifeSpawnerAudit.HandoffQuietUntil) return;
 			if (Time.realtimeSinceStartup < nextSpawnCheck) return;
 			nextSpawnCheck = Time.realtimeSinceStartup + 2f;
 			if (!MyMod.CanSpawnWildlifeInCurrentScene() || m_Region == null || !m_Region.isActiveAndEnabled)

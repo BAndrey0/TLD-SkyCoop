@@ -5,11 +5,12 @@ using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using HarmonyLib;
 
 namespace SkyCoop;
 
-// Keep the co-op animation rig and wardrobe. Story outfits are fixed meshes;
-// only the original head is transplanted, so equipped clothing remains visible.
+// Keep the co-op animation controller and equipment sockets, and drive the
+// complete story costume from its bone poses. Inventory clothes are hidden.
 public static class NativeAppearance
 {
 	private sealed class Visual
@@ -17,7 +18,9 @@ public static class NativeAppearance
 		public GameObject root;
 		public readonly List<Renderer> originals = new();
 		public readonly List<Mesh> meshes = new();
+		public readonly Dictionary<Animator,AnimatorCullingMode> animationModes = new();
 		public int choice;
+		public NativeCostumeRig rig;
 	}
 	private static readonly Dictionary<int,Visual> Visuals = new();
 	private static readonly Dictionary<int,int> Choices = new();
@@ -25,23 +28,47 @@ public static class NativeAppearance
 	private static bool open;
 	private static float nextSend;
 	private static int openedFrame;
+	private static Panel_SelectSurvivor selectionPanel;
+	private static bool selectionFemale, confirmingSelection;
+	[HarmonyPatch(typeof(Panel_SelectSurvivor), "OnSelectSurvivorMale")]
+	private static class SelectMale
+	{
+		[HarmonyPriority(Priority.First)]
+		private static bool Prefix(Panel_SelectSurvivor __instance) => SelectAtStart(__instance,false);
+	}
+	[HarmonyPatch(typeof(Panel_SelectSurvivor), "OnSelectSurvivorFemale")]
+	private static class SelectFemale
+	{
+		[HarmonyPriority(Priority.First)]
+		private static bool Prefix(Panel_SelectSurvivor __instance) => SelectAtStart(__instance,true);
+	}
+	private static bool SelectAtStart(Panel_SelectSurvivor panel, bool female)
+	{
+		if (confirmingSelection || (MyMod.PendingSave == null && MenuChange.MenuMode != "NewGameSelect")) return true;
+		selectionPanel=panel;selectionFemale=female;panel.Enable(false);Open();return false;
+	}
 	public static int Choice => preference?.Value ?? -1;
 	public static void Open()
 	{
 		if (open) return;
 		open=true; openedFrame=Time.frameCount; OverlayInput.Acquire();
 	}
-	private static void Close() { if(!open)return;open=false;OverlayInput.Release(); }
+	private static void Close()
+	{
+		if(!open)return;open=false;OverlayInput.Release();
+		var panel=selectionPanel;selectionPanel=null;
+		if(panel!=null&&Shared.IsMainMenuScene(MyMod.level_name))panel.Enable(true);
+	}
 	public static void Tick()
 	{
 		preference ??= MelonPreferences.CreateCategory("SkyCoop").CreateEntry("NativeCharacter", -1,
-			"Original story head: -1 classic, 0 Mackenzie, 1 Astrid, 2 Jeremiah, 3 Molly");
+			"Original story costume: -1 classic, 0 Mackenzie, 1 Astrid, 2 Jeremiah, 3 Molly");
 		if (MyMod.DedicatedServerAppMode) return;
 		if (MyMod.LoadingScreenIsOn) Close();
 		if (KeyboardUtilities.InputManager.GetTogglePressed(KeyCode.F4)) { if(open)Close();else if(!CheatConsole.IsOpen&&!ItemSpawner.IsOpen)Open(); }
 		if(open){if(Time.frameCount!=openedFrame&&KeyboardUtilities.InputManager.GetTogglePressed(KeyCode.Escape))Close();else OverlayInput.Keep();}
 		foreach(int id in new List<int>(Visuals.Keys))
-			if(Visuals[id].root==null){foreach(var mesh in Visuals[id].meshes)if(mesh!=null)UnityEngine.Object.Destroy(mesh);Visuals.Remove(id);}
+			if(Visuals[id].root==null){foreach(var pair in Visuals[id].animationModes)if(pair.Key!=null)pair.Key.cullingMode=pair.Value;foreach(var mesh in Visuals[id].meshes)if(mesh!=null)UnityEngine.Object.Destroy(mesh);Visuals.Remove(id);}
 		if(!MyMod.InOnline()){Choices.Clear(); nextSend=0; return;}
 		if(Time.realtimeSinceStartup<nextSend)return;
 		nextSend=Time.realtimeSinceStartup+3;
@@ -70,12 +97,17 @@ public static class NativeAppearance
 	{
 		if(id>=0&&id<MyMod.players.Count&&id<MyMod.playersData.Count&&MyMod.playersData[id]!=null&&MyMod.players[id]!=null)MyMod.players[id].GetComponent<Comps.MultiplayerPlayerClothingManager>()?.UpdateClothing();
 	}
+	public static void LateUpdate()
+	{
+		foreach(var visual in Visuals.Values)if(visual.root!=null)visual.rig?.Update();
+	}
 	public static void Draw()
 	{
 		if(!open)return;
-		float x=(Screen.width-520)/2f,y=(Screen.height-350)/2f;
-		GUI.Box(new Rect(x,y,520,350),"Персонаж · F4 / Esc — закрыть");
-		GUI.Label(new Rect(x+20,y+35,480,45),"Игровая голова + синхронизируемая одежда коопа.\nНужны локальные ресурсы WINTERMUTE.");
+		float height=selectionPanel!=null?410:350;
+		float x=(Screen.width-520)/2f,y=(Screen.height-height)/2f;
+		GUI.Box(new Rect(x,y,520,height),"Персонаж · F4 / Esc — закрыть");
+		GUI.Label(new Rect(x+20,y+35,480,45),"Полный сюжетный костюм. Надетая одежда скрыта.\nНужны локальные ресурсы WINTERMUTE.");
 		for(int i=-1;i<NativeCharacterLibrary.Names.Length;i++)
 		{
 			string label=i<0?"Классическая модель коопа":NativeCharacterLibrary.Names[i];
@@ -86,6 +118,14 @@ public static class NativeAppearance
 			}
 		}
 		GUI.Label(new Rect(x+20,y+300,480,35),NativeCharacterLibrary.Status);
+		if(selectionPanel!=null&&GUI.Button(new Rect(x+20,y+345,480,42),"Продолжить"))
+		{
+			if(Choice>=0&&NativeCharacterLibrary.Load(Choice)==null)return;
+			var panel=selectionPanel;bool female=Choice>=0?(Choice==1||Choice==3):selectionFemale;
+			Close();confirmingSelection=true;
+			try{if(female)panel.OnSelectSurvivorFemale();else panel.OnSelectSurvivorMale();}
+			finally{confirmingSelection=false;}
+		}
 	}
 	public static void Apply(GameObject player)
 	{
@@ -93,7 +133,6 @@ public static class NativeAppearance
 		var actor=player.GetComponent<Comps.MultiplayerPlayer>();
 		if(actor==null)return;
 		int choice=Choices.TryGetValue(actor.m_ID,out int chosen)?chosen:-1;
-		if(actor.m_ID>=0 && actor.m_ID<MyMod.playersData.Count && !string.IsNullOrEmpty(MyMod.playersData[actor.m_ID]?.m_PlayerClothingData?.m_Balaclava))choice=-1;
 		ApplyChoice(player,choice);
 	}
 	public static bool ApplyChoice(GameObject player,int choice)
@@ -103,6 +142,7 @@ public static class NativeAppearance
 		{
 			if(old.root!=null&&old.choice==choice){foreach(var r in old.originals)if(r!=null)r.enabled=false;return true;}
 			foreach(var r in old.originals)if(r!=null)r.enabled=true;
+			foreach(var pair in old.animationModes)if(pair.Key!=null)pair.Key.cullingMode=pair.Value;
 			if(old.root!=null)UnityEngine.Object.Destroy(old.root);
 			foreach(var mesh in old.meshes)if(mesh!=null)UnityEngine.Object.Destroy(mesh);
 			Visuals.Remove(id);
@@ -112,50 +152,27 @@ public static class NativeAppearance
 		var visual=new Visual{choice=choice};
 		try
 		{
-			Transform target=null;
-			foreach(var skin in player.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-			{
-				foreach(var bone in skin.bones)if(bone!=null&&bone.name=="Head"){target=bone;break;}
-				if(target!=null)break;
-			}
-			if(target==null)throw new InvalidOperationException("Co-op head bone not found");
+			foreach(var animator in player.GetComponentsInChildren<Animator>(true))
+				if(animator.enabled&&animator.runtimeAnimatorController!=null)
+				{ visual.animationModes.Add(animator,animator.cullingMode);animator.cullingMode=AnimatorCullingMode.AlwaysAnimate; }
 			visual.root=UnityEngine.Object.Instantiate(prefab);
-			visual.root.name="SkyCoop_NativeHead";
+			visual.root.name="SkyCoop_NativeCostume";
 			visual.root.SetActive(false);
+			visual.root.transform.SetParent(player.transform,false);
 			foreach(var animator in visual.root.GetComponentsInChildren<Animator>(true))animator.enabled=false;
-			Transform nativeHead=null;
-			foreach(var bone in visual.root.GetComponentsInChildren<Transform>(true))if(bone.name=="Head_jnt"){nativeHead=bone;break;}
-			if(nativeHead==null)throw new InvalidOperationException("Story head bone not found");
-			int faces=0;
-			foreach(var renderer in visual.root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+			visual.rig=new NativeCostumeRig(player,visual.root);
+			for(int group=0;group<2&&group<player.transform.childCount;group++)
+			foreach(var renderer in player.transform.GetChild(group).GetComponentsInChildren<Renderer>(true))
 			{
-				var source=renderer.sharedMesh;var weights=source.boneWeights;var bones=renderer.bones;
-				bool HeadBone(int index){for(var t=bones[index];t!=null;t=t.parent)if(t==nativeHead)return true;return false;}
-				bool Vertex(int index){var w=weights[index];float total=0;if(w.weight0>0&&HeadBone(w.boneIndex0))total+=w.weight0;if(w.weight1>0&&HeadBone(w.boneIndex1))total+=w.weight1;if(w.weight2>0&&HeadBone(w.boneIndex2))total+=w.weight2;if(w.weight3>0&&HeadBone(w.boneIndex3))total+=w.weight3;return total>=.5f;}
-				var copy=UnityEngine.Object.Instantiate(source);visual.meshes.Add(copy);
-				for(int sub=0;sub<source.subMeshCount;sub++)
-				{
-					var triangles=source.GetTriangles(sub);var keep=new List<int>();
-					for(int t=0;t+2<triangles.Length;t+=3)if(Vertex(triangles[t])&&Vertex(triangles[t+1])&&Vertex(triangles[t+2])){keep.Add(triangles[t]);keep.Add(triangles[t+1]);keep.Add(triangles[t+2]);}
-					copy.SetTriangles(new Il2CppStructArray<int>(keep.ToArray()),sub);faces+=keep.Count/3;
-				}
-				renderer.sharedMesh=copy;renderer.updateWhenOffscreen=true;
-			}
-			if(faces==0)throw new InvalidOperationException("Story head has no readable triangles");
-			visual.root.transform.rotation=player.transform.rotation;
-			visual.root.transform.position+=target.position-nativeHead.position;
-			visual.root.transform.SetParent(target,true);
-			foreach(var r in player.transform.GetChild(1).GetComponentsInChildren<Renderer>(true))
-			{
-				string name=r.name.ToLowerInvariant();
-				if(name.Contains("head")||name.Contains("hair")||name.Contains("beard")||name=="brows"){visual.originals.Add(r);r.enabled=false;}
+				visual.originals.Add(renderer);renderer.enabled=false;
 			}
 			visual.root.SetActive(true);Visuals[id]=visual;
-			MelonLogger.Msg("[Native appearance] "+NativeCharacterLibrary.Names[choice]+" head triangles="+faces);
+			MelonLogger.Msg("[Native appearance] "+NativeCharacterLibrary.Names[choice]+" full costume, bones="+visual.rig.Count);
 			return true;
 		}
 		catch(Exception ex)
 		{
+			foreach(var pair in visual.animationModes)if(pair.Key!=null)pair.Key.cullingMode=pair.Value;
 			if(visual.root!=null)UnityEngine.Object.Destroy(visual.root);
 			foreach(var mesh in visual.meshes)if(mesh!=null)UnityEngine.Object.Destroy(mesh);
 			foreach(var r in visual.originals)if(r!=null)r.enabled=true;

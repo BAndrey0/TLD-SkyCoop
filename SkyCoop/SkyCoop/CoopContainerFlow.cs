@@ -215,6 +215,8 @@ public static class CoopContainerFlow
 		if (!(request == null) && ready)
 		{
 			object obj = buffered;
+			request.StopSearchAudio();
+			request.m_SearchInProgress = false;
 			request = null;
 			buffered = null;
 			ready = false;
@@ -245,6 +247,7 @@ public static class CoopContainerFlow
 
 	public static void Present(Container box)
 	{
+		if (box != null) box.StopSearchAudio();
 		// An already searched container opens the native transfer panel so items can be put back in;
 		// Panel_Container.OnDone -> CloseFakeContainer saves and uploads the contents.
 		if (box != null && reopen == box)
@@ -279,6 +282,7 @@ public static class CoopContainerFlow
 
 	public static bool CloseFromNative(Container box)
 	{
+		if (box != null) box.StopSearchAudio();
 		if (request == box && !activated)
 		{
 			ClearRequest();
@@ -378,6 +382,7 @@ public static class CoopContainerFlow
 		ClearRequest();
 		if (container != null)
 		{
+			container.StopSearchAudio();
 			container.m_SearchInProgress = false;
 			container.m_OpenInProgress = false;
 			PlayerManager playerManagerComponent = GameManager.GetPlayerManagerComponent();
@@ -437,6 +442,8 @@ public static class CoopContainerFlow
 
 	public static void Reset()
 	{
+		if (request != null) request.StopSearchAudio();
+		if (presentation != null) presentation.StopSearchAudio();
 		request = null;
 		presentation = null;
 		reopen = null;

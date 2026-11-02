@@ -5537,7 +5537,7 @@ public class Pathes
 	})]
 	internal static class OpenClose_Open
 	{
-		private static void Postfix(OpenClose __instance, bool isImmediate, bool fromLink)
+		private static void Postfix(OpenClose __instance, bool isImmediate, bool fromLink, bool __runOriginal)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -5545,7 +5545,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (isImmediate || MyMod.ApplyingRemoteOpenable)
+			if (!__runOriginal || isImmediate || MyMod.ApplyingRemoteOpenable)
 			{
 				return;
 			}
@@ -5576,7 +5576,7 @@ public class Pathes
 	})]
 	internal static class OpenClose_Close
 	{
-		private static void Postfix(OpenClose __instance, bool isImmediate, bool fromLink)
+		private static void Postfix(OpenClose __instance, bool isImmediate, bool fromLink, bool __runOriginal)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -5584,7 +5584,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (isImmediate || MyMod.ApplyingRemoteOpenable)
+			if (!__runOriginal || isImmediate || MyMod.ApplyingRemoteOpenable)
 			{
 				return;
 			}

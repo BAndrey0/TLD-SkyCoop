@@ -23,6 +23,7 @@ public static class SelfTest
 
 	public static void Tick()
 	{
+		if (Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_MOTION_TEST") == "1") Application.runInBackground = true;
 		if(!nativeAssetsProbed && Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_AVATAR_TEST")=="1" && Time.realtimeSinceStartup>60 && MyMod.BundleAsset<GameObject>("multiplayerPlayer")!=null)
 		{
 			nativeAssetsProbed=true;NativeCharacterLibrary.Load(0);
@@ -56,6 +57,10 @@ public static class SelfTest
 				var avatar=UnityEngine.Object.Instantiate(MyMod.BundleAsset<GameObject>("multiplayerPlayer"),GameManager.GetPlayerTransform().position+forward*3+camera.transform.right*((choice-1.5f)*1.2f),Quaternion.Euler(0,camera.transform.eulerAngles.y+180,0));
 				foreach(var collider in avatar.GetComponentsInChildren<Collider>(true))collider.enabled=false;
 				NativeAppearance.ApplyChoice(avatar,choice);
+				if(Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_MOTION_TEST")=="1")
+				foreach(var animator in avatar.GetComponentsInChildren<Animator>(true))
+					if(animator.enabled&&animator.runtimeAnimatorController!=null)
+					{ animator.Play(new[]{"Idle","Walk","Run","Ctrl"}[choice],0,0); break; }
 				var nativeDump=new System.Text.StringBuilder();
 				foreach(var renderer in avatar.GetComponentsInChildren<SkinnedMeshRenderer>(true))
 				{

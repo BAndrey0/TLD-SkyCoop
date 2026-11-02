@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.0";
+		public const string Version = "0.16.1";
 
 		public const string DownloadLink = null;
 
@@ -3701,11 +3701,8 @@ public class MyMod : MelonMod
 			{
 				spRobj.GetComponent<Comps.SpawnRegionSimple>().m_Spawned++;
 			}
-			BaseAi component2 = gameObject.GetComponent<BaseAi>();
-			if (component2 != null)
-			{
-				component2.TeleportToRandomWaypointAndPathfind();
-			}
+			// InstantiateAndPlaceSpawn already selected a spawn position. A second
+			// teleport moved the entire replenished herd onto route waypoints.
 		}
 	}
 
@@ -4444,7 +4441,8 @@ public class MyMod : MelonMod
 		Quaternion rotation = animal.transform.rotation;
 		if (!AiUtils.IsNavmeshPosValid(position, 0.5f, 1f))
 		{
-			return false;
+			if (!NavMesh.SamplePosition(position, out var hit, 5f, NavMesh.AllAreas)) return false;
+			position = hit.position;
 		}
 		GameObject prefab = WildlifeCompat.GetPrefab(GetAnimalPrefabName(animal.name));
 		if (prefab == null)
@@ -4525,7 +4523,22 @@ public class MyMod : MelonMod
 
 	public static int CalculateTargetPopulation(SpawnRegion m_Region)
 	{
-		return m_Region != null ? System.Math.Max(0, m_Region.CalculateTargetPopulation()) : 0;
+		if (m_Region == null) return 0;
+		var sync = m_Region.GetComponent<Comps.SpawnRegionSimple>();
+		if (sync == null) return System.Math.Max(0, m_Region.CalculateTargetPopulation());
+		int day = System.Math.Max(0, MinutesFromStartServer / 1440);
+		if (sync.m_TargetPopulation < 0 || sync.m_TargetPopulationDay != day)
+		{
+			var randomState = UnityEngine.Random.state;
+			try
+			{
+				UnityEngine.Random.InitState(GameManager.GetRandomSeed(Shared.StableHash(m_Region.GetComponent<ObjectGuid>()?.Get() ?? m_Region.name)));
+				sync.m_TargetPopulation = System.Math.Max(0, m_Region.CalculateTargetPopulation());
+				sync.m_TargetPopulationDay = day;
+			}
+			finally { UnityEngine.Random.state = randomState; }
+		}
+		return sync.m_TargetPopulation;
 	}
 
 	public static bool SpawnInBlizzard(SpawnRegion m_Region)
@@ -4854,7 +4867,7 @@ public class MyMod : MelonMod
 			component.NoResponce = 5;
 			component.m_Hp = dat.m_Health;
 			component.m_RegionGUID = dat.m_RegionGUID;
-			component.m_ClientController = dat.m_LastController;
+			component.m_ClientController = AnimalsController && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
 			SetAnimationParams(gameObject, anim);
 			SetAnimalPosition(gameObject, dat.m_Position, dat.m_Rotation);
 			component.m_NextMode = (AiMode)dat.m_LastAiMode;
@@ -4878,7 +4891,7 @@ public class MyMod : MelonMod
 				component2.NoResponce = 5;
 				component2.m_Hp = dat.m_Health;
 				component2.m_RegionGUID = dat.m_RegionGUID;
-				component2.m_ClientController = dat.m_LastController;
+				component2.m_ClientController = AnimalsController && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
 				SetAnimationParams(gameObject, anim);
 				SetAnimalPosition(gameObject, dat.m_Position, dat.m_Rotation);
 				component2.m_NextMode = (AiMode)dat.m_LastAiMode;
@@ -9296,6 +9309,7 @@ public class MyMod : MelonMod
 
 	public static void DebugCrap()
 	{
+		if ((ExpeditionEditorUI == null || !ExpeditionEditorUI.activeSelf) && !DebugGUI) return;
 		if (InputManager.GetReloadPressed(InputManager.m_CurrentContext) && ExpeditionEditorUI != null && ExpeditionEditorUI.activeSelf && (bool)GameManager.m_PlayerManager && (bool)GameManager.GetPlayerManagerComponent().GetInteractiveObjectUnderCrosshair() && (bool)GameManager.GetPlayerManagerComponent().GetInteractiveObjectUnderCrosshair().GetComponent<Comps.DroppedGearDummy>())
 		{
 			Comps.DroppedGearDummy component = GameManager.GetPlayerManagerComponent().GetInteractiveObjectUnderCrosshair().GetComponent<Comps.DroppedGearDummy>();
@@ -11911,6 +11925,8 @@ public class MyMod : MelonMod
 			HUDMessage.AddMessage("YOU ALREADY CONNECTED!!!!");
 		}
 	}
+
+	public override void OnLateUpdate() { NativeAppearance.LateUpdate(); }
 
 	public override void OnGUI()
 	{

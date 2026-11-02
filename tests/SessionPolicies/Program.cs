@@ -8,6 +8,21 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+	var travel=new FatigueTravelLedger();
+	Check(travel.Enter("Coast",1)==null,"First load must use the saved character fatigue");
+	travel.Remember(42);
+	travel.Loading();
+	Check(travel.Enter("House",2)==42,"Interior load must keep 42, not the native default zero/max");
+	travel.Remember(43);
+	travel.Loading();
+	Check(travel.Enter("Coast",3)==43,"Returning outside must preserve accumulated fatigue");
+	Check(travel.Enter("Coast",3)==null,"Normal update must not undo sleep or other fatigue changes");
+	travel.Remember(5);travel.Loading();
+	Check(travel.Enter("Coast",3)==5,"A reload with the same scene and reused component must keep the latest value");
+	travel.Remember(6);
+	Check(travel.Enter("House",3)==6,"Scene change must be detected even when Unity reuses the native pointer");
+	travel.Reset();
+	Check(travel.Enter("House",3)==null,"Respawn or a new session must not inherit a previous character fatigue");
   Check(CoopBalancePolicy.Cost(30, 10) == 300, "Long recipe must cost three bars, never cap at 100");
   Check(!CoopBalancePolicy.CanStart(100, 160, false), "Non-resumable work cannot start unaffordable");
   Check(CoopBalancePolicy.CanStart(25, 300, true), "Long recipes must allow partial work");

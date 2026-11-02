@@ -75,6 +75,7 @@ public static class CoopFatigue
 	private static bool wasSleeping;
 	private static float expectedFatigue = float.NaN;
 	private static IntPtr clockOwner;
+	private static readonly FatigueTravelLedger Travel = new();
 	// Native Update in 2.59 also increments the field directly, bypassing
 	// CalculateFatigueIncrease. Leave its HUD/voice/breathing work intact.
 	[HarmonyPatch(typeof(Fatigue), "Update")]
@@ -391,8 +392,31 @@ public static class CoopFatigue
 		float now = Time.realtimeSinceStartup;
 		float dt = Mathf.Clamp(now - lastTick, 0f, 0.5f);
 		lastTick = now;
+		var travelComponent = GameManager.GetFatigueComponent();
+		if (!MyMod.InOnline() || MyMod.IsDead)
+		{
+			Travel.Reset();
+		}
+		else if (!MyMod.WildlifeSceneReady() || travelComponent == null || !travelComponent.m_StartHasBeenCalled || travelComponent.m_MaxFatigue <= 0)
+		{
+			Travel.Loading(); expectedFatigue = float.NaN;
+			return;
+		}
+		else
+		{
+			float? restore = Travel.Enter(MyMod.level_guid, travelComponent.Pointer.ToInt64());
+			if (restore.HasValue)
+			{
+				travelComponent.m_CurrentFatigue = Mathf.Clamp(restore.Value, 0, travelComponent.m_MaxFatigue);
+				travelComponent.m_FatigueValueLastFrame = travelComponent.m_CurrentFatigue;
+				expectedFatigue = travelComponent.m_CurrentFatigue;
+				clockOwner = travelComponent.Pointer;
+				MelonLogger.Msg("[Fatigue travel] Restored " + travelComponent.m_CurrentFatigue + " scene=" + MyMod.level_guid);
+			}
+		}
 		if (!Active)
 		{
+			expectedFatigue = float.NaN;
 			actionActive = false;
 			cancelPending = false;
 			wasSleeping = false;
@@ -424,6 +448,7 @@ public static class CoopFatigue
 			expectedFatigue = clockFatigue.m_CurrentFatigue;
 		}
 		else expectedFatigue = float.NaN;
+		if (MyMod.InOnline() && clockFatigue != null) Travel.Remember(clockFatigue.m_CurrentFatigue);
 		if ((asleep || wasSleeping) && TiredFraction < previousTired)
 			strength = Mathf.Min(MaxStrength, strength + (previousTired - TiredFraction) * 200f);
 		previousTired = TiredFraction; wasSleeping = asleep;
@@ -546,6 +571,7 @@ public static class CoopFatigue
 
 	public static void ResetForRespawn()
 	{
+		Travel.Reset(); expectedFatigue = float.NaN;
 		strength = MaxStrength;
 		actionActive = false;
 		cancelPending = false;

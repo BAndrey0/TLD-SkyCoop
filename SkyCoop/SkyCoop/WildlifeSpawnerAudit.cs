@@ -7,6 +7,7 @@ namespace SkyCoop;
 // Drive the replacement population controller independently of native re-roll frequency.
 public static class WildlifeSpawnerAudit
 {
+	public static float HandoffQuietUntil;
 	public static Comps.SpawnRegionSimple ResolveRegion(string guid)
 	{
 		var regions = GameManager.GetSpawnRegionManager()?.m_SpawnRegions;

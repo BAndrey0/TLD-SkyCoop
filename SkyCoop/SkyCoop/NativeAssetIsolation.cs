@@ -72,8 +72,12 @@ public static class NativeAssetIsolation
 		finally{manager.UnloadAll();}
 	}
 	public static byte[] ReadIsolated(string path, string assetPath = null)
+		=> ReadSelected(path, assetPath == null ? null : new[] { assetPath }, false);
+	public static byte[] ReadCharacterSet(string path, string[] assetPaths)
+		=> ReadSelected(path, assetPaths, true);
+	private static byte[] ReadSelected(string path, string[] assetPaths, bool numbered)
 	{
-		if (assetPath != null)
+		if (assetPaths != null)
 		{
 			var manager = new AssetsManager();
 			try
@@ -92,14 +96,19 @@ public static class NativeAssetIsolation
 					if (info.TypeId != 142) continue;
 					var data = manager.GetBaseField(file, info);
 					var entries = data["m_Container"]["Array"];
-					AssetTypeValueField selected = null;
-					foreach (var pair in entries.Children)
-						if (string.Equals(pair.Children[0].AsString, assetPath, StringComparison.OrdinalIgnoreCase)
-							&& file.file.GetAssetInfo(pair.Children[1]["asset"]["m_PathID"].AsLong)?.TypeId == 1)
-						{ selected = pair; break; }
-					if (selected == null) throw new InvalidDataException("Missing native prefab container");
-					selected.Children[0].AsString = "skycoop/character";
-					entries.Children = new List<AssetTypeValueField> { selected };
+					var selectedEntries = new List<AssetTypeValueField>();
+					for (int index = 0; index < assetPaths.Length; index++)
+					{
+						AssetTypeValueField selected = null;
+						foreach (var pair in entries.Children)
+							if (string.Equals(pair.Children[0].AsString, assetPaths[index], StringComparison.OrdinalIgnoreCase)
+								&& file.file.GetAssetInfo(pair.Children[1]["asset"]["m_PathID"].AsLong)?.TypeId == 1)
+							{ selected = pair; break; }
+						if (selected == null) throw new InvalidDataException("Missing native prefab container: " + assetPaths[index]);
+						selected.Children[0].AsString = "skycoop/character" + (numbered ? "/" + index : "");
+						selectedEntries.Add(selected);
+					}
+					entries.Children = selectedEntries;
 					info.SetNewData(data);
 					break;
 				}
