@@ -8,6 +8,16 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  using(var bytes=new System.IO.MemoryStream())
+  {
+   using(var writer=new System.IO.BinaryWriter(bytes,System.Text.Encoding.UTF8,true))
+   {writer.Write(3);foreach(string key in new[]{"GEAR_Rifle","Assets/Gear/GEAR_Water.prefab","Assets/Gear/GEAR_Rifle.fbx"}){var encoded=System.Text.Encoding.ASCII.GetBytes(key);writer.Write((byte)0);writer.Write(encoded.Length);writer.Write(encoded);}}
+   var names=new System.Collections.Generic.HashSet<string>(GearCatalogPolicy.ReadKeyNames(bytes.ToArray()));
+   Check(names.SetEquals(new[]{"GEAR_Rifle","GEAR_Water"}),"Serialized aliases must retain gear and reject meshes");
+   Check(new System.Collections.Generic.List<string>(GearCatalogPolicy.ReadKeyNames(new byte[]{0,0,0,0,0,255,255,255,127})).Count==0,"Truncated key records must not read outside the buffer");
+  }
+  string catalog=Environment.GetEnvironmentVariable("SKYCOOP_CATALOG_FILE");
+  if(!string.IsNullOrEmpty(catalog)) {var names=new System.Collections.Generic.HashSet<string>(GearCatalogPolicy.ReadCatalog(catalog));Check(names.Count>=441&&names.Contains("GEAR_Rifle"),"Installed catalog must retain prefab inventory and key aliases");Console.WriteLine("Catalog metadata: "+names.Count+" gear IDs");}
   Check(GearCatalogPolicy.GearName("Assets/Gear/GEAR_Rifle.prefab")=="GEAR_Rifle","Catalog prefab paths must resolve to item IDs");
   Check(GearCatalogPolicy.GearName("GEAR_Rifle")=="GEAR_Rifle","Direct catalog item address must be retained");
   Check(GearCatalogPolicy.GearName("Assets/GEAR_Rifle.fbx")==null,"Meshes must not be listed as inventory items");

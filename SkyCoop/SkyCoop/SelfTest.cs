@@ -64,6 +64,13 @@ public static class SelfTest
 
 	public static void Tick()
 	{
+		if(Environment.GetEnvironmentVariable("SKYCOOP_CATALOG_PROBE")=="1")
+		{
+			Application.runInBackground=true;
+			if(Time.realtimeSinceStartup>35&&!nativePreviewCreated){nativePreviewCreated=true;ItemSpawner.Open();}
+			if(Time.realtimeSinceStartup>43&&nativePreviewCreated){ItemSpawner.Close();ItemSpawner.Open();var entries=ItemSpawner.AuditCatalog();System.IO.File.WriteAllLines(Environment.GetEnvironmentVariable("SKYCOOP_MODEL_RENDER"),entries);ItemSpawner.Close();Application.Quit();}
+			return;
+		}
 		if(ModelOnly&&Time.realtimeSinceStartup>300){Application.Quit();return;}
 		if(ModelOnly){Application.runInBackground=true;if(!nativePreviewCreated&&Time.realtimeSinceStartup>35)BuildModelFixture();return;}
 		if (Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_MOTION_TEST") == "1") Application.runInBackground = true;

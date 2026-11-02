@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text;
 namespace SkyCoop;
 
 // Metadata only: inventory browsing must not instantiate/load every prefab.
@@ -22,6 +23,26 @@ public static class GearCatalogPolicy
   var result=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
   if(doc.RootElement.TryGetProperty("m_InternalIds",out var ids))foreach(var id in ids.EnumerateArray())
   {if(id.ValueKind==JsonValueKind.String){string name=GearName(id.GetString());if(name!=null)result.Add(name);}}
+  // Address aliases also live in the serialized key table. Read length-prefixed
+  // ASCII records directly, without entering IL2CPP generic enumerators.
+  if(doc.RootElement.TryGetProperty("m_KeyDataString",out var keys))
+   foreach(string name in ReadKeyNames(Convert.FromBase64String(keys.GetString())))result.Add(name);
+  return result;
+ }
+ public static IEnumerable<string> ReadKeyNames(byte[] data)
+ {
+  var result=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+  for(int i=4;i+5<data.Length;i++)
+  {
+   if(data[i]!=0)continue; // ASCII string tag
+   int length=BitConverter.ToInt32(data,i+1);
+   if(length<6||length>2048||length>data.Length-i-5)continue;
+   int start=i+5;bool ascii=true;
+   for(int j=start;j<start+length;j++)if(data[j]<32||data[j]>126){ascii=false;break;}
+   if(!ascii)continue;
+   string name=GearName(Encoding.ASCII.GetString(data,start,length));if(name!=null)result.Add(name);
+   i=start+length-1;
+  }
   return result;
  }
  public static string Section(string gear,ISet<string> types=null)

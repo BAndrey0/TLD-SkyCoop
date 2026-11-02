@@ -89,7 +89,7 @@ public static class ItemSpawner
 		}
 	}
 
-	private static void Open()
+	internal static void Open()
 	{
 		EnsureCatalog();
         category="";search="";page=0;
@@ -100,7 +100,7 @@ public static class ItemSpawner
 		MelonLogger.Msg("[Cheats] Item window opened, " + allGear.Count + " items");
 	}
 
-	private static void Close()
+	internal static void Close()
 	{
 		if (open)
 		{
