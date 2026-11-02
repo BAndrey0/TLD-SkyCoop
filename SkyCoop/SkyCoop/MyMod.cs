@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.3";
+		public const string Version = "0.16.4";
 
 		public const string DownloadLink = null;
 
@@ -2086,6 +2086,7 @@ public class MyMod : MelonMod
 		level_name = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 		MyTicksOnScene = 0;
 		CoopContainerFlow.Reset();
+		GameCompat.PruneDeadCaches();
 		SleepRendezvousFix.Reset();
 		WildlifeAuthorityScene = "";
 		if (sendMyPosition && !iAmHost)

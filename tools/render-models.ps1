@@ -1,5 +1,5 @@
 # One automated render fixture; no world load, server, UI input, or player saves.
-param([string]$GameDir=(Join-Path $PSScriptRoot '..\..\player\game'))
+param([string]$GameDir=(Join-Path $PSScriptRoot '..\..\player\game'),[switch]$Alignment)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $GameDir=[IO.Path]::GetFullPath($GameDir)
@@ -14,6 +14,7 @@ $digest=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash
 $render=Join-Path $qa ('models-'+[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')+'.jpg')
 $vars=@{DOTNET_ROOT=(Join-Path (Split-Path $GameDir -Parent) 'runtime');DOTNET_MULTILEVEL_LOOKUP='0';SteamAppId='305620';SteamGameId='305620';SKYCOOP_TEST_SAVE_ROOT=(Join-Path $qa 'saves');SKYCOOP_MODEL_ONLY_TEST='1';SKYCOOP_MODEL_RENDER=$render}
 $saved=@{};$child=$null
+if($Alignment){$vars['SKYCOOP_MODEL_ALIGNMENT_TEST']='1'}
 try{
  Copy-Item -LiteralPath $built -Destination $installed -Force
  foreach($key in $vars.Keys){$saved[$key]=[Environment]::GetEnvironmentVariable($key,'Process');[Environment]::SetEnvironmentVariable($key,$vars[$key],'Process')}
@@ -21,7 +22,7 @@ try{
  $child=Start-Process -FilePath (Join-Path $GameDir 'tld.exe') -WorkingDirectory $GameDir -WindowStyle Hidden -ArgumentList ('--melonloader.disablestartscreen --melonloader.hideconsole -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -logFile "'+$log+'"') -PassThru
  Write-Host 'Rendering four costume poses; the test exits automatically (90s limit).'
  $timer=[Diagnostics.Stopwatch]::StartNew()
- while(!$child.WaitForExit(1000)){if($timer.Elapsed.TotalSeconds>90){throw 'Model render timed out.'}}
+ while(!$child.WaitForExit(1000)){if((Test-Path -LiteralPath $render) -and (Get-Item -LiteralPath $render).Length -gt 1000){$null=$child.WaitForExit(2000);break};if($timer.Elapsed.TotalSeconds>90){throw 'Model render timed out.'}}
  if(!(Test-Path -LiteralPath $render)){throw ('No render produced; inspect '+$log)}
  Write-Host ('Render: '+$render)
 }finally{

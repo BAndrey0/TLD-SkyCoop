@@ -8,6 +8,18 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  Check(GearCatalogPolicy.GearName("Assets/Gear/GEAR_Rifle.prefab")=="GEAR_Rifle","Catalog prefab paths must resolve to item IDs");
+  Check(GearCatalogPolicy.GearName("GEAR_Rifle")=="GEAR_Rifle","Direct catalog item address must be retained");
+  Check(GearCatalogPolicy.GearName("Assets/GEAR_Rifle.fbx")==null,"Meshes must not be listed as inventory items");
+  Check(GearCatalogPolicy.GearName("OBJ_Chair.prefab")==null,"World-only scenery is not an inventory item");
+  Check(GearCatalogPolicy.Section("GEAR_RifleAmmo")=="AmmoItem","Ammunition must not disappear into the weapon group");
+  Check(GearCatalogPolicy.Section("GEAR_DecorationShelf")=="Decorations","Safehouse decorations have a visible category");
+  Check(GearCatalogPolicy.Section("GEAR_NewDlcUnknown")=="Other","Unknown DLC items must still be listed");
+  Check(GearCatalogPolicy.Sections.Length==15,"Fixed sections must fit the window, unlike all technical components");
+  Check(Math.Abs(ModelProportions.Scale(1.8f,1.5f)-1.2f)<.001,"A shorter costume must be enlarged against the original rig");
+  Check(ModelProportions.Scale(1.8f,1.8f)==1,"Matching proportions must not be changed");
+  Check(ModelProportions.Scale(float.NaN,1.8f)==1,"Invalid scale measurements must not poison model transforms");
+  Check(ModelProportions.Scale(100,.2f)==1.4f,"Bad assets must not create giant players");
   Check(VitalNumbers.Clamp(float.NaN,42)==42,"NaN must recover the last known fatigue, not fill or empty the bar");
   Check(VitalNumbers.Clamp(float.PositiveInfinity,37)==37,"Infinity must not enter gameplay stats");
   Check(VitalNumbers.Clamp(23,60)==23,"Healthy fatigue must be unchanged");

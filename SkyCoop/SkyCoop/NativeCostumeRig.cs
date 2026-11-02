@@ -7,14 +7,24 @@ internal sealed class NativeCostumeRig
 {
  private sealed class Link { public Transform source,target,sourceEnd,targetEnd,sa,sb,ta,tb;public Quaternion rest;public int depth;public bool root; }
  private readonly List<Link> links=new();
+ private readonly List<(Transform source,Transform target)> feet=new();
+ private readonly Transform playerRoot;
+ private Transform pelvis;
+ public float FitScale{get;private set;}=1;
  public int Count=>links.Count;
  public NativeCostumeRig(GameObject player,GameObject costume)
  {
+  playerRoot=player.transform;
   var source=new Dictionary<string,Transform>(StringComparer.Ordinal);
   foreach(var skin in player.GetComponentsInChildren<SkinnedMeshRenderer>(true))foreach(var bone in skin.bones)
    if(bone!=null&&!bone.IsChildOf(costume.transform)&&!source.ContainsKey(bone.name))source.Add(bone.name,bone);
   var targets=new Dictionary<string,Transform>(StringComparer.Ordinal);
   foreach(var bone in costume.GetComponentsInChildren<Transform>(true))targets[bone.name]=bone;
+  float reference=BodyLength(source,false),native=BodyLength(targets,true);
+  FitScale=ModelProportions.Scale(reference,native);costume.transform.localScale*=FitScale;
+  targets.TryGetValue("Hips_jnt",out pelvis);
+  foreach(string side in new[]{"Left","Right"})
+   if(targets.TryGetValue(side+"Toe_jnt",out var targetFoot)&&source.TryGetValue(side=="Left"?"Toe.L":"Toe.R",out var sourceFoot))feet.Add((sourceFoot,targetFoot));
   foreach(var skin in costume.GetComponentsInChildren<SkinnedMeshRenderer>(true)){skin.updateWhenOffscreen=false;skin.localBounds=new Bounds(new Vector3(0,1.2f,0),new Vector3(4,5,4));}
   foreach(var pair in targets)
   {
@@ -49,6 +59,19 @@ internal sealed class NativeCostumeRig
    }
    l.target.rotation=Quaternion.FromToRotation(current,wanted)*l.target.rotation;
   }
+  if(pelvis!=null&&feet.Count>0)
+  {
+   Vector3 up=playerRoot.up;float a=float.PositiveInfinity,b=float.PositiveInfinity;
+   foreach(var foot in feet)if(foot.source!=null&&foot.target!=null){a=Mathf.Min(a,Vector3.Dot(foot.source.position,up));b=Mathf.Min(b,Vector3.Dot(foot.target.position,up));}
+   if(float.IsFinite(a)&&float.IsFinite(b))pelvis.position+=up*(a-b);
+  }
+ }
+ private static float BodyLength(Dictionary<string,Transform> bones,bool native)
+ {
+  float Chain(params string[] names){float total=0;for(int i=1;i<names.Length;i++)if(bones.TryGetValue(names[i-1],out var a)&&bones.TryGetValue(names[i],out var b))total+=Vector3.Distance(a.position,b.position);return total;}
+  float torso=native?Chain("Hips_jnt","Spine1_jnt","Spine2_jnt","Spine3_jnt","Neck_jnt","Head_jnt"):Chain("root","Spine1","Spine2","Chest","Neck","Head");
+  float legs=native?(Chain("LeftHip_jnt","LeftKnee_jnt","LeftFoot_jnt")+Chain("RightHip_jnt","RightKnee_jnt","RightFoot_jnt"))*.5f:(Chain("Thigh.L","Shin.L","Foot.L")+Chain("Thigh.R","Shin.R","Foot.R"))*.5f;
+  return torso+legs;
  }
  private static string End(string name)
  {

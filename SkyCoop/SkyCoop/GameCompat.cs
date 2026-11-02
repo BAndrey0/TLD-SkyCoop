@@ -11,16 +11,34 @@ namespace SkyCoop;
 public static class GameCompat
 {
 	private static readonly Dictionary<string, GameObject> AssetCache = new();
+	private static readonly Dictionary<string,float> FailedAssets=new();
+	public static int AssetCacheCount=>AssetCache.Count;
+	public static int TextureCacheCount=>s_TextureCache.Count;
 	// Survival 2.59 moved object identity to PdidObjectBase.
 	public static string Get(this ObjectGuid guid) => guid != null ? guid.PDID : "";
 
 	public static bool TryLoadAsset(string name, out GameObject prefab)
 	{
+		if(string.IsNullOrWhiteSpace(name)){prefab=null;return false;}
 		if (AssetCache.TryGetValue(name, out prefab) && prefab != null) return true;
-		var handle = Il2CppTLD.AddressableAssets.AssetHelper.SafeLoadAssetAsync<GameObject>(name);
-		prefab = handle.WaitForCompletion();
+		if(FailedAssets.TryGetValue(name,out float retry)&&Time.realtimeSinceStartup<retry){prefab=null;return false;}
+		var handle = Il2CppTLD.AddressableAssets.AssetHelper.SafeLoadAssetAsync<GameObject>(name,true);
+		try{prefab = handle.WaitForCompletion();}
+		catch(Exception){prefab=null;}
+		if(prefab==null)
+		{
+			// Failed async operations retain resource-manager state until released.
+			if(handle.IsValid())UnityEngine.AddressableAssets.Addressables.Release(handle);
+			if(FailedAssets.Count>=128)FailedAssets.Clear();FailedAssets[name]=Time.realtimeSinceStartup+10;
+		}
 		if (prefab != null) AssetCache[name] = prefab;
 		return prefab != null;
+	}
+	public static void PruneDeadCaches()
+	{
+		foreach(string key in new List<string>(AssetCache.Keys))if(AssetCache[key]==null)AssetCache.Remove(key);
+		foreach(string key in new List<string>(s_TextureCache.Keys))if(s_TextureCache[key]==null)s_TextureCache.Remove(key);
+		FailedAssets.Clear();
 	}
 
 	public static GearItem LoadGearItemPrefab(string name)

@@ -170,7 +170,7 @@ public static class NativeAppearance
 				visual.originals.Add(renderer);renderer.enabled=false;
 			}
 			visual.root.SetActive(true);Visuals[id]=visual;
-			MelonLogger.Msg("[Native appearance] "+NativeCharacterLibrary.Names[choice]+" full costume, bones="+visual.rig.Count);
+			MelonLogger.Msg("[Native appearance] "+NativeCharacterLibrary.Names[choice]+" full costume, bones="+visual.rig.Count+" fit="+visual.rig.FitScale.ToString("F3"));
 			return true;
 		}
 		catch(Exception ex)

@@ -337,15 +337,18 @@ public static class CheatConsole
 		{
 			return "Читы выключены настройками сервера";
 		}
+		if(!GearCatalogIndex.InWorld)return "Сначала зайдите в мир";
 		PlayerManager playerManager = GameManager.GetPlayerManagerComponent();
 		if (playerManager == null || MyMod.level_name == "Empty" || Shared.IsMainMenuScene(MyMod.level_name))
 		{
 			return "Сначала зайдите в мир";
 		}
-		if (MyMod.GetGearItemObject(name) == null)
+		var prefab=MyMod.GetGearItemObject(name);
+		if (prefab == null)
 		{
 			return "Нет предмета " + name + " (имя с учётом регистра, give без параметров покажет примеры)";
 		}
+		if(prefab.GetComponent<GearItem>()==null)return "Служебный объект без инвентарного предмета: "+name;
 		GearItem gearItem = playerManager.InstantiateItemInPlayerInventory(name, count);
 		MelonLogger.Msg("[Cheats] give " + name + " x" + count + " -> " + (gearItem != null));
 		return (gearItem != null) ? ("Выдано: " + name + " x" + count) : ("Не удалось выдать " + name);

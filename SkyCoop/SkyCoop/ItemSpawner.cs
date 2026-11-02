@@ -52,6 +52,7 @@ public static class ItemSpawner
 	private static List<string> filteredCache;
 	private static string filteredSearch,filteredCategory;
 	private static int filteredNames=-1,filteredCatalog=-1;
+	private static bool catalogWorld;
 
 	public static bool IsOpen => open;
 
@@ -91,6 +92,7 @@ public static class ItemSpawner
 	private static void Open()
 	{
 		EnsureCatalog();
+        category="";search="";page=0;
 		open = true;
 		openedFrame = Time.frameCount;
 		status = (allGear.Count == 0) ? "Каталог предметов пуст — зайдите в мир и откройте снова" : "Клик по предмету — взять. Esc или F2 — закрыть";
@@ -110,57 +112,21 @@ public static class ItemSpawner
 
 	private static void EnsureCatalog()
 	{
-		if (allGear != null && allGear.Count > 0)
-		{
-			return;
-		}
-		allGear = new List<string>();
-		categories = new Dictionary<string, List<string>>();
-		try
-		{
-			if (ConsoleManager.m_SearchStringToGearNames == null || ConsoleManager.m_SearchStringToGearNames.Count == 0)
-			{
-				ConsoleManager.StoreAutoCompleteGearNames();
-			}
-			HashSet<string> seen = new HashSet<string>();
-			Il2CppSystem.Collections.Generic.Dictionary<string, string>.Enumerator names = ConsoleManager.m_SearchStringToGearNames.GetEnumerator();
-			while (names.MoveNext())
-			{
-				string gear = names.Current.Value;
-				if (!string.IsNullOrEmpty(gear) && gear.StartsWith("GEAR_", StringComparison.OrdinalIgnoreCase) && seen.Add(gear))
-				{
-					allGear.Add(gear);
-				}
-			}
-			allGear.Sort(StringComparer.OrdinalIgnoreCase);
-			Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppSystem.Collections.Generic.List<string>>.Enumerator groups = ConsoleManager.m_ComponentNameToGearNames.GetEnumerator();
-			while (groups.MoveNext())
-			{
-				List<string> members = new List<string>();
-				Il2CppSystem.Collections.Generic.List<string> source = groups.Current.Value;
-				for (int i = 0; i < source.Count; i++)
-				{
-					if (seen.Contains(source[i]))
-					{
-						members.Add(source[i]);
-					}
-				}
-				if (members.Count > 0)
-				{
-					categories[groups.Current.Key] = members;
-				}
-			}
-		}
-		catch (Exception ex)
-		{
-			MelonLogger.Warning("[Cheats] Item catalog failed: " + ex.Message);
-		}
+		bool world=GearCatalogIndex.InWorld;
+		if(allGear!=null&&allGear.Count>0&&(catalogWorld||!world))return;
+		GearCatalogIndex.Build(out allGear,out categories);preloadIndex=0;filteredCache=null;
+		catalogWorld=world;
+	}
+	internal static string[] AuditCatalog()
+	{
+		EnsureCatalog();return categories.SelectMany(c=>c.Value.Select(g=>c.Key+"|"+g)).ToArray();
 	}
 
 	private const string CommandsTab = "#commands";
 
 	private static void DrawCommands(float x0, float top, float width)
 	{
+		if(!GearCatalogIndex.InWorld){GUI.Label(new Rect(x0+10,top,width-20,40),"Команды доступны после входа в мир");return;}
 		PlayerManager playerManager = GameManager.GetPlayerManagerComponent();
 		bool god = playerManager != null && playerManager.m_God;
 		float buttonWidth = (width - 40f) / 3f;
@@ -290,6 +256,7 @@ public static class ItemSpawner
 		return key switch
 		{
 			CommandsTab => "Команды",
+            "Materials" => "Материалы", "Camping" => "Лагерь", "Fishing" => "Рыбалка", "Decorations" => "Декор", "Quest" => "Квестовые", "Other" => "Прочее",
 			"" => "Все",
 			"FoodItem" => "Еда",
 			"ClothingItem" => "Одежда",
@@ -364,6 +331,7 @@ public static class ItemSpawner
 
 	private static Texture2D IconOf(string gear)
 	{
+		if(!GearCatalogIndex.InWorld)return null;
 		if (icons.TryGetValue(gear, out Texture2D texture))
 		{
 			return texture;
@@ -454,8 +422,8 @@ public static class ItemSpawner
 			}
 		}
 
-		List<string> keys = new List<string> { CommandsTab, "" };
-		keys.AddRange(categories.Keys.OrderBy((string k) => CategoryTitle(k)));
+		List<string> keys = new List<string> { "" };
+		keys.AddRange(GearCatalogPolicy.Sections);keys.Add(CommandsTab);
 		float tabWidth = (width - 20f) / 10f;
 		for (int i = 0; i < keys.Count; i++)
 		{

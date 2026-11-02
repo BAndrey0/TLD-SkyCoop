@@ -28,20 +28,21 @@ public static class SelfTest
 	private static Camera probeCamera;
 	private static void BuildModelFixture()
 	{
+		bool alignment=Environment.GetEnvironmentVariable("SKYCOOP_MODEL_ALIGNMENT_TEST")=="1";
 		var prefab=MyMod.BundleAsset<GameObject>("multiplayerPlayer");if(prefab==null||NativeCharacterLibrary.Load(0)==null)return;
 		nativePreviewCreated=true;
 		probeCamera=new GameObject("QA_ModelCamera").AddComponent<Camera>();probeCamera.enabled=false;probeCamera.transform.position=new Vector3(0,1.1f,0);probeCamera.fieldOfView=50;probeCamera.aspect=1.6f;probeCamera.nearClipPlane=.05f;probeCamera.farClipPlane=30;probeCamera.cullingMask=1<<30;probeCamera.clearFlags=CameraClearFlags.SolidColor;probeCamera.backgroundColor=new Color(.18f,.2f,.23f);
 		var light=new GameObject("QA_ModelLight").AddComponent<Light>();light.type=LightType.Directional;light.intensity=1.5f;light.cullingMask=1<<30;light.transform.rotation=Quaternion.Euler(35,-25,0);
 		RenderSettings.ambientLight=new Color(.45f,.45f,.45f);
-		for(int choice=0;choice<4;choice++)
+		for(int choice=0;choice<(alignment?5:4);choice++)
 		{
-			var avatar=UnityEngine.Object.Instantiate(prefab,new Vector3((choice-1.5f)*1.4f,0,4),Quaternion.Euler(0,180,0));
+			var avatar=UnityEngine.Object.Instantiate(prefab,new Vector3((choice-(alignment?2:1.5f))*1.3f,0,alignment?5:4),Quaternion.Euler(0,180,0));
 			foreach(var collider in avatar.GetComponentsInChildren<Collider>(true))collider.enabled=false;
-			NativeAppearance.ApplyChoice(avatar,choice);
+			NativeAppearance.ApplyChoice(avatar,choice<4?choice:-1);
 			foreach(var t in avatar.GetComponentsInChildren<Transform>(true))t.gameObject.layer=30;
-			foreach(var animator in avatar.GetComponentsInChildren<Animator>(true))if(animator.enabled&&animator.runtimeAnimatorController!=null){animator.applyRootMotion=false;animator.Play(new[]{"Idle","Walk","Run","Ctrl"}[choice],0,0);animator.Update(.3f);break;}
+			foreach(var animator in avatar.GetComponentsInChildren<Animator>(true))if(animator.enabled&&animator.runtimeAnimatorController!=null){animator.applyRootMotion=false;animator.Play(alignment?"Idle":new[]{"Idle","Walk","Run","Ctrl"}[choice],0,0);animator.Update(.3f);break;}
 		}
-		previewTarget=new Vector3(0,1.05f,4);previewTargetSet=true;previewSince=Time.realtimeSinceStartup;
+		previewTarget=new Vector3(0,1.05f,alignment?5:4);previewTargetSet=true;previewSince=Time.realtimeSinceStartup;
 	}
 	public static void LateUpdate()
 	{

@@ -16,6 +16,8 @@ internal class SteamConnect
 {
 	public class Main
 	{
+		private static readonly Dictionary<(int,int,int),Texture2D> AvatarTextures=new();
+		public static int AvatarTextureCount=>AvatarTextures.Count;
 		public class SteamLobbyElement
 		{
 			public CSteamID m_LobbyID;
@@ -224,12 +226,22 @@ internal class SteamConnect
 
 		public static Texture2D GetImageFromDescripter(int AvatarDescripter, int width, int height)
 		{
+			var key=(AvatarDescripter,width,height);
+			if(AvatarTextures.TryGetValue(key,out var cached)&&cached!=null)return cached;
+			if(width<=0||height<=0||width>512||height>512||AvatarDescripter<=0)return null;
+			if(AvatarTextures.Count>=64)
+			{
+				var used=new HashSet<Texture>();foreach(var image in UnityEngine.Object.FindObjectsOfType<RawImage>(true))if(image.texture!=null)used.Add(image.texture);
+				foreach(var old in new List<(int,int,int)>(AvatarTextures.Keys))if(AvatarTextures[old]==null||!used.Contains(AvatarTextures[old])){if(AvatarTextures[old]!=null)UnityEngine.Object.Destroy(AvatarTextures[old]);AvatarTextures.Remove(old);}
+				if(AvatarTextures.Count>=64)return null;
+			}
 			int num = width * height * 4;
 			byte[] array = new byte[num];
-			SteamUtils.GetImageRGBA(AvatarDescripter, array, num);
+			if(!SteamUtils.GetImageRGBA(AvatarDescripter, array, num))return null;
 			Texture2D texture2D = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: false, linear: true);
 			texture2D.LoadRawTextureData(array);
-			texture2D.Apply();
+			texture2D.Apply(false,true);
+			AvatarTextures[key]=texture2D;
 			return texture2D;
 		}
 
@@ -332,7 +344,7 @@ internal class SteamConnect
 			ServersData = new Dictionary<CSteamID, SteamLobbyElement>();
 			if (ServerObjects.Count > 0)
 			{
-				for (int num = ServerObjects.Count; num > 0; num--)
+				for (int num = ServerObjects.Count-1; num >= 0; num--)
 				{
 					GameObject obj = ServerObjects[num];
 					ServerObjects.RemoveAt(num);
