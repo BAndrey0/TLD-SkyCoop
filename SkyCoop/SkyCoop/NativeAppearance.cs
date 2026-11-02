@@ -153,6 +153,7 @@ public static class NativeAppearance
 		var visual=new Visual{choice=choice};
 		try
 		{
+			player.transform.localScale=Vector3.one;
 			foreach(var animator in player.GetComponentsInChildren<Animator>(true))
 				if(animator.enabled&&animator.runtimeAnimatorController!=null)
 				{ visual.animationModes.Add(animator,animator.cullingMode);animator.cullingMode=AnimatorCullingMode.AlwaysAnimate; }

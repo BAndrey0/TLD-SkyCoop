@@ -23,7 +23,9 @@ public static class MotionSync
  {
   if(!MyMod.InOnline()){states.Clear();nextSend=0;return;}
   double now=Clock.Elapsed.TotalSeconds;
-  if(now<nextSend||!MyMod.WildlifeSceneReady())return;
+  // Dead players still need their final Knock pose sent. Wildlife readiness
+  // excludes death and therefore is not a suitable movement gate.
+  if(now<nextSend||MyMod.LoadingScreenIsOn||string.IsNullOrEmpty(MyMod.level_guid)||Shared.IsMainMenuScene(MyMod.level_name)||MyMod.level_name=="Boot"||MyMod.level_name=="Empty"||GameManager.m_PlayerObject==null)return;
   nextSend=now+.05;
   var transform=GameManager.GetPlayerTransform();if(transform==null)return;
   Vector3 position=transform.position;Quaternion rotation=transform.rotation;
