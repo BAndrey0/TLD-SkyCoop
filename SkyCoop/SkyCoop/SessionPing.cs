@@ -20,7 +20,12 @@ public static class SessionPing
   double now=Clock.Elapsed.TotalSeconds;nextProbe=now+2;
   for(int id=1;id<=Server.MaxPlayers;id++)
    if(Server.clients.TryGetValue(id,out var client)&&client.IsBusy()&&!client.RCON)
-   {int token=unchecked(++nonce);pending[id]=(token,now);using var p=new Packet(195);p.Write(0);p.Write(token);ServerSend.SendUDPData(id,p);}
+   {
+    // Do not replace a request still in flight: RTT above the probe interval
+    // must produce a measured value instead of permanently unmatched replies.
+    if(pending.TryGetValue(id,out var outstanding)&&now-outstanding.time<8)continue;
+    int token=unchecked(++nonce);pending[id]=(token,now);using var p=new Packet(195);p.Write(0);p.Write(token);ServerSend.SendUDPData(id,p);
+   }
   using var table=new Packet(195);table.Write(2);table.Write(values.Count);
   foreach(var pair in values){table.Write(pair.Key);table.Write(now-pair.Value.time<8?pair.Value.ms:-1);}
   ServerSend.SendUDPDataToAll(table);
