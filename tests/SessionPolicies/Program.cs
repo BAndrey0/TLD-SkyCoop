@@ -8,6 +8,25 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  Check(VitalNumbers.Clamp(float.NaN,42)==42,"NaN must recover the last known fatigue, not fill or empty the bar");
+  Check(VitalNumbers.Clamp(float.PositiveInfinity,37)==37,"Infinity must not enter gameplay stats");
+  Check(VitalNumbers.Clamp(23,60)==23,"Healthy fatigue must be unchanged");
+  Check(VitalNumbers.Fraction(float.NaN,100,60)==.6f,"Invalid sleep percentage must remain finite");
+  Check(VitalNumbers.Rate(float.NaN,5)==5,"Invalid native burn rate must not poison AddFatigue");
+  Check(Math.Abs(VitalNumbers.Clamp(float.NaN,float.NaN,float.NaN)-60)<.001f,"All-invalid saved stats need a finite recovery point");
+  var budget=new AttemptBudget();
+  Check(budget.Allow(1,0,0),"First spawn attempt allowed");
+  Check(!budget.Allow(1,0,.01),"Failed radial spot must not be retried on every frame");
+  Check(budget.Allow(1,0,.5),"Radial spawning retries after a bounded cooldown");
+  Check(budget.Allow(1,1,.51),"Progress immediately unlocks the next deterministic spawn");
+  Check(budget.Allow(2,0,.51),"Independent spawners must not block each other");
+  var lid=new LidTransition();
+  Check(lid.Start("open",false),"First opening plays");
+  Check(!lid.Start("open",false),"Second player opening an open lid must not replay its relative tween");
+  Check(!lid.Start("close",true)&&lid.Queued=="close","Close during opening waits for the current tween");
+  Check(lid.Complete()=="close"&&lid.Start("close",false),"Deferred close plays exactly once");
+  Check(!lid.Start("close",false),"Repeated close must not rotate through the closed pose");
+  for(int i=0;i<50;i++){if(!lid.Start("open",false)||lid.Start("open",false)||!lid.Start("close",false)||lid.Start("close",false))throw new Exception("Lid cycle drift");}
   Check(MotionTiming.Newer(11,10),"Fresh motion snapshot accepted");
   Check(!MotionTiming.Newer(9,10),"Reordered snapshot must not rewind a player");
   Check(!MotionTiming.Newer(10,10),"Duplicate snapshot rejected");
@@ -26,6 +45,8 @@ static class Program
 	var travel=new FatigueTravelLedger();
 	Check(travel.Enter("Coast",1)==null,"First load must use the saved character fatigue");
 	travel.Remember(42);
+	travel.Remember(float.NaN);travel.Remember(float.PositiveInfinity);
+	Check(travel.Last==42,"Invalid travel snapshots must not replace the last finite fatigue");
 	travel.Loading();
 	Check(travel.Enter("House",2)==42,"Interior load must keep 42, not the native default zero/max");
 	travel.Remember(43);

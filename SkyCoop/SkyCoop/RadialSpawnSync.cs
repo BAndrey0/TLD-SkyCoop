@@ -74,16 +74,18 @@ public static class RadialSpawnSync
 	[HarmonyPatch(typeof(RadialObjectSpawner), "SpawnObjectAttempt")]
 	private static class SeedSingleAttempt
 	{
-		private static void Prefix(RadialObjectSpawner __instance, ref Random.State? __state)
+		private static bool Prefix(RadialObjectSpawner __instance, ref Random.State? __state,ref bool __result)
 		{
 			int held = (__instance.m_Spawns != null) ? __instance.m_Spawns.Count : 0;
 			int pending = (__instance.m_PendingSpawns != null) ? __instance.m_PendingSpawns.Count : 0;
+			if(depth==0&&Active&&!RetryBudget.Allow(__instance.Pointer.ToInt64(),held+pending,Time.realtimeSinceStartup)){__state=null;__result=false;return false;}
 			__state = Seed(__instance, (held + pending) * 7919 + 17);
 			if (__state.HasValue)
 			{
 				SeededAttempts++;
 				SeededSpawners.Add(__instance.GetInstanceID());
 			}
+			return true;
 		}
 
 		private static void Postfix(Random.State? __state)
@@ -93,6 +95,8 @@ public static class RadialSpawnSync
 	}
 
 	private static int SeededAttempts;
+	private static readonly AttemptBudget RetryBudget=new();
+	private static string budgetScene;
 
 	private static readonly HashSet<int> SeededSpawners = new HashSet<int>();
 
@@ -229,6 +233,7 @@ public static class RadialSpawnSync
 
 	public static void Tick()
 	{
+		if(budgetScene!=MyMod.level_guid){budgetScene=MyMod.level_guid;RetryBudget.Clear();SeededSpawners.Clear();}
 		// Between frames no spawner call is running; recovers if a postfix was skipped by an exception.
 		depth = 0;
 		ReportLooseGear();

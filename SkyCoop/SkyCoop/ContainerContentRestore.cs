@@ -11,6 +11,7 @@ namespace SkyCoop;
 internal sealed class ContainerContentRestore : IDisposable
 {
  private static readonly HashSet<IntPtr> restoring = new();
+ internal static bool IsRestoring(ObjectAnim anim)=>anim!=null&&restoring.Contains(anim.Pointer);
  private readonly List<(Transform target,Vector3 position,Quaternion rotation,Vector3 scale)> poses=new();
  private readonly List<IntPtr> owned=new();
  public ContainerContentRestore(Container box)

@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.2";
+		public const string Version = "0.16.3";
 
 		public const string DownloadLink = null;
 
@@ -1084,6 +1084,7 @@ public class MyMod : MelonMod
 		string value3 = "";
 		DiscardRepeatPacket();
 		RemovePleaseWait();
+		PendingPickupVisual.Confirm(jData.m_Hash);
 		if (!SlicedJsonDataBuffer.TryGetValue(jData.m_Hash, out value3))
 		{
 			return;
@@ -1098,7 +1099,7 @@ public class MyMod : MelonMod
 			MelonLogger.Msg(System.ConsoleColor.Red, "Gear prefab with name " + gearName + " not exist! Maybe you miss an modded item pack?");
 			return;
 		}
-		GameObject gameObject = UnityEngine.Object.Instantiate(gearItemObject, new Vector3(0f, 0f, 0f), new Quaternion(0f, 0f, 0f, 0f));
+		GameObject gameObject = UnityEngine.Object.Instantiate(gearItemObject, new Vector3(0f, 0f, 0f), Quaternion.identity);
 		DisableObjectForXPMode.RemoveDisabler(gameObject.gameObject);
 		if (gameObject == null)
 		{
@@ -4521,24 +4522,14 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static int CalculateTargetPopulation(SpawnRegion m_Region)
+	public static int CalculateTargetPopulation(SpawnRegion region)
 	{
-		if (m_Region == null) return 0;
-		var sync = m_Region.GetComponent<Comps.SpawnRegionSimple>();
-		if (sync == null) return System.Math.Max(0, m_Region.CalculateTargetPopulation());
-		int day = System.Math.Max(0, MinutesFromStartServer / 1440);
-		if (sync.m_TargetPopulation < 0 || sync.m_TargetPopulationDay != day)
-		{
-			var randomState = UnityEngine.Random.state;
-			try
-			{
-				UnityEngine.Random.InitState(GameManager.GetRandomSeed(Shared.StableHash(m_Region.GetComponent<ObjectGuid>()?.Get() ?? m_Region.name)));
-				sync.m_TargetPopulation = System.Math.Max(0, m_Region.CalculateTargetPopulation());
-				sync.m_TargetPopulationDay = day;
-			}
-			finally { UnityEngine.Random.state = randomState; }
-		}
-		return sync.m_TargetPopulation;
+		if(region==null||!region.m_StartHasBeenCalled)return 0;
+		// Keep the random draw deterministic, but reevaluate day/night, aurora
+		// and difficulty. Caching an early zero for an entire day suppressed wildlife.
+		var saved=UnityEngine.Random.state;
+		try{UnityEngine.Random.InitState(GameManager.GetRandomSeed(Shared.StableHash(region.GetComponent<ObjectGuid>()?.Get()??region.name)));return System.Math.Max(0,region.CalculateTargetPopulation());}
+		finally{UnityEngine.Random.state=saved;}
 	}
 
 	public static bool SpawnInBlizzard(SpawnRegion m_Region)
@@ -7556,6 +7547,7 @@ public class MyMod : MelonMod
 				ResendGearSearchKey = num;
 				ResendGearLvlKey = level_guid;
 				SetRepeatPacket(ResendPacketType.GearPickup);
+				PendingPickupVisual.Hide(num,obj);
 				SendUDPData(packet);
 				return;
 			}
@@ -7678,6 +7670,7 @@ public class MyMod : MelonMod
 
 	public static void PickDroppedItem(int Hash, int Picker)
 	{
+		PendingPickupVisual.Confirm(Hash);
 		DroppedGearsObjs.TryGetValue(Hash, out var value);
 		if (value != null)
 		{
@@ -10586,7 +10579,7 @@ public class MyMod : MelonMod
 	public static void MeleeHit()
 	{
 		PushActionToMyDoll("Melee");
-		GameObject gameObject = UnityEngine.Object.Instantiate(GetGearItemObject("GEAR_Arrow"), new Vector3(0f, 0f, 0f), new Quaternion(0f, 0f, 0f, 0f));
+		GameObject gameObject = UnityEngine.Object.Instantiate(GetGearItemObject("GEAR_Arrow"), new Vector3(0f, 0f, 0f), Quaternion.identity);
 		gameObject.GetComponent<GearItem>().m_ArrowItem.Fire(1f);
 		UnityEngine.Object.Destroy(gameObject);
 		DataStr.ShootSync shootSync = new DataStr.ShootSync();
@@ -11467,7 +11460,7 @@ public class MyMod : MelonMod
 
 	public static void SetTime()
 	{
-		if (Utils.TryParseTOD(OveridedTime, out var normalizedTOD))
+		if (!(GameManager.GetTimeOfDayComponent()?.IsTimeLapseActive()??false) && Utils.TryParseTOD(OveridedTime, out var normalizedTOD))
 		{
 			GameManager.GetTimeOfDayComponent().SetNormalizedTime(normalizedTOD);
 		}
@@ -11497,6 +11490,7 @@ public class MyMod : MelonMod
 	{
 		SpawnSafety.Tick();
 		SetAppBackgroundMode();
+		FramePacing.Tick();
 		if (!KillOnUpdate)
 		{
 			ModUpdate();
@@ -11732,13 +11726,18 @@ public class MyMod : MelonMod
 		SelfTest.Tick();
 		TimerWatchdog.Tick();
 		CoopContainerFlow.Tick();
+		ContainerLidState.Tick();
+		WorkLighting.Tick();
 		CoopReturnToMenu.Tick();
 		ConnectionWatchdog.Tick();
 		MotionSync.Tick();
 		SessionPing.Tick();
 		DroppedInspectSync.Tick();
+		PendingPickupVisual.Tick();
 		WildlifeSpawnerAudit.Tick();
 		WildlifeSceneHandshake.Tick();
+		AnimalTracksSync.Tick();
+		ResourceHealth.Tick();
 		if (!DedicatedServerAppMode)
 		{
 			if (Flag1)
@@ -11874,7 +11873,7 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public override void OnLateUpdate() { NativeAppearance.LateUpdate(); }
+	public override void OnLateUpdate() { NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); }
 
 	public override void OnGUI()
 	{

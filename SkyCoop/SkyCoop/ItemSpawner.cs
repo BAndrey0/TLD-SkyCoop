@@ -49,6 +49,9 @@ public static class ItemSpawner
 	private static int preloadIndex;
 
 	private static bool iconsBroken;
+	private static List<string> filteredCache;
+	private static string filteredSearch,filteredCategory;
+	private static int filteredNames=-1,filteredCatalog=-1;
 
 	public static bool IsOpen => open;
 
@@ -100,6 +103,7 @@ public static class ItemSpawner
 		if (open)
 		{
 			open = false;
+			icons.Clear();
 			OverlayInput.Release();
 		}
 	}
@@ -320,7 +324,8 @@ public static class ItemSpawner
 		return gear.Substring(5);
 	}
 
-	// Display names need the prefab; load a few per frame so opening the window does not freeze the game.
+	// Localization lookup only. Loading every gear prefab here retained models,
+	// materials and textures for the whole catalog merely to obtain its label.
 	private static void PreloadNames()
 	{
 		if (allGear == null)
@@ -345,10 +350,10 @@ public static class ItemSpawner
 		string name = gear.Substring(5);
 		try
 		{
-			GearItem prefab = GameCompat.LoadGearItemPrefab(gear);
-			if (prefab != null && !string.IsNullOrEmpty(prefab.DisplayName))
+			string key="GAMEPLAY_"+name;
+			if (Localization.Exists(key))
 			{
-				name = prefab.DisplayName;
+				name = Localization.Get(key);
 			}
 		}
 		catch
@@ -363,6 +368,7 @@ public static class ItemSpawner
 		{
 			return texture;
 		}
+		if(icons.Count>=128)icons.Clear();
 		try
 		{
 			texture = Utils.GetInventoryIconTextureFromPrefabName(gear);
@@ -377,13 +383,14 @@ public static class ItemSpawner
 
 	private static List<string> Filtered()
 	{
+		if(filteredCache!=null&&filteredSearch==search&&filteredCategory==category&&filteredNames==displayNames.Count&&filteredCatalog==allGear.Count)return filteredCache;
+		filteredSearch=search;filteredCategory=category;filteredNames=displayNames.Count;filteredCatalog=allGear.Count;
 		IEnumerable<string> source = (category != "" && categories.TryGetValue(category, out List<string> members)) ? members : allGear;
 		if (search.Length == 0)
 		{
-			return source.ToList();
+			return filteredCache=source.ToList();
 		}
-		string needle = search.ToLowerInvariant();
-		return source.Where((string g) => g.ToLowerInvariant().Contains(needle) || NameOf(g).ToLowerInvariant().Contains(needle)).ToList();
+		return filteredCache=source.Where(g=>g.IndexOf(search,StringComparison.OrdinalIgnoreCase)>=0||NameOf(g).IndexOf(search,StringComparison.OrdinalIgnoreCase)>=0).ToList();
 	}
 
 	public static void Draw()

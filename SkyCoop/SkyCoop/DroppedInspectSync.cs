@@ -114,12 +114,26 @@ public static class DroppedInspectSync
 	private static readonly Dictionary<int, GearItem> pending = new Dictionary<int, GearItem>();
 
 	private static readonly HashSet<int> taking = new HashSet<int>();
+	private static readonly Dictionary<int,(GearItem item,int frame)> openings=new();
 	private static readonly Dictionary<int, (GearItem item, int variant, int frame)> returns = new();
 
 	public static void Tick()
 	{
-		if (returns.Count == 0) return;
+		if (returns.Count == 0 && openings.Count==0) return;
 		var player = GameManager.GetPlayerManagerComponent();
+		foreach(int id in new List<int>(openings.Keys))
+		{
+			var entry=openings[id];
+			if(entry.item==null||entry.item.m_InPlayerInventory){openings.Remove(id);pending.Remove(id);continue;}
+			if(Time.frameCount<=entry.frame+2||player==null)continue;
+			openings.Remove(id);
+			if(player.IsInspectModeActive()&&player.GearItemBeingInspected()==entry.item)continue;
+			// Decorations and other gear without an inspect presentation still
+			// have a valid native pickup path. Do not drop them back immediately.
+			taking.Add(id);
+			try{if(player.ProcessPickupItemInteraction(entry.item,false,false,false)||entry.item.m_InPlayerInventory)pending.Remove(id);else ReturnOnce(entry.item);}
+			finally{taking.Remove(id);}
+		}
 		var harvest = GameCompat.Panel<Panel_BodyHarvest>();
 		foreach (int id in new List<int>(returns.Keys))
 		{
@@ -154,8 +168,8 @@ public static class DroppedInspectSync
 			{
 				return true;
 			}
-			ReturnOnce(item);
-			return false;
+			openings[instanceID]=(item,Time.frameCount);
+			return true;
 		}
 		catch
 		{
@@ -167,6 +181,7 @@ public static class DroppedInspectSync
 	public static bool ReturnOnce(GearItem item, int variant = -1)
 	{
 		if (item == null || item.m_InPlayerInventory) return false;
+		openings.Remove(item.GetInstanceID());
 		var marker = item.GetComponent<Comps.DropFakeOnLeave>();
 		if (marker == null || marker.m_ReturnedToWorld) return false;
 		int id = item.GetInstanceID();

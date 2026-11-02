@@ -26,8 +26,10 @@ public static class CoopFatigue
 	[HarmonyPatch(typeof(TimeOfDay), "Accelerate")]
 	private static class OnAccelerate
 	{
-		private static void Prefix(float realTimeSeconds, float gameTimeHours)
+		private static void Prefix(TimeOfDay __instance,float realTimeSeconds, float gameTimeHours,ref bool doFadeToBlack)
 		{
+			WorkLighting.Begin(__instance,realTimeSeconds);
+			if(Active&&!Sleeping)doFadeToBlack=false;
 			ActionStarted(gameTimeHours, realTimeSeconds);
 		}
 	}
@@ -35,8 +37,9 @@ public static class CoopFatigue
 	[HarmonyPatch(typeof(TimeOfDay), "AccelerateTime")]
 	private static class OnAccelerateTime
 	{
-		private static void Prefix(float minutes, float realtimeDurationSeconds)
+		private static void Prefix(TimeOfDay __instance,float minutes, float realtimeDurationSeconds)
 		{
+			WorkLighting.Begin(__instance,realtimeDurationSeconds);
 			ActionStarted(minutes / 60f, realtimeDurationSeconds);
 		}
 	}
@@ -76,6 +79,45 @@ public static class CoopFatigue
 	private static float expectedFatigue = float.NaN;
 	private static IntPtr clockOwner;
 	private static readonly FatigueTravelLedger Travel = new();
+	private static float lastGoodStrength=MaxStrength;
+	private static float lastRepairWarning=-100;
+	private static float lastSprintMaximum=1;
+	private static void RepairFatigue(Fatigue fatigue)
+	{
+		if(fatigue==null||!fatigue.m_StartHasBeenCalled)return;
+		if(!float.IsFinite(fatigue.m_MaxFatigue)||fatigue.m_MaxFatigue<=0)fatigue.m_MaxFatigue=100;
+		if(!float.IsFinite(fatigue.m_CurrentFatigue))
+		{
+			fatigue.m_CurrentFatigue=VitalNumbers.Clamp(fatigue.m_CurrentFatigue,Travel.Last??60,fatigue.m_MaxFatigue);
+			if(Time.realtimeSinceStartup-lastRepairWarning>10){lastRepairWarning=Time.realtimeSinceStartup;MelonLogger.Warning("[Fatigue] Recovered invalid native value from last finite session value");}
+		}
+		fatigue.m_FatigueValueLastFrame=VitalNumbers.Clamp(fatigue.m_FatigueValueLastFrame,fatigue.m_CurrentFatigue,fatigue.m_MaxFatigue);
+		fatigue.m_TotalFatigueBurnPerHour=VitalNumbers.Rate(fatigue.m_TotalFatigueBurnPerHour,fatigue.m_MaxFatigue/CoopBalancePolicy.BaseAwakeHours);
+		fatigue.m_CurrentFatigueBurnPerHour=VitalNumbers.Rate(fatigue.m_CurrentFatigueBurnPerHour,fatigue.m_TotalFatigueBurnPerHour);
+		var movement=GameManager.GetPlayerMovementComponent();
+		if(movement!=null)
+		{
+			if(float.IsFinite(movement.m_MaxSprintStamina)&&movement.m_MaxSprintStamina>0)lastSprintMaximum=movement.m_MaxSprintStamina;
+			else if(!float.IsFinite(movement.m_MaxSprintStamina))movement.m_MaxSprintStamina=lastSprintMaximum;
+			movement.m_SprintStamina=movement.m_MaxSprintStamina<=0?0:VitalNumbers.Clamp(movement.m_SprintStamina,0,movement.m_MaxSprintStamina);
+		}
+	}
+	[HarmonyPatch(typeof(Fatigue),"GetNormalizedFatigue")]
+	private static class FiniteHud
+	{
+		private static void Postfix(Fatigue __instance,ref float __result)
+		{if(Active&&!float.IsFinite(__result))__result=VitalNumbers.Fraction(__instance.m_CurrentFatigue,__instance.m_MaxFatigue,Travel.Last??60);}
+	}
+	[HarmonyPatch(typeof(Fatigue),"AddFatigue")]
+	private static class FiniteAddition
+	{
+		private static bool Prefix(Fatigue __instance,ref float __0)
+		{
+			if(!Active)return true;
+			RepairFatigue(__instance);
+			return float.IsFinite(__0);
+		}
+	}
 	// Native Update in 2.59 also increments the field directly, bypassing
 	// CalculateFatigueIncrease. Leave its HUD/voice/breathing work intact.
 	[HarmonyPatch(typeof(Fatigue), "Update")]
@@ -83,11 +125,13 @@ public static class CoopFatigue
 	{
 		private static void Prefix(Fatigue __instance, out float __state)
 		{
+			if(Active)RepairFatigue(__instance);
 			__state = Active && !ActionFatigue && !(GameManager.m_Rest?.IsSleeping() ?? false)
 				? __instance.m_CurrentFatigue : float.NaN;
 		}
 		private static void Postfix(Fatigue __instance, float __state)
 		{
+			if(Active)RepairFatigue(__instance);
 			if (!float.IsNaN(__state) && __instance.m_CurrentFatigue > __state)
 				__instance.m_CurrentFatigue = __state;
 		}
@@ -113,6 +157,7 @@ public static class CoopFatigue
 	private static class FinishWorkCharge
 	{
 		private static void Prefix() { if (actionActive) ChargeWork(Time.realtimeSinceStartup); }
+		private static void Postfix(TimeOfDay __instance) { if(MyMod.InOnline()&&__instance.m_IsTimeLapseActiveCounter<0)__instance.m_IsTimeLapseActiveCounter=0;WorkLighting.End(__instance); }
 	}
 	private static void ChargeWork(float now)
 	{
@@ -173,7 +218,7 @@ public static class CoopFatigue
 			{
 				return 0f;
 			}
-			return Mathf.Clamp01(fatigue.m_CurrentFatigue / fatigue.m_MaxFatigue);
+			return VitalNumbers.Fraction(fatigue.m_CurrentFatigue,fatigue.m_MaxFatigue,Travel.Last??60);
 		}
 	}
 
@@ -194,7 +239,7 @@ public static class CoopFatigue
 	{
 		try
 		{
-			if (!Active || hours <= 0f || Sleeping)
+			if (!Active || !float.IsFinite(hours) || !float.IsFinite(realSeconds) || hours <= 0f || Sleeping)
 			{
 				return;
 			}
@@ -393,6 +438,9 @@ public static class CoopFatigue
 		float dt = Mathf.Clamp(now - lastTick, 0f, 0.5f);
 		lastTick = now;
 		var travelComponent = GameManager.GetFatigueComponent();
+		if(Active)RepairFatigue(travelComponent);
+		strength=VitalNumbers.Clamp(strength,lastGoodStrength);
+		lastGoodStrength=strength;
 		if (!MyMod.InOnline() || MyMod.IsDead)
 		{
 			Travel.Reset();
@@ -407,10 +455,13 @@ public static class CoopFatigue
 			float? restore = Travel.Enter(MyMod.level_guid, travelComponent.Pointer.ToInt64());
 			if (restore.HasValue)
 			{
-				travelComponent.m_CurrentFatigue = Mathf.Clamp(restore.Value, 0, travelComponent.m_MaxFatigue);
+				travelComponent.m_CurrentFatigue = VitalNumbers.Clamp(restore.Value,Travel.Last??60,travelComponent.m_MaxFatigue);
 				travelComponent.m_FatigueValueLastFrame = travelComponent.m_CurrentFatigue;
 				expectedFatigue = travelComponent.m_CurrentFatigue;
 				clockOwner = travelComponent.Pointer;
+				previousTired=VitalNumbers.Fraction(travelComponent.m_CurrentFatigue,travelComponent.m_MaxFatigue,60);
+				wasSleeping=false;actionActive=false;cancelPending=false;lastActionEnd=now;
+				lastPosition=GameManager.GetPlayerTransform().position;
 				MelonLogger.Msg("[Fatigue travel] Restored " + travelComponent.m_CurrentFatigue + " scene=" + MyMod.level_guid);
 			}
 		}
@@ -442,9 +493,8 @@ public static class CoopFatigue
 			}
 			clockOwner = clockFatigue.Pointer;
 			clockFatigue.CalculateTotalFatigueBurnPerHour();
-			float rate = Mathf.Max(0, clockFatigue.m_TotalFatigueBurnPerHour);
-			if (rate <= 0) rate = clockFatigue.m_MaxFatigue / CoopBalancePolicy.BaseAwakeHours;
-			clockFatigue.AddFatigue(rate * dt / (Mathf.Max(.1f, MyMod.period) * 60f));
+			float rate = VitalNumbers.Rate(clockFatigue.m_TotalFatigueBurnPerHour,clockFatigue.m_MaxFatigue/CoopBalancePolicy.BaseAwakeHours);
+			clockFatigue.AddFatigue(rate * dt / (VitalNumbers.Rate(MyMod.period,5) * 60f));
 			expectedFatigue = clockFatigue.m_CurrentFatigue;
 		}
 		else expectedFatigue = float.NaN;

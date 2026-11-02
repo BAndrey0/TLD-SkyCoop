@@ -48,6 +48,7 @@ public static class NativeAppearance
 		selectionPanel=panel;selectionFemale=female;panel.Enable(false);Open();return false;
 	}
 	public static int Choice => preference?.Value ?? -1;
+	public static bool IsOpen => open;
 	public static bool HasCostume(GameObject player) => player!=null&&Visuals.ContainsKey(player.GetInstanceID());
 	public static void Open()
 	{
@@ -100,7 +101,7 @@ public static class NativeAppearance
 	}
 	public static void LateUpdate()
 	{
-		foreach(var visual in Visuals.Values)if(visual.root!=null)visual.rig?.Update();
+		foreach(var visual in Visuals.Values)if(visual.root!=null&&visual.root.activeInHierarchy)visual.rig?.Update();
 	}
 	public static void Draw()
 	{

@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.2");
+			packet.Write("0.16.3");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1051,6 +1051,7 @@ public class ClientHandle
 	public static void GEARNOTEXIST(Packet _packet)
 	{
 		MelonLogger.Msg("Gear I requested is not exist!");
+		MyMod.PickDroppedItem(MyMod.ResendGearSearchKey,-1);
 		MyMod.DiscardRepeatPacket();
 		MyMod.RemovePleaseWait();
 	}

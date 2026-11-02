@@ -1258,8 +1258,6 @@ public class Comps
 		public bool m_Banned;
 
 		public bool m_CheckedForBan;
-		public int m_TargetPopulation = -1;
-		public int m_TargetPopulationDay = -1;
 
 		public bool m_PendingBanCheck;
 
