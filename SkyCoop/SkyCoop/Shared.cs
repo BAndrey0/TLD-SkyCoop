@@ -1077,40 +1077,48 @@ public class Shared
 		}
 	}
 
-	private static readonly System.Collections.Generic.Dictionary<int, bool> LastAnimalRoles = new System.Collections.Generic.Dictionary<int, bool>();
-
-	public static bool ShouldbeAnimalController(int _Ticks, int _Level, int _From)
+	public static string ReadyWildlifeScene(int id)
 	{
-		if (_From <= 0 || _From >= MyMod.playersData.Count)
+		if (id == 0)
+			return MyMod.iAmHost && MyMod.WildlifeSceneReady() ? MyMod.level_guid : "";
+		if (id < 0 || id >= MyMod.playersData.Count || MyMod.playersData[id] == null ||
+			!Server.clients.TryGetValue(id, out var client) || !client.IsBusy() || client.RCON)
+			return "";
+		var data = MyMod.playersData[id];
+		return data.m_WildlifeReadyScene;
+	}
+
+	public static int WildlifeSpawnerForScene(string scene)
+	{
+		if (!WildlifeSpawnAuthorityPolicy.WorldScene(scene))
+			return -1;
+		int firstReady = -1;
+		for (int id = 1; id < MyMod.playersData.Count; id++)
 		{
-			return false;
+			if (ReadyWildlifeScene(id) != scene)
+				continue;
+			// Joining an occupied scene leaves its running population controller in place.
+			if (MyMod.playersData[id].m_WildlifeGrantedScene == scene)
+				return id;
+			if (firstReady == -1)
+				firstReady = id;
 		}
-		DataStr.MultiPlayerClientData multiPlayerClientData = MyMod.playersData[_From];
-		if (multiPlayerClientData == null || !Server.clients.ContainsKey(_From))
+		return ReadyWildlifeScene(0) == scene ? 0 : firstReady;
+	}
+
+	public static void SendWildlifeSpawnRole(int id, string scene)
+	{
+		if (!WildlifeSpawnAuthorityPolicy.WorldScene(scene))
+			return;
+		var data = MyMod.playersData[id];
+		bool controller = ReadyWildlifeScene(id) == scene && WildlifeSpawnerForScene(scene) == id;
+		string grant = controller ? scene : "";
+		if (data.m_WildlifeGrantedScene != grant)
 		{
-			return false;
+			data.m_WildlifeGrantedScene = grant;
+			Log("[Wildlife] Client " + id + " spawn controller=" + controller + " scene=" + scene);
 		}
-		string levelGuid = multiPlayerClientData.m_LevelGuid;
-		if (!WildlifeSpawnAuthorityPolicy.Ready(Server.clients[_From].IsBusy(), !multiPlayerClientData.m_WildlifeSceneReady, multiPlayerClientData.m_Dead, multiPlayerClientData.m_AnimState == "Knock", multiPlayerClientData.m_TicksOnScene, levelGuid))
-		{
-			return false;
-		}
-		if (!MyMod.DedicatedServerAppMode && MyMod.WildlifeSceneReady() && MyMod.level_guid == levelGuid)
-		{
-			return false;
-		}
-		for (int i = 1; i < _From; i++)
-		{
-			if (i < MyMod.playersData.Count && Server.clients.ContainsKey(i))
-			{
-				DataStr.MultiPlayerClientData multiPlayerClientData2 = MyMod.playersData[i];
-					if (multiPlayerClientData2 != null && multiPlayerClientData2.m_LevelGuid == levelGuid && WildlifeSpawnAuthorityPolicy.Ready(Server.clients[i].IsBusy(), !multiPlayerClientData2.m_WildlifeSceneReady, multiPlayerClientData2.m_Dead, multiPlayerClientData2.m_AnimState == "Knock", multiPlayerClientData2.m_TicksOnScene, multiPlayerClientData2.m_LevelGuid))
-				{
-					return false;
-				}
-			}
-		}
-		return true;
+		ServerSend.ANIMALROLE(id, controller, scene);
 	}
 
 	public static System.Collections.Generic.List<DataStr.MultiPlayerClientStatus> SleepTrackerAndTimeOutAndAnimalControllers()
@@ -1224,14 +1232,9 @@ public class Shared
 			}
 			if (MyMod.playersData[i] != null && Server.clients[i].IsBusy())
 			{
-				bool flag2 = false;
-				bool controller = MyMod.playersData[i].m_AnimState != "Knock" && ShouldbeAnimalController(MyMod.playersData[i].m_TicksOnScene, MyMod.playersData[i].m_Levelid, i);
-				if (!LastAnimalRoles.TryGetValue(i, out bool lastRole) || lastRole != controller)
-				{
-					LastAnimalRoles[i] = controller;
-					Log("[Wildlife] Client " + i + " animal controller=" + controller + " scene=" + MyMod.playersData[i].m_LevelGuid + " hostScene=" + MyMod.level_guid + " hostReady=" + MyMod.WildlifeSceneReady());
-				}
-				ServerSend.ANIMALROLE(_msg: controller, _toClient: i);
+				var wildlife = MyMod.playersData[i];
+				string scene = ReadyWildlifeScene(i);
+				SendWildlifeSpawnRole(i, scene != "" ? scene : wildlife.m_WildlifeGrantedScene);
 			}
 		}
 		list2.Sort();
@@ -2271,6 +2274,7 @@ public class Shared
 		saveSlotSync.m_Episode = 0;
 		saveSlotSync.m_SaveSlotType = 3;
 		saveSlotSync.m_Seed = GameManager.m_SceneTransitionData.m_GameRandomSeed;
+		saveSlotSync.m_WorldId = WorldSaveIdentity.Active;
 		saveSlotSync.m_ExperienceMode = (int)ExperienceModeManager.GetCurrentExperienceModeType();
 		saveSlotSync.m_Location = (int)RegionCompat.GetCurrentRegion();
 		saveSlotSync.m_FixedSpawnScene = MyMod.SavedSceneForSpawn;
@@ -2418,9 +2422,8 @@ public class Shared
 	{
 		if (!MyMod.iAmHost)
 		{
-			MyMod.isRuning = true;
-			MPSaveManager.LoadNonUnloadables();
 			Server.Start(MyMod.MaxPlayers, port);
+			MyMod.isRuning = true;
 			MyMod.nextActionTime = Time.time;
 			MyMod.nextActionTimeAniamls = Time.time;
 			MyMod.iAmHost = true;

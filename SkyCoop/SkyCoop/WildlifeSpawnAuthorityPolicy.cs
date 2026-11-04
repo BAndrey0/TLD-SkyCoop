@@ -27,10 +27,9 @@ public static class WildlifeSpawnAuthorityPolicy
 
 	public static bool AcceptGrant(bool ready, string currentScene, string grantScene)
 	{
-		if (ready && WorldScene(grantScene))
-		{
-			return string.Equals(currentScene, grantScene, StringComparison.Ordinal);
-		}
-		return false;
+		return ready && SameScene(currentScene, grantScene);
 	}
+
+	public static bool SameScene(string first, string second) =>
+		WorldScene(first) && string.Equals(first, second, StringComparison.Ordinal);
 }

@@ -12,6 +12,18 @@ namespace SkyCoop;
 
 public static class CoopReturnToMenu
 {
+	[HarmonyPatch(typeof(GameManager), "LoadMainMenu")]
+	private static class StopHostOnNativeMenu
+	{
+		private static void Prefix()
+		{
+			if (Server.Stop())
+			{
+				LeaveLobby();
+			}
+		}
+	}
+
 	[HarmonyPatch(typeof(MyMod), "DoKickMessage")]
 	private static class HostReturnReceived
 	{
@@ -363,36 +375,8 @@ public static class CoopReturnToMenu
 		MyMod.isRuning = false;
 		MyMod.StartServerAfterSelectSave = false;
 		SteamGameJoin.Suspend();
-		foreach (KeyValuePair<int, Client> client in Server.clients)
-		{
-			Client value = client.Value;
-			if (value == null || value.udp == null)
-			{
-				continue;
-			}
-			string sid = value.udp.sid;
-			if (SteamConnect.CanUseSteam && !string.IsNullOrEmpty(sid))
-			{
-				try
-				{
-					SteamConnect.Main.Disconnect(sid);
-				}
-				catch (Exception ex)
-				{
-					MelonLogger.Warning("[ReturnMenu] Closing peer: " + ex.Message);
-				}
-			}
-			value.udp.Disconnect();
-		}
-		if (Server.udpListener != null)
-		{
-			Server.udpListener.Close();
-			Server.udpListener = null;
-		}
-		Server.UsingSteamWorks = false;
-		Server.p2pclients.Clear();
-		Server.clients.Clear();
-		Server.packetHandlers = null;
+		Server.Stop(notifyGuests: false);
+		ClientHandle.ResetSaveJoin();
 		lock (ThreadManager.executeOnMainThread)
 		{
 			ThreadManager.executeOnMainThread.Clear();

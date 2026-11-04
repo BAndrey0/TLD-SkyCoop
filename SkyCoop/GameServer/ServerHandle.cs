@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.6")
+			if (text2 != "0.16.7")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.6");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.7");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -59,6 +59,13 @@ internal class ServerHandle
 			MyMod.playersData[_fromClient].m_SupporterBenefits = Supporters.VerifyBenefitsWithConfig(text3, desired);
 			MyMod.playersData[_fromClient].m_SteamOrEGSID = text3;
 			long num2 = _packet.ReadLong();
+			bool supportsWorldId = _packet.UnreadLength() >= sizeof(int) && _packet.ReadInt() == WorldSaveMatch.Protocol;
+			if (WorldSaveIdentity.Active != "" && !supportsWorldId)
+			{
+				ServerSend.KICKMESSAGE(_fromClient, "Update Sky Co-op to join this world.");
+				Server.clients[_fromClient].udp.Disconnect();
+				return;
+			}
 			if (MyMod.ServerConfig.m_CheckModsValidation)
 			{
 				ModsValidation.ModValidationData modsHash = ModsValidation.GetModsHash();
@@ -216,7 +223,6 @@ internal class ServerHandle
 		{
 			if (MyMod.playersData[_fromClient].m_Levelid != num)
 			{
-				MyMod.playersData[_fromClient].m_WildlifeSceneReady = false;
 				Log("Player " + _fromClient + "  transition to level " + num);
 			}
 			MyMod.playersData[_fromClient].m_Levelid = num;
@@ -235,7 +241,6 @@ internal class ServerHandle
 		{
 			if (MyMod.playersData[_fromClient].m_LevelGuid != text)
 			{
-				MyMod.playersData[_fromClient].m_WildlifeSceneReady = false;
 				MyMod.playersData[_fromClient].m_TicksOnScene = 0;
 				Log("Player " + _fromClient + "  transition to level with GUID " + text);
 			}
@@ -387,23 +392,24 @@ internal class ServerHandle
 	{
 		DataStr.AnimalCompactData animalCompactData = _packet.ReadAnimalCompactData();
 		DataStr.AnimalAnimsSync anim = _packet.ReadAnimalAnim();
-		int num = _packet.ReadInt();
-		if (string.Equals(animalCompactData.m_PrefabName, "WILDLIFE_Rabbit", StringComparison.OrdinalIgnoreCase))
+		int destination = _packet.ReadInt();
+		string readyScene = Shared.ReadyWildlifeScene(_fromClient);
+		bool sceneTagged = _packet.UnreadLength() >= 4;
+		string scene = sceneTagged ? _packet.ReadString() : readyScene;
+		if (!WildlifeSpawnAuthorityPolicy.SameScene(readyScene, scene))
+			return;
+
+		// A scene-tagged update is relayed by the host's ready roster. Legacy
+		// updates still request a single destination.
+		for (int id = 0; id < MyMod.playersData.Count; id++)
 		{
-			if (num < 0 || num >= MyMod.playersData.Count || _fromClient <= 0 || _fromClient >= MyMod.playersData.Count)
-				return;
-			var source = MyMod.playersData[_fromClient];
-			string destinationScene = num == 0 ? MyMod.level_guid : MyMod.playersData[num]?.m_LevelGuid;
-			if (source == null || string.IsNullOrEmpty(destinationScene) || source.m_LevelGuid != destinationScene)
-				return;
-		}
-		if (num == 0)
-		{
-			MyMod.DoAnimalSync(animalCompactData, anim);
-		}
-		else
-		{
-			ServerSend.ANIMALTEST(_fromClient, animalCompactData, anim, num);
+			if (id == _fromClient || (!sceneTagged && destination != id) ||
+				!WildlifeSpawnAuthorityPolicy.SameScene(Shared.ReadyWildlifeScene(id), scene))
+				continue;
+			if (id == 0)
+				MyMod.DoAnimalSync(animalCompactData, anim, _fromClient);
+			else
+				ServerSend.ANIMALTEST(_fromClient, animalCompactData, anim, id, scene);
 		}
 	}
 
@@ -594,11 +600,10 @@ internal class ServerHandle
 		return -1;
 	}
 
-	public static void CONNECTSTEAM(int _fromClient, Packet _packet)
+	internal static void ConnectSteamPeer(string text)
 	{
 		if (!CoopReturnToMenu.HostIsClosing)
 		{
-			string text = _packet.ReadString();
 			int num = FindSteamClientSlot(text);
 			if (num < 0)
 			{
@@ -1202,16 +1207,12 @@ internal class ServerHandle
 
 	public static void HITRABBIT(int _fromClient, Packet _packet)
 	{
-		string gUID = _packet.ReadString();
-		int num = _packet.ReadInt();
-		if (num != 0)
-		{
-			ServerSend.HITRABBIT(num, gUID);
-		}
-		else
-		{
-			MyMod.OnHitRabbit(gUID);
-		}
+		string guid = _packet.ReadString();
+		_packet.ReadInt(); // Legacy target slot.
+		string readyScene = Shared.ReadyWildlifeScene(_fromClient);
+		string scene = _packet.UnreadLength() >= 4 ? _packet.ReadString() : readyScene;
+		if (WildlifeSpawnAuthorityPolicy.SameScene(readyScene, scene))
+			ServerSend.HITRABBIT(_fromClient, guid, scene);
 	}
 
 	public static void RELEASERABBIT(int _fromClient, Packet _packet)
@@ -1390,18 +1391,16 @@ internal class ServerHandle
 
 	public static void WILDLIFESCENEREADY(int from, Packet packet)
 	{
-		string scene = packet.ReadString(); int sceneId = packet.ReadInt(); bool ready = packet.ReadBool();
+		string scene = packet.ReadString();
+		packet.ReadInt(); // Legacy build index. Wildlife uses the save-scene key.
+		bool ready = packet.ReadBool();
 		if (from <= 0 || from >= MyMod.playersData.Count || MyMod.playersData[from] == null) return;
 		var data = MyMod.playersData[from];
-		ready &= WildlifeSpawnAuthorityPolicy.WorldScene(scene);
-		if (ready)
-		{
-			if (data.m_LevelGuid != scene) data.m_TicksOnScene = 0;
-			data.m_LevelGuid = scene; data.m_Levelid = sceneId;
-		}
-		if (data.m_WildlifeSceneReady != ready) Log("[Wildlife ready] client=" + from + " ready=" + ready + " scene=" + scene);
-		data.m_WildlifeSceneReady = ready;
-		ServerSend.ANIMALROLE(from, Shared.ShouldbeAnimalController(data.m_TicksOnScene, data.m_Levelid, from));
+		string readyScene = ready && WildlifeSpawnAuthorityPolicy.WorldScene(scene) ? scene : "";
+		if (data.m_WildlifeReadyScene != readyScene)
+			Log("[Wildlife ready] client=" + from + " ready=" + (readyScene != "") + " scene=" + scene);
+		data.m_WildlifeReadyScene = readyScene;
+		Shared.SendWildlifeSpawnRole(from, scene);
 	}
 
 	public static void ADDDOORLOCK(int _fromClient, Packet _packet)

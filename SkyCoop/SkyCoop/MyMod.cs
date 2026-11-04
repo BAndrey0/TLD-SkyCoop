@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.6";
+		public const string Version = "0.16.7";
 
 		public const string DownloadLink = null;
 
@@ -953,7 +953,9 @@ public class MyMod : MelonMod
 	{
 		// MyTicksOnScene is maintained by the server, so it stays zero on guests.
 		// Requiring it here made every scene-specific authority grant get rejected.
-		if (WildlifeSpawnAuthorityPolicy.LocalReady(LoadingScreenIsOn, IsDead, level_guid) && !Shared.IsMainMenuScene(level_name) && level_name != "Boot" && level_name != "Empty")
+		if (!DedicatedServerAppMode &&
+			WildlifeSpawnAuthorityPolicy.LocalReady(LoadingScreenIsOn, IsDead, level_guid) &&
+			WildlifeSpawnAuthorityPolicy.WorldScene(level_name) && !Shared.IsMainMenuScene(level_name))
 		{
 			return GameManager.GetPlayerManagerComponent() != null;
 		}
@@ -962,19 +964,9 @@ public class MyMod : MelonMod
 
 	public static bool CanSpawnWildlifeInCurrentScene()
 	{
-		if (AnimalsController && WildlifeSceneReady())
-		{
-			if (!iAmHost)
-			{
-				if (sendMyPosition)
-				{
-					return WildlifeAuthorityScene == level_guid;
-				}
-				return false;
-			}
-			return true;
-		}
-		return false;
+		return AnimalsController && WildlifeSceneReady() && (iAmHost
+			? Shared.WildlifeSpawnerForScene(level_guid) == 0
+			: sendMyPosition && WildlifeAuthorityScene == level_guid);
 	}
 
 	public static void KillConsole()
@@ -2086,6 +2078,7 @@ public class MyMod : MelonMod
 		GameCompat.PruneDeadCaches();
 		SleepRendezvousFix.Reset();
 		WildlifeAuthorityScene = "";
+		WildlifeSceneHandshake.Reset();
 		WildlifeSpawnerAudit.HandoffQuietUntil = Time.realtimeSinceStartup + 4f;
 		if (sendMyPosition && !iAmHost)
 		{
@@ -2904,6 +2897,10 @@ public class MyMod : MelonMod
 		{
 			return null;
 		}
+		var nativeAi = animal.GetComponent<BaseAi>();
+		if (nativeAi != null)
+			nativeAi.enabled = false;
+		WildlifeCompat.SetAdditionalAiEnabled(animal, false);
 		if (animal.transform.parent != null && animal.transform.parent.GetComponent<MoveAgent>() != null)
 		{
 			UnityEngine.Object.Destroy(animal.transform.parent.GetComponent<MoveAgent>());
@@ -3686,17 +3683,10 @@ public class MyMod : MelonMod
 			}
 			string value = ObjectGuidManager.GenerateNewGuidString();
 			gameObject.GetComponent<ObjectGuid>().Set(value);
-			if (gameObject.GetComponent<Comps.AnimalUpdates>() != null)
-			{
-				gameObject.GetComponent<Comps.AnimalUpdates>().m_RegionGUID = GUID;
-				gameObject.GetComponent<Comps.AnimalUpdates>().m_Animal = gameObject;
-			}
-			else
-			{
-				Comps.AnimalUpdates animalUpdates = gameObject.AddComponent<Comps.AnimalUpdates>();
-				animalUpdates.m_RegionGUID = GUID;
-				animalUpdates.m_Animal = gameObject;
-			}
+			var updates = gameObject.GetComponent<Comps.AnimalUpdates>() ?? gameObject.AddComponent<Comps.AnimalUpdates>();
+			updates.m_RegionGUID = GUID;
+			updates.m_Animal = gameObject;
+			updates.m_MyControlled = true;
 			MarkSharedRabbit(baseAi);
 			if ((bool)spRobj.GetComponent<Comps.SpawnRegionSimple>())
 			{
@@ -3820,10 +3810,20 @@ public class MyMod : MelonMod
 	public static void OnHitRabbit(string GUID)
 	{
 		GameObject gameObject = ObjectGuidManager.Lookup(GUID);
-		if ((bool)gameObject && (bool)gameObject.GetComponent<BaseAi>())
+		if (gameObject == null)
+			return;
+		var actor = gameObject.GetComponent<Comps.AnimalActor>();
+		if (actor != null)
 		{
-			gameObject.GetComponent<BaseAi>().Stun(gameObject.transform.position);
+			if (actor.m_SharedRabbit && !actor.m_MarkToDestroy)
+				actor.m_RabbitHitPendingUntil = Time.realtimeSinceStartup + 3f;
+			return;
 		}
+		var updates = gameObject.GetComponent<Comps.AnimalUpdates>();
+		var ai = gameObject.GetComponent<BaseAi>();
+		if (updates != null && updates.m_SharedRabbit && !updates.m_Banned && !updates.m_PickedUp &&
+			ai != null && ai.m_CurrentHP > 0 && ai.GetAiMode() != AiMode.Dead && ai.GetAiMode() != AiMode.Stunned)
+			ai.Stun(gameObject.transform.position);
 	}
 
 	private static void MarkSharedRabbit(BaseAi ai)
@@ -4085,94 +4085,73 @@ public class MyMod : MelonMod
 		};
 	}
 
-	public static bool IsEligibleWildlifeController(int id, int sceneId, string sceneGuid)
+	public static bool IsEligibleWildlifeController(int id, string sceneGuid)
 	{
-		if (id < 0 || id >= playersData.Count || playersData[id] == null)
-		{
-			return false;
-		}
-		DataStr.MultiPlayerClientData multiPlayerClientData = playersData[id];
 		if (id == ClientUser.myId)
-		{
-			if (!LoadingScreenIsOn && !IsDead && levelid == sceneId)
-			{
-				return level_guid == sceneGuid;
-			}
+			return WildlifeSceneReady() && WildlifeSpawnAuthorityPolicy.SameScene(level_guid, sceneGuid);
+		if (iAmHost)
+			return WildlifeSpawnAuthorityPolicy.SameScene(Shared.ReadyWildlifeScene(id), sceneGuid);
+		if (id < 0 || id >= playersData.Count || playersData[id] == null)
 			return false;
-		}
-		Client value;
-		bool connected = ((!iAmHost) ? (sendMyPosition && multiPlayerClientData.m_Used) : (Server.clients.TryGetValue(id, out value) && value != null && value.IsBusy() && !value.RCON));
-		return WildlifeOwnershipPolicy.Eligible(connected, multiPlayerClientData.m_IsLoading, multiPlayerClientData.m_Dead, multiPlayerClientData.m_AnimState == "Knock", multiPlayerClientData.m_Levelid, multiPlayerClientData.m_LevelGuid, sceneId, sceneGuid);
+		var data = playersData[id];
+		return WildlifeOwnershipPolicy.Eligible(sendMyPosition && data.m_Used, data.m_IsLoading,
+			data.m_Dead, data.m_AnimState == "Knock", data.m_LevelGuid, sceneGuid);
 	}
 
-	public static int GetClosestPlayerToAnimal(GameObject animal, int ReTakeChill, int CurrentController, Vector3 V3_Controller, int LevelID_Controller)
+	public static int GetClosestPlayerToAnimal(BaseAi animal, int retakeCooldown)
 	{
 		Vector3 position = animal.transform.position;
-		BaseAi component = animal.GetComponent<BaseAi>();
-		float num = 15f;
-		float num2 = Vector3.Distance(position, V3_Controller);
-		int result = CurrentController;
-		if (component.GetAiMode() == AiMode.Dead || component.GetAiMode() == AiMode.Struggle || component.m_CurrentHP <= 0f || component.m_HasEnteredStruggleOnLastAttack || ReTakeChill > 0)
-		{
-			return CurrentController;
-		}
+		int result = ClientUser.myId;
+		AiMode mode = animal.GetAiMode();
+		if (mode == AiMode.Dead || mode == AiMode.Struggle || mode == AiMode.Stunned || animal.m_CurrentHP <= 0f ||
+			animal.m_HasEnteredStruggleOnLastAttack || retakeCooldown > 0)
+			return result;
+
+		float ownerDistance = Vector3.Distance(position, GameManager.GetPlayerTransform().position);
+		float closestDistance = ownerDistance;
 		for (int i = 0; i < playersData.Count; i++)
 		{
-			if (i != CurrentController && IsEligibleWildlifeController(i, LevelID_Controller, level_guid))
-			{
-				Vector3 position2;
-				int num3;
-				if (iAmHost && i == 0)
-				{
-					position2 = GameManager.GetPlayerTransform().position;
-					num3 = levelid;
-				}
-				else if (i == ClientUser.myId)
-				{
-					position2 = GameManager.GetPlayerTransform().position;
-					num3 = levelid;
-				}
-				else
-				{
-					position2 = playersData[i].m_Position;
-					num3 = playersData[i].m_Levelid;
-				}
-				float num4 = Vector3.Distance(V3_Controller, position2);
-				float num5 = Vector3.Distance(position, position2);
-				if (num4 > num && playersData[i].m_AnimState != "Knock" && num3 == LevelID_Controller && position2 != new Vector3(0f, 0f, 0f) && num5 < num2)
-				{
-					num2 = num5;
-					result = i;
-				}
-			}
+			if (i == ClientUser.myId || !TryGetWildlifePeerPosition(i, out Vector3 peerPosition))
+				continue;
+			float distance = Vector3.Distance(position, peerPosition);
+			if (distance >= closestDistance || !WildlifeOwnershipPolicy.Closer(distance, ownerDistance))
+				continue;
+			closestDistance = distance;
+			result = i;
 		}
 		return result;
 	}
 
+	private static bool TryGetWildlifePeerPosition(int id, out Vector3 position)
+	{
+		var data = playersData[id];
+		position = data != null ? data.m_Position : Vector3.zero;
+		return data != null && !data.m_Dead && data.m_AnimState != "Knock" && IsEligibleWildlifeController(id, level_guid) &&
+			WildlifeSpawnAuthorityPolicy.SameScene(data.m_LevelGuid, level_guid) &&
+			(position != Vector3.zero || MotionSync.Age(id) >= 0);
+	}
+
 	public static void SendAnimalForValidPlayers(DataStr.AnimalCompactData data, DataStr.AnimalAnimsSync anim)
 	{
-		if (NoAnimalSync)
-		{
+		if (NoAnimalSync || !WildlifeSceneReady())
 			return;
-		}
-		for (int i = 0; i < playersData.Count; i++)
+
+		if (iAmHost)
 		{
-			if (playersData[i] == null || i == ClientUser.myId || playersData[i].m_Levelid != levelid || !(playersData[i].m_LevelGuid == level_guid))
+			for (int i = 1; i < playersData.Count; i++)
 			{
-				continue;
+				if (WildlifeSpawnAuthorityPolicy.SameScene(Shared.ReadyWildlifeScene(i), level_guid))
+					ServerSend.ANIMALTEST(0, data, anim, i, level_guid);
 			}
-			if (iAmHost)
-			{
-				ServerSend.ANIMALTEST(0, data, anim, i);
-			}
-			if (sendMyPosition)
-			{
-				using Packet packet = new Packet(105);
-				packet.Write(data);
-				packet.Write(anim);
-				packet.Write(i);
-				SendUDPData(packet);
-			}
+		}
+		else if (sendMyPosition)
+		{
+			using Packet packet = new Packet((int)ClientPackets.ANIMALTEST);
+			packet.Write(data);
+			packet.Write(anim);
+			packet.Write(0); // Legacy destination. Scene-tagged packets go to the whole ready roster.
+			packet.Write(level_guid);
+			SendUDPData(packet);
 		}
 	}
 
@@ -4368,83 +4347,6 @@ public class MyMod : MelonMod
 			}
 		}
 		return hashSet.Count;
-	}
-
-	public static void SwitchToAnimalController()
-	{
-		System.Collections.Generic.Dictionary<string, int> dictionary = new System.Collections.Generic.Dictionary<string, int>();
-		if (ActorsList.Count > 0)
-		{
-			foreach (System.Collections.Generic.KeyValuePair<string, Comps.AnimalActor> actors in ActorsList)
-			{
-				if (actors.Value == null) continue;
-				if (!actors.Value.m_SharedRabbit)
-					actors.Value.m_ClientController = ClientUser.myId;
-				string regionGUID = actors.Value.m_RegionGUID;
-				if (regionGUID != "")
-				{
-					if (!dictionary.TryGetValue(regionGUID, out var value))
-					{
-						dictionary.Add(regionGUID, 1);
-						continue;
-					}
-					dictionary.Remove(regionGUID);
-					dictionary.Add(regionGUID, value + 1);
-				}
-			}
-		}
-		if (BaseAiManager.m_BaseAis.Count > 0)
-		{
-			Il2CppSystem.Collections.Generic.List<BaseAi>.Enumerator enumerator2 = BaseAiManager.m_BaseAis.GetEnumerator();
-			while (enumerator2.MoveNext())
-			{
-				BaseAi current2 = enumerator2.Current;
-				if (!(current2 != null) || !(current2.gameObject != null) || !current2.gameObject.GetComponent<Comps.AnimalUpdates>())
-				{
-					continue;
-				}
-				string regionGUID2 = current2.gameObject.GetComponent<Comps.AnimalUpdates>().m_RegionGUID;
-				if (regionGUID2 != "")
-				{
-					if (!dictionary.TryGetValue(regionGUID2, out var value2))
-					{
-						dictionary.Add(regionGUID2, 1);
-						continue;
-					}
-					dictionary.Remove(regionGUID2);
-					dictionary.Add(regionGUID2, value2 + 1);
-				}
-			}
-		}
-		if (AnimalCorplesList.Count > 0)
-		{
-			foreach (System.Collections.Generic.KeyValuePair<string, Comps.AnimalCorpseObject> animalCorples in AnimalCorplesList)
-			{
-				string regionGUID3 = animalCorples.Value.m_RegionGUID;
-				if (regionGUID3 != "")
-				{
-					if (!dictionary.TryGetValue(regionGUID3, out var value3))
-					{
-						dictionary.Add(regionGUID3, 1);
-						continue;
-					}
-					dictionary.Remove(regionGUID3);
-					dictionary.Add(regionGUID3, value3 + 1);
-				}
-			}
-		}
-		if (dictionary.Count <= 0)
-		{
-			return;
-		}
-		foreach (System.Collections.Generic.KeyValuePair<string, int> item in dictionary)
-		{
-			GameObject gameObject = ObjectGuidManager.Lookup(item.Key);
-			if ((bool)gameObject && gameObject.GetComponent<Comps.SpawnRegionSimple>() != null)
-			{
-				gameObject.GetComponent<Comps.SpawnRegionSimple>().m_Spawned = item.Value;
-			}
-		}
 	}
 
 	public static bool RecreateAnimalToSyncable(GameObject animal, string RegionGUID, float health, System.Collections.Generic.List<DataStr.AnimalArrow> Arrows)
@@ -4790,11 +4692,9 @@ public class MyMod : MelonMod
 		}
 	}
 
-	// A guest that loses the controller role used to keep its real, now unsynced animals: frozen, unkillable
-	// for it and unknown to the new controller. Remove them; the controller's updates recreate them as actors.
-	public static void DropLocallyControlledAnimals()
+	public static void RemoveUnmanagedWildlife()
 	{
-		if (iAmHost || BaseAiManager.m_BaseAis == null)
+		if (BaseAiManager.m_BaseAis == null)
 		{
 			return;
 		}
@@ -4806,7 +4706,8 @@ public class MyMod : MelonMod
 			{
 				continue;
 			}
-			if (baseAi.GetComponent<Comps.AnimalUpdates>()?.m_SharedRabbit == true)
+			var updates = baseAi.GetComponent<Comps.AnimalUpdates>();
+			if (updates != null && (updates.m_MyControlled || updates.m_PickedUp))
 			{
 				continue;
 			}
@@ -4815,10 +4716,13 @@ public class MyMod : MelonMod
 			{
 				ObjectGuidManager.UnRegisterGuid(objectGuid.Get());
 			}
-			UnityEngine.Object.Destroy(baseAi.gameObject);
+			GameObject animal = baseAi.gameObject;
+			animal.SetActive(false);
+			UnityEngine.Object.Destroy(animal);
 			removed++;
 		}
-		MelonLogger.Msg("[Wildlife] Lost controller role, removed " + removed + " local animals");
+		if (removed > 0)
+			MelonLogger.Msg("[Wildlife] Removed " + removed + " unmanaged animals in " + level_guid);
 	}
 
 	public static void DoAnimalDamage(string guid, float damage)
@@ -4874,9 +4778,9 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void DoAnimalSync(DataStr.AnimalCompactData dat, DataStr.AnimalAnimsSync anim)
+	public static void DoAnimalSync(DataStr.AnimalCompactData dat, DataStr.AnimalAnimsSync anim, int sender)
 	{
-		if (NoAnimalSync)
+		if (NoAnimalSync || !WildlifeSceneReady())
 		{
 			return;
 		}
@@ -4888,15 +4792,16 @@ public class MyMod : MelonMod
 				return;
 			}
 			Comps.AnimalActor component = gameObject.GetComponent<Comps.AnimalActor>();
-			if (component.m_MarkToDestroy)
+			if (component.m_MarkToDestroy ||
+				!WildlifeOwnershipPolicy.AcceptSnapshot(component.m_ClientController, sender, component.NoResponce > 0))
 			{
 				return;
 			}
 			component.NoResponce = 5;
-			component.m_LastRabbitSnapshot = Time.realtimeSinceStartup;
+			component.m_LastWildlifeSnapshot = Time.realtimeSinceStartup;
 			component.m_Hp = dat.m_Health;
 			component.m_RegionGUID = dat.m_RegionGUID;
-			component.m_ClientController = !component.m_SharedRabbit && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
+			component.m_ClientController = dat.m_LastController;
 			SetAnimationParams(gameObject, anim);
 			SetAnimalPosition(gameObject, dat.m_Position, dat.m_Rotation);
 			component.m_NextMode = (AiMode)dat.m_LastAiMode;
@@ -4918,10 +4823,10 @@ public class MyMod : MelonMod
 			{
 				Comps.AnimalActor component2 = gameObject.GetComponent<Comps.AnimalActor>();
 				component2.NoResponce = 5;
-				component2.m_LastRabbitSnapshot = Time.realtimeSinceStartup;
+				component2.m_LastWildlifeSnapshot = Time.realtimeSinceStartup;
 				component2.m_Hp = dat.m_Health;
 				component2.m_RegionGUID = dat.m_RegionGUID;
-				component2.m_ClientController = !component2.m_SharedRabbit && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
+				component2.m_ClientController = dat.m_LastController;
 				SetAnimationParams(gameObject, anim);
 				SetAnimalPosition(gameObject, dat.m_Position, dat.m_Rotation);
 				component2.m_NextMode = (AiMode)dat.m_LastAiMode;
@@ -5287,13 +5192,15 @@ public class MyMod : MelonMod
 
 	public static int AnyOneClose(float minimalDistance, Vector3 point)
 	{
-		if (Vector3.Distance(GameManager.GetPlayerTransform().position, point) <= minimalDistance)
+		var localPlayer = GameManager.GetPlayerTransform();
+		if (WildlifeSceneReady() && localPlayer != null && Vector3.Distance(localPlayer.position, point) <= minimalDistance)
 		{
 			return ClientUser.myId;
 		}
 		for (int i = 0; i < playersData.Count; i++)
 		{
-			if (playersData[i] != null && playersData[i].m_Levelid == levelid && playersData[i].m_LevelGuid == level_guid && Vector3.Distance(playersData[i].m_Position, point) <= minimalDistance)
+			if (i != ClientUser.myId && TryGetWildlifePeerPosition(i, out Vector3 position) &&
+				Vector3.Distance(position, point) <= minimalDistance)
 			{
 				return i;
 			}
@@ -5789,7 +5696,7 @@ public class MyMod : MelonMod
 		GameObject gameObject = UnityEngine.Object.Instantiate(prefab, v3, rot);
 		Comps.AnimalActor animalActor = gameObject.AddComponent<Comps.AnimalActor>();
 		animalActor.m_SharedRabbit = gameObject.GetComponent<AiRabbit>() != null;
-		animalActor.m_LastRabbitSnapshot = Time.realtimeSinceStartup;
+		animalActor.m_LastWildlifeSnapshot = Time.realtimeSinceStartup;
 		animalActor.m_Animal = gameObject;
 		animalActor.m_Animator = RemoveAnimalComponents(gameObject);
 		animalActor.m_ToGo = v3;
@@ -5983,32 +5890,22 @@ public class MyMod : MelonMod
 
 	public static void VerifiedSave(bool Valid)
 	{
-		if (Valid)
+		SaveSlotInfo slot = PendingSaveSlotInfo;
+		PendingSaveSlotInfo = null;
+		if (PendingSave == null)
 		{
-			if (PendingSaveSlotInfo == null)
-			{
-				LetChooseSpawnForClient(PendingSave);
-				return;
-			}
-			SaveSlotInfo pendingSaveSlotInfo = PendingSaveSlotInfo;
-			SaveGameSlots.SetBaseNameForSave(pendingSaveSlotInfo.m_SaveSlotName, pendingSaveSlotInfo.m_SaveSlotName);
-			MelonLogger.Msg("Save slot base name is " + SaveGameSlots.GetBaseNameForSave(pendingSaveSlotInfo.m_SaveSlotName));
-			MelonLogger.Msg("Save slot name " + pendingSaveSlotInfo.m_SaveSlotName);
-			MelonLogger.Msg("Save slot user defined name " + SaveGameSlots.GetUserDefinedSlotName(pendingSaveSlotInfo.m_SaveSlotName));
-			SaveGameSystem.SetCurrentSaveInfo(pendingSaveSlotInfo.m_Episode, pendingSaveSlotInfo.m_GameMode, pendingSaveSlotInfo.m_GameId, pendingSaveSlotInfo.m_SaveSlotName);
-			MelonLogger.Msg("Selecting slot " + SaveGameSystem.GetCurrentSaveName());
-			GameManager.LoadSaveGameSlot(pendingSaveSlotInfo.m_SaveSlotName, pendingSaveSlotInfo.m_SaveChangelistVersion);
-			PendingSaveSlotInfo = null;
+			return;
 		}
-		else
+		if (!Valid || slot == null)
 		{
-			if (PendingSaveSlotInfo != null)
-			{
-				SaveGameSlotHelper.DeleteSaveSlotInfo(PendingSaveSlotInfo);
-				PendingSaveSlotInfo = null;
-			}
 			LetChooseSpawnForClient(PendingSave);
+			return;
 		}
+		PendingSave = null;
+		SaveGameSlots.SetBaseNameForSave(slot.m_SaveSlotName, slot.m_SaveSlotName);
+		SaveGameSystem.SetCurrentSaveInfo(slot.m_Episode, slot.m_GameMode, slot.m_GameId, slot.m_SaveSlotName);
+		MelonLogger.Msg("[Save join] Resuming slot " + slot.m_SaveSlotName);
+		GameManager.LoadSaveGameSlot(slot.m_SaveSlotName, slot.m_SaveChangelistVersion);
 	}
 
 	public static void SendVerifySave(string UGUID, long Hash)
@@ -6023,57 +5920,44 @@ public class MyMod : MelonMod
 	public static void CheckHaveSaveFileToJoin(DataStr.SaveSlotSync Data)
 	{
 		AnimalsController = false;
-		bool flag = false;
-		int episode = Data.m_Episode;
-		SaveSlotType saveSlotType = (SaveSlotType)Data.m_SaveSlotType;
-		int seed = Data.m_Seed;
-		SaveSlotInfo saveSlotInfo = null;
-		Il2CppSystem.Collections.Generic.List<SaveSlotInfo> sortedSaveSlots = SaveGameSystem.GetSortedSaveSlots((Episode)episode, saveSlotType);
+		PendingSaveSlotInfo = null;
+		var sortedSaveSlots = SaveGameSystem.GetSortedSaveSlots((Episode)Data.m_Episode, (SaveSlotType)Data.m_SaveSlotType);
 		for (int i = 0; i < sortedSaveSlots.Count; i++)
 		{
-			SaveSlotInfo saveSlotInfo2 = sortedSaveSlots[i];
-			if (saveSlotInfo2.m_UserDefinedName == (seed.ToString() ?? ""))
+			SaveSlotInfo slot = sortedSaveSlots[i];
+			string name = slot.m_SaveSlotName;
+			if (!WorldSaveMatch.CanResume(Data.m_WorldId, Data.m_Seed, WorldSaveIdentity.Read(name), slot.m_UserDefinedName) ||
+				MenuChange.GetRNGGen(name) != 5)
 			{
-				int rNGGen = MenuChange.GetRNGGen(saveSlotInfo2.m_SaveSlotName);
-				if (rNGGen == 5)
+				continue;
+			}
+			string global = SaveSlotCompat.LoadDataFromSlot(name, "global");
+			if (string.IsNullOrEmpty(global))
+			{
+				continue;
+			}
+			string userId = "";
+			string savedUserId = SaveSlotCompat.LoadDataFromSlot(name, "UserGUID");
+			if (!string.IsNullOrEmpty(savedUserId))
+			{
+				try
 				{
-					MelonLogger.Msg("Found slot to load");
-					MelonLogger.Msg("Loading save file with seed: " + seed);
-					flag = true;
-					saveSlotInfo = saveSlotInfo2;
-					break;
+					userId = System.Text.Json.JsonSerializer.Deserialize<string[]>(savedUserId)?.FirstOrDefault() ?? "";
 				}
-				MelonLogger.Msg(System.ConsoleColor.DarkRed, "Found slot to load but it saved on outdated version of the game");
-				MelonLogger.Msg(System.ConsoleColor.DarkRed, "Generation version of this slot " + rNGGen + ". Release of mod you using right now has Generation version " + 5);
+				catch (System.Text.Json.JsonException)
+				{
+					MelonLogger.Warning("[Save join] Unreadable UserGUID in " + name);
+				}
 			}
-		}
-		if (flag)
-		{
-			KillConsole();
-			MelonLogger.Msg("Trying loading save slot...");
-			long saveFingerprint = Shared.GetSaveFingerprint(SaveSlotCompat.LoadDataFromSlot(saveSlotInfo.m_SaveSlotName, "global"));
-			MelonLogger.Msg("Save slot hash " + saveFingerprint);
-			string text = SaveSlotCompat.LoadDataFromSlot(saveSlotInfo.m_SaveSlotName, "UserGUID");
-			string text2 = "";
-			if (text != null)
+			if (ServerConfig.m_SaveScamProtection && userId == "")
 			{
-				text2 = JSON.Load(text).Make<string[]>()[0];
+				continue;
 			}
-			MelonLogger.Msg("My UGUID " + text2);
-			PendingSaveSlotInfo = saveSlotInfo;
-			if (string.IsNullOrEmpty(text2))
-			{
-				SendVerifySave("", 0L);
-			}
-			else
-			{
-				SendVerifySave(text2, saveFingerprint);
-			}
+			PendingSaveSlotInfo = slot;
+			SendVerifySave(userId, userId == "" ? 0L : Shared.GetSaveFingerprint(global));
+			return;
 		}
-		else
-		{
-			SendVerifySave("", 0L);
-		}
+		SendVerifySave("", 0L);
 	}
 
 	public static void LetChooseSpawnForClient(DataStr.SaveSlotSync Data)
@@ -6673,22 +6557,6 @@ public class MyMod : MelonMod
 					break;
 				}
 			}
-		}
-	}
-
-	public static void PlayVoiceFromPlayerObject(AudioSource audioSource, byte[] voiceData, bool RadioEffect = false)
-	{
-		if (audioSource != null)
-		{
-			audioSource.clip = AudioClip.Create(UnityEngine.Random.Range(100, 1000000).ToString(), 22050, 1, 22050, stream: false);
-			float[] array = new float[22050];
-			for (int i = 0; i < array.Length; i++)
-			{
-				float num = System.BitConverter.ToInt16(voiceData, i * 2);
-				array[i] = num / 32767f;
-			}
-			audioSource.clip.SetData(array, 0);
-			audioSource.Play();
 		}
 	}
 
@@ -11462,8 +11330,8 @@ public class MyMod : MelonMod
 		SessionPing.Tick();
 		DroppedInspectSync.Tick();
 		PendingPickupVisual.Tick();
-		WildlifeSpawnerAudit.Tick();
 		WildlifeSceneHandshake.Tick();
+		WildlifeSpawnerAudit.Tick();
 		AnimalTracksSync.Tick();
 		ResourceHealth.Tick();
 		if (!DedicatedServerAppMode)

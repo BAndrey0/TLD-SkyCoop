@@ -296,6 +296,7 @@ public class Packet : IDisposable
 		Write(obj.m_FixedSpawnScene);
 		Write(obj.m_FixedSpawnPosition);
 		Write(obj.m_CustomExperienceStr);
+		Write(obj.m_WorldId);
 	}
 
 	public void Write(DataStr.ContainerOpenSync obj)
@@ -850,7 +851,7 @@ public class Packet : IDisposable
 
 	public DataStr.SaveSlotSync ReadSaveSlot(bool _moveReadPos = true)
 	{
-		return new DataStr.SaveSlotSync
+		DataStr.SaveSlotSync slot = new DataStr.SaveSlotSync
 		{
 			m_Episode = ReadInt(),
 			m_SaveSlotType = ReadInt(),
@@ -861,6 +862,12 @@ public class Packet : IDisposable
 			m_FixedSpawnPosition = ReadVector3(),
 			m_CustomExperienceStr = ReadString()
 		};
+		// SAVEDATA from older hosts ends with the four-byte recipient ID.
+		if (UnreadLength() > sizeof(int))
+		{
+			slot.m_WorldId = ReadString();
+		}
+		return slot;
 	}
 
 	public DataStr.ContainerOpenSync ReadContainer(bool _moveReadPos = true)

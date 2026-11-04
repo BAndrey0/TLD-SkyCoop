@@ -8,6 +8,14 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  const string previousWorld = "a1111111111111111111111111111111";
+  const string newWorld = "b2222222222222222222222222222222";
+  Check(WorldSaveMatch.CanResume(previousWorld, -42, previousWorld, "Renamed"), "The same world must resume after the guest renames its slot");
+  Check(!WorldSaveMatch.CanResume(newWorld, -42, previousWorld, "-42"), "Different worlds with the same seed must use separate guest slots");
+  Check(!WorldSaveMatch.CanResume(newWorld, -42, "", "-42"), "An identified world must reject an untagged save with the same seed");
+  Check(!WorldSaveMatch.CanResume("", -42, previousWorld, "-42"), "A legacy host must not claim a slot bound to an identified world");
+  Check(WorldSaveMatch.CanResume("", -42, "", "-42"), "Legacy saves must remain resumable on a legacy world");
+  Check(!WorldSaveMatch.CanResume("", 0, "", "0"), "An unspecified legacy seed must start a fresh guest slot");
   double fireDeadline=FireClockPolicy.SecondsAt(100)+3600;
   Check(FireClockPolicy.Remaining(fireDeadline,105)==3300,"One hour of book work must consume only five shared minutes of fire");
   Check(FireClockPolicy.Remaining(fireDeadline,105)==3300,"Reapplying an unchanged fire deadline must not refill it");
@@ -139,7 +147,11 @@ static class Program
   Check(!WildlifeSpawnAuthorityPolicy.AcceptGrant(false, "LakeRegion", "LakeRegion"), "Loading guest must not accept authority");
   Check(!WildlifeSpawnAuthorityPolicy.WorldScene("MainMenu"), "Menu must never spawn wildlife");
   Check(WildlifeSpawnAuthorityPolicy.LocalReady(false, false, "LakeRegion"), "Guest readiness must not depend on the host-only tick counter");
-  Check(!WildlifeOwnershipPolicy.Eligible(true, false, false, false, 1, "LakeRegion", 1, "RavineTransitionZone"), "Other scene must not steal animal ownership");
+  Check(!WildlifeOwnershipPolicy.Eligible(true, false, false, false, "LakeRegion", "RavineTransitionZone"), "Other scene must not steal animal ownership");
+  Check(WildlifeOwnershipPolicy.Eligible(true, false, false, false, "LakeRegion", "LakeRegion"), "Loaded peers share wildlife by save-scene key");
+  Check(WildlifeOwnershipPolicy.Closer(8, 14) && !WildlifeOwnershipPolicy.Closer(10, 14), "Handoff uses distance from the animal with hysteresis");
+  Check(!WildlifeOwnershipPolicy.AcceptSnapshot(1, 0, true), "The previous owner cannot undo an active handoff");
+  Check(WildlifeOwnershipPolicy.AcceptSnapshot(1, 1, true) && WildlifeOwnershipPolicy.AcceptSnapshot(1, 0, false), "Current owner and recovery after silence can update replicas");
   Console.WriteLine($"PASS: {checks} session and wildlife checks");
  }
 }

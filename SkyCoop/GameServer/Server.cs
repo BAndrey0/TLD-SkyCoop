@@ -33,6 +33,8 @@ internal class Server
 
 	public static void Start(int _maxPlayers, int _port = 26950)
 	{
+		Stop();
+		MPSaveManager.LoadNonUnloadables();
 		MaxPlayers = _maxPlayers;
 		MyMod.MaxPlayers = MaxPlayers;
 		Port = _port;
@@ -40,7 +42,7 @@ internal class Server
 		InitializeServerData();
 		string environmentVariable = Environment.GetEnvironmentVariable("SKYCOOP_BIND_ADDRESS");
 		udpListener = new UdpClient(new IPEndPoint(string.IsNullOrEmpty(environmentVariable) ? IPAddress.Any : IPAddress.Parse(environmentVariable), Port));
-		udpListener.BeginReceive(UDPReceiveCallback, null);
+		udpListener.BeginReceive(UDPReceiveCallback, udpListener);
 		Log($"Server started on port {Port}.");
 		MPStats.Start();
 		MPStats.AddPlayer(MPSaveManager.GetSubNetworkGUID(), MyMod.MyChatName);
@@ -48,14 +50,13 @@ internal class Server
 
 	public static void StartSteam(int _maxPlayers, string[] whitelist = null)
 	{
+		Stop();
 		MPSaveManager.LoadNonUnloadables();
 		MaxPlayers = _maxPlayers;
 		MyMod.MaxPlayers = MaxPlayers;
 		Log("[SteamWorks.NET] Starting multiplayer...");
 		InitializeServerData();
-		UsingSteamWorks = true;
 		Shared.InitAllPlayers();
-		MyMod.iAmHost = true;
 		MyMod.AnimalsController = true;
 		MyMod.WildlifeAuthorityScene = "";
 		MyMod.OverridedHourse = GameManager.GetTimeOfDayComponent().GetHour();
@@ -65,6 +66,8 @@ internal class Server
 		MyMod.DisableOriginalAnimalSpawns(host: true);
 		MyMod.SetFixedSpawn();
 		MyMod.KillConsole();
+		UsingSteamWorks = true;
+		MyMod.iAmHost = true;
 		SteamConnect.Main.SetLobbyServer();
 		SteamConnect.Main.SetLobbyState("Playing");
 		Log("Server has been runned with InGame time: " + GameManager.GetTimeOfDayComponent().GetHour() + ":" + GameManager.GetTimeOfDayComponent().GetMinutes() + " seed " + GameManager.m_SceneTransitionData.m_GameRandomSeed);
@@ -72,30 +75,96 @@ internal class Server
 		MPStats.AddPlayer(MPSaveManager.GetSubNetworkGUID(), MyMod.MyChatName);
 	}
 
+	public static bool Stop(bool notifyGuests = true)
+	{
+		if (packetHandlers == null)
+		{
+			return false;
+		}
+		packetHandlers = null;
+		MyMod.iAmHost = false;
+		MyMod.isRuning = false;
+		MyMod.AnimalsController = false;
+		foreach (Client client in clients.Values)
+		{
+			if (!client.IsBusy())
+			{
+				continue;
+			}
+			if (notifyGuests && !client.RCON)
+			{
+				ServerSend.KICKMESSAGE(client.id, "The host closed this world. Rejoin from the main menu.");
+			}
+			if (UsingSteamWorks && SteamConnect.CanUseSteam && client.udp.sid != "")
+			{
+				try
+				{
+					SteamConnect.Main.Disconnect(client.udp.sid);
+				}
+				catch (Exception ex)
+				{
+					MelonLogger.Warning("[Server] Closing peer: " + ex.Message);
+				}
+			}
+			client.udp.Disconnect();
+		}
+		UdpClient listener = udpListener;
+		udpListener = null;
+		listener?.Close();
+		UsingSteamWorks = false;
+		p2pclients.Clear();
+		clients.Clear();
+		MyMod.playersData.Clear();
+		MyMod.PlayersOnServer = 0;
+		return true;
+	}
+
 	private static void UDPReceiveCallback(IAsyncResult _result)
 	{
+		UdpClient listener = (UdpClient)_result.AsyncState;
 		try
 		{
 			IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
-			byte[] array = null;
+			byte[] array;
 			try
 			{
-				array = udpListener.EndReceive(_result, ref remoteEP);
+				array = listener.EndReceive(_result, ref remoteEP);
 			}
-			catch (SocketException)
+			catch (SocketException) when (listener == udpListener)
 			{
-				udpListener.BeginReceive(UDPReceiveCallback, null);
+				listener.BeginReceive(UDPReceiveCallback, listener);
 				return;
 			}
-			if (array == null)
-			{
-				return;
-			}
-			udpListener.BeginReceive(UDPReceiveCallback, null);
-			if (array.Length < 4)
+			if (listener != udpListener)
 			{
 				return;
 			}
+			listener.BeginReceive(UDPReceiveCallback, listener);
+			if (array.Length >= 4)
+			{
+				ThreadManager.ExecuteOnMainThread(() =>
+				{
+					if (listener == udpListener && packetHandlers != null)
+					{
+						HandleUdpData(array, remoteEP);
+					}
+				});
+			}
+		}
+		catch (ObjectDisposedException)
+		{
+			// Closing the listener cancels its pending receive.
+		}
+		catch (Exception ex)
+		{
+			Log($"Error receiving UDP data: {ex}");
+		}
+	}
+
+	private static void HandleUdpData(byte[] array, IPEndPoint remoteEP)
+	{
+		try
+		{
 			using Packet packet = new Packet(array);
 			int num = packet.ReadInt();
 			string text = "";
@@ -104,7 +173,7 @@ internal class Server
 				if (packet.UnreadLength() <= 12)
 				{
 					Log("Client without SubNetworkGUID trying to connect, rejecting, _clientId " + num);
-					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.6");
+					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.7");
 					return;
 				}
 				text = packet.ReadString();
@@ -147,8 +216,9 @@ internal class Server
 					MyMod.playersData[num2].m_FirstBoot = false;
 				}
 				Log("[UDP] " + (flag ? "Reconnecting " : "New connection ") + remoteEP?.ToString() + " as client " + num2);
-				num = num2;
-				break;
+				client.SubNetworkGUID = text;
+				client.udp.Connect(remoteEP);
+				return;
 			}
 			case -1:
 				Log("[RCON] Request by " + remoteEP.Address.ToString());
@@ -173,17 +243,10 @@ internal class Server
 				ServerSend.PINGSERVER(remoteEP);
 				return;
 			}
-			if (num > 0 && num < MaxPlayers && clients.ContainsKey(num))
+			if (num > 0 && num < MaxPlayers && clients.TryGetValue(num, out Client peer) &&
+				Equals(peer.udp.endPoint, remoteEP) && peer.SubNetworkGUID == text)
 			{
-				if (clients[num].udp.endPoint == null)
-				{
-					clients[num].SubNetworkGUID = text;
-					clients[num].udp.Connect(remoteEP);
-				}
-				else if (clients[num].udp.endPoint.ToString() == remoteEP.ToString())
-				{
-					clients[num].udp.HandleData(packet);
-				}
+				peer.udp.HandleData(packet);
 			}
 		}
 		catch (Exception value2)
@@ -436,10 +499,6 @@ internal class Server
 			{
 				42,
 				ServerHandle.CHAT
-			},
-			{
-				44,
-				ServerHandle.CONNECTSTEAM
 			},
 			{
 				45,

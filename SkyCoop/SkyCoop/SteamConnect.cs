@@ -819,10 +819,11 @@ internal class SteamConnect
 			MelonLogger.Msg("[SteamWorks.NET] Disconnected!");
 		}
 
-		public static void HandleData(byte[] _data)
+		public static void HandleData(byte[] _data, string sender)
 		{
 			if (MyMod.iAmHost)
 			{
+				var hostHandlers = Server.packetHandlers;
 				int _clientID = 0;
 				using (Packet packet = new Packet(_data))
 				{
@@ -833,8 +834,24 @@ internal class SteamConnect
 				}
 				ThreadManager.ExecuteOnMainThread(delegate
 				{
+					if (hostHandlers == null || Server.packetHandlers != hostHandlers || !Server.UsingSteamWorks)
+					{
+						return;
+					}
 					using Packet packet3 = new Packet(_data);
-					MyMod.SimUDPHandle(packet3.ReadInt(), packet3, _clientID);
+					int packetId = packet3.ReadInt();
+					if (packetId == (int)ClientPackets.CONNECTSTEAM)
+					{
+						if (_clientID == 0)
+						{
+							ServerHandle.ConnectSteamPeer(sender);
+						}
+					}
+					else if (Server.clients.TryGetValue(_clientID, out Client peer) && peer.udp.sid == sender &&
+						(peer.ConnectionInitialized || packetId == (int)ClientPackets.welcomeReceived))
+					{
+						MyMod.SimUDPHandle(packetId, packet3, _clientID);
+					}
 				});
 				return;
 			}
@@ -886,7 +903,7 @@ internal class SteamConnect
 					SteamGameJoin.TracePacket(psteamIDRemote, array, incoming: true, sent: true);
 					if (array.Length > 4)
 					{
-						HandleData(array);
+						HandleData(array, psteamIDRemote.ToString());
 					}
 				}
 			}

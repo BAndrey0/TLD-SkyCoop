@@ -420,7 +420,8 @@ public class Comps
 
 		public void CallSync()
 		{
-			if (!(m_Animal != null) || m_Banned || !m_Animal.activeSelf || m_PickedUp || !(m_Animal.GetComponent<BaseAi>() != null))
+			if (MyMod.NoAnimalSync || !MyMod.WildlifeSceneReady() || !(m_Animal != null) ||
+				m_Banned || !m_Animal.activeSelf || m_PickedUp || !(m_Animal.GetComponent<BaseAi>() != null))
 			{
 				return;
 			}
@@ -431,8 +432,7 @@ public class Comps
 			{
 				return;
 			}
-			// Keep rabbit simulation with one peer until that peer leaves the scene.
-			int num = m_SharedRabbit ? ClientUser.myId : MyMod.GetClosestPlayerToAnimal(m_Animal, ReTakeCoolDown, ClientUser.myId, GameManager.GetPlayerTransform().position, MyMod.levelid);
+			int num = MyMod.GetClosestPlayerToAnimal(component, ReTakeCoolDown);
 			compactDataForAnimal.m_LastController = num;
 			if (num != ClientUser.myId)
 			{
@@ -440,18 +440,16 @@ public class Comps
 				{
 					m_Banned = true;
 					m_MarkToDestroy = true;
+					m_Animal.SetActive(false);
+					Destroy(m_Animal);
 				}
 				else
 				{
 					compactDataForAnimal.m_LastController = ClientUser.myId;
 					ReTakeCoolDown = 1;
 				}
-				MyMod.SendAnimalForValidPlayers(compactDataForAnimal, animationDataFromAnimal);
 			}
-			else
-			{
-				MyMod.SendAnimalForValidPlayers(compactDataForAnimal, animationDataFromAnimal);
-			}
+			MyMod.SendAnimalForValidPlayers(compactDataForAnimal, animationDataFromAnimal);
 		}
 
 		private void OnDestroy()
@@ -658,7 +656,9 @@ public class Comps
 
 		public bool m_SharedRabbit;
 
-		public float m_LastRabbitSnapshot;
+		public float m_LastWildlifeSnapshot;
+
+		public float m_RabbitHitPendingUntil;
 
 		public bool m_Banned;
 
@@ -1195,18 +1195,24 @@ public class Comps
 					return;
 				}
 				MaybeAddToSpawnRegion();
-				if (m_SharedRabbit || !MyMod.AnimalsController || m_ClientController != ClientUser.myId)
-				{
-					SetAnimations();
-					SetPosition();
-				}
-				if (m_ClientController == ClientUser.myId && m_Hp > 0 && !AP_Dead && Time.time >= m_NextTakeoverAttempt)
+				SetAnimations();
+				SetPosition();
+				bool canTakeOver = m_Hp > 0 && !AP_Dead && !AP_Stunned && m_NextMode != AiMode.Stunned;
+				if (m_ClientController == ClientUser.myId && MyMod.WildlifeSceneReady() &&
+					canTakeOver && Time.time >= m_NextTakeoverAttempt)
 				{
 					m_NextTakeoverAttempt = Time.time + 1f;
+					string pendingHitGuid = m_RabbitHitPendingUntil > Time.realtimeSinceStartup
+						? m_Animal.GetComponent<ObjectGuid>()?.Get() : null;
 					if (MyMod.RecreateAnimalToSyncable(m_Animal, m_RegionGUID, m_Hp, m_Arrows))
 					{
 						m_Banned = true;
 						m_MarkToDestroy = true;
+						m_Animal.SetActive(false);
+						Destroy(m_Animal);
+						if (!string.IsNullOrEmpty(pendingHitGuid))
+							MyMod.OnHitRabbit(pendingHitGuid);
+						return;
 					}
 				}
 				if (!m_AudioReady)
@@ -1219,18 +1225,15 @@ public class Comps
 					NoResponce--;
 					if (NoResponce <= 0 && m_ClientController != ClientUser.myId)
 					{
-						if (m_SharedRabbit)
+						if (canTakeOver && !MyMod.IsEligibleWildlifeController(m_ClientController, MyMod.level_guid) &&
+							MyMod.CanSpawnWildlifeInCurrentScene())
 						{
-							if (!MyMod.IsEligibleWildlifeController(m_ClientController, MyMod.levelid, MyMod.level_guid) &&
-								MyMod.CanSpawnWildlifeInCurrentScene())
-							{
-								m_ClientController = ClientUser.myId;
-								return;
-							}
-							if (Time.realtimeSinceStartup - m_LastRabbitSnapshot < 15f &&
-								MyMod.AnyOneClose(MyMod.MinimalDistanceForSpawn, m_Animal.transform.position) != -1)
-								return;
+							m_ClientController = ClientUser.myId;
+							return;
 						}
+						if (Time.realtimeSinceStartup - m_LastWildlifeSnapshot < 15f &&
+							MyMod.AnyOneClose(MyMod.MinimalDistanceForSpawn, m_Animal.transform.position) != -1)
+							return;
 						GameAudioManager.StopAllSoundsFromGameObject(m_Animal);
 						m_MarkToDestroy = true;
 					}
@@ -3002,7 +3005,10 @@ public class Comps
 
 		public bool m_RadioFilter;
 
-		public static float PlayNextIn = 0f;
+		private float playNextIn;
+		private AudioClip voiceClip;
+		private float[] samples;
+		private float retryVoiceAfter;
 
 		public static float Trim = 0.03f;
 
@@ -3015,9 +3021,32 @@ public class Comps
 		{
 		}
 
+		private void PlayVoice(byte[] data)
+		{
+			if (Time.realtimeSinceStartup < retryVoiceAfter || data == null || data.Length != 44100) return;
+			samples ??= new float[22050];
+			if (voiceClip == null) voiceClip = AudioClip.Create("SkyCoop voice", samples.Length, 1, 22050, false);
+			for (int i = 0; i < samples.Length; i++) samples[i] = BitConverter.ToInt16(data, i * 2) / 32768f;
+			aSource.Stop();
+			if (voiceClip == null || !voiceClip.SetData(samples, 0))
+			{
+				if (voiceClip != null) Destroy(voiceClip);
+				voiceClip = null;
+				retryVoiceAfter = Time.realtimeSinceStartup + 5f;
+				return;
+			}
+			aSource.clip = voiceClip;
+			aSource.Play();
+		}
+
+		private void OnDestroy()
+		{
+			if (voiceClip != null) Destroy(voiceClip);
+		}
+
 		private void Update()
 		{
-			if (aSource != null && Time.time > PlayNextIn)
+			if (aSource != null && Time.time > playNextIn)
 			{
 				if (IsLastClip)
 				{
@@ -3028,8 +3057,8 @@ public class Comps
 				{
 					PlayBgNoise = true;
 					DataStr.VoiceChatQueueElement voiceChatQueueElement = VoiceQueue[0];
-					PlayNextIn = Time.time + voiceChatQueueElement.m_Length;
-					MyMod.PlayVoiceFromPlayerObject(aSource, voiceChatQueueElement.m_VoiceData, m_RadioFilter);
+					playNextIn = Time.time + voiceChatQueueElement.m_Length;
+					PlayVoice(voiceChatQueueElement.m_VoiceData);
 					VoiceQueue.RemoveAt(0);
 					if (VoiceQueue.Count == 0)
 					{

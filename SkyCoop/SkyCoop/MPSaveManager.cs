@@ -436,6 +436,18 @@ public class MPSaveManager
 
 	public static void LoadNonUnloadables()
 	{
+		LockedDoors.Clear();
+		UsedKeys.Clear();
+		Shared.AnimalsKilled.Clear();
+		RockCaches.Clear();
+		UniversalSyncableObjects.Clear();
+		UsersSaveHashs.Clear();
+		LockedDoorsChanged = false;
+		AnimalsKilledChanged = false;
+		RockCachesChanged = false;
+		UniversalSyncableObjectsChanged = false;
+		SaveHashsChanged = false;
+
 		ExpeditionBuilder.Init();
 		ExpeditionManager.InitClues();
 		int seed = GetSeed();
@@ -454,7 +466,7 @@ public class MPSaveManager
 			{
 				foreach (KeyValuePair<string, string> item in lockedDoor.Value)
 				{
-					UsedKeys.Add(item.Value, value: true);
+					UsedKeys[item.Value] = true;
 				}
 			}
 		}
@@ -536,7 +548,6 @@ public class MPSaveManager
 					return true;
 				}
 				Log("Incorrect hash");
-				UsersSaveHashs.Remove(UGUID);
 				return false;
 			}
 			Log("No");
@@ -788,7 +799,8 @@ public class MPSaveManager
 		}
 		if (Seed != 0)
 		{
-			return PersistentDataPath.m_Path + GetSeparator() + Seed + GetSeparator() + name;
+			string folder = WorldSaveIdentity.Active == "" ? Seed.ToString() : Seed + "_" + WorldSaveIdentity.Active;
+			return PersistentDataPath.m_Path + GetSeparator() + folder + GetSeparator() + name;
 		}
 		return PersistentDataPath.m_Path + GetSeparator() + name;
 	}
@@ -817,28 +829,29 @@ public class MPSaveManager
 		{
 			text = GetPathForName("", Seed) + GetSeparator() + JustAdd;
 		}
-		string text2 = text + "_temp";
-		if (File.Exists(text2))
+		string temporaryPath = text + "." + Guid.NewGuid().ToString("N") + ".tmp";
+		try
 		{
-			File.Delete(text2);
+			byte[] bytes = Encoding.UTF8.GetBytes(content);
+			using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+			{
+				stream.Write(bytes, 0, bytes.Length);
+				stream.Flush(flushToDisk: true);
+			}
+			File.Move(temporaryPath, text, overwrite: true);
 		}
-		Stream stream = new FileStream(text2, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
-		if (stream == null)
+		catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
 		{
-			Error("Save failed, writing stream wasn't created");
+			Error($"Save write failed: {text}, HRESULT=0x{ex.HResult:X8}: {ex.Message}");
 			return false;
 		}
-		byte[] bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(content);
-		stream.Write(bytes, 0, bytes.Length);
-		stream.Dispose();
-		if (File.Exists(text))
+		finally
 		{
-			File.Delete(text);
-		}
-		File.Copy(text2, text, overwrite: true);
-		if (File.Exists(text2))
-		{
-			File.Delete(text2);
+			try { File.Delete(temporaryPath); }
+			catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+			{
+				Error($"Could not clean temporary save {temporaryPath}: {ex.Message}");
+			}
 		}
 		if (stopwatch != null)
 		{
@@ -905,7 +918,7 @@ public class MPSaveManager
 	{
 		if (!NoSaveAndLoad)
 		{
-			CreateFolderIfNotExist(GetPathForName(GetSeed().ToString() ?? ""));
+			CreateFolderIfNotExist(GetPathForName("", GetSeed()));
 		}
 	}
 

@@ -53,18 +53,18 @@ internal class Client
 		public void HandleData(Packet _packetData)
 		{
 			int length = _packetData.ReadInt();
-			byte[] _packetBytes = _packetData.ReadBytes(length);
-			ThreadManager.ExecuteOnMainThread(delegate
+			using Packet packet = new Packet(_packetData.ReadBytes(length));
+			int key = packet.ReadInt();
+			if ((client.ConnectionInitialized || key == (int)ClientPackets.welcomeReceived) &&
+				Server.packetHandlers.TryGetValue(key, out var handler))
 			{
-				using Packet packet = new Packet(_packetBytes);
-				int key = packet.ReadInt();
 				if (MyMod.DebugTrafficCheck)
 				{
 					Log("[DebugTrafficCheck] Got packet ID " + key);
 					Log("[DebugTrafficCheck] Packet contains " + packet.ReturnSize() + " bytes");
 				}
-				Server.packetHandlers[key](id, packet);
-			});
+				handler(id, packet);
+			}
 		}
 
 		public void Disconnect()

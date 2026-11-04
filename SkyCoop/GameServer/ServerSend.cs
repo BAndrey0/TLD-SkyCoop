@@ -415,21 +415,22 @@ internal class ServerSend
 		SendTCPData(_toClient, packet);
 	}
 
-	public static void ANIMALROLE(int _toClient, bool _msg)
+	public static void ANIMALROLE(int _toClient, bool _msg, string scene)
 	{
 		using Packet packet = new Packet(16);
 		packet.Write(_msg);
 		packet.Write(_toClient);
-		packet.Write(MyMod.playersData[_toClient]?.m_LevelGuid ?? "");
+		packet.Write(scene);
 		SendTCPData(_toClient, packet);
 	}
 
-	public static void ANIMALTEST(int _From, DataStr.AnimalCompactData _msg, DataStr.AnimalAnimsSync anim, int OnlyFor)
+	public static void ANIMALTEST(int _From, DataStr.AnimalCompactData _msg, DataStr.AnimalAnimsSync anim, int OnlyFor, string scene)
 	{
 		using Packet packet = new Packet(105);
 		packet.Write(_msg);
 		packet.Write(anim);
 		packet.Write(_From);
+		packet.Write(scene);
 		SendUDPData(OnlyFor, packet);
 	}
 
@@ -1660,11 +1661,19 @@ internal class ServerSend
 		SendUDPDataToAllButNotSender(packet, _from, LEVELGUID);
 	}
 
-	public static void HITRABBIT(int For, string GUID)
+	public static void HITRABBIT(int sender, string guid, string scene)
 	{
+		if (WildlifeSpawnAuthorityPolicy.SameScene(Shared.ReadyWildlifeScene(0), scene))
+			MyMod.OnHitRabbit(guid);
 		using Packet packet = new Packet(114);
-		packet.Write(GUID);
-		SendUDPData(For, packet);
+		packet.Write(guid);
+		packet.Write(scene);
+		packet.WriteLength();
+		for (int id = 1; id < MyMod.playersData.Count; id++)
+		{
+			if (id != sender && WildlifeSpawnAuthorityPolicy.SameScene(Shared.ReadyWildlifeScene(id), scene))
+				Server.clients[id].udp.SendData(packet);
+		}
 	}
 
 	public static void RABBITREVIVED(int _from, Vector3 v3, string LEVELGUID, string regionGuid)
@@ -1929,7 +1938,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.6");
+		packet.Write("0.16.7");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));

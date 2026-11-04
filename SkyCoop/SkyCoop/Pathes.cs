@@ -2485,7 +2485,6 @@ public class Pathes
 			}
 			MelonLogger.Msg(System.ConsoleColor.Yellow, "Loading other scene...");
 			MyMod.ApplyOtherCampfires = false;
-			AutoSaveAllTheCost = true;
 		}
 	}
 
@@ -5177,15 +5176,15 @@ public class Pathes
 	}
 
 	[HarmonyPatch(typeof(BaseAi), "Despawn")]
-	private static class SharedRabbit_Despawn
+	private static class SharedWildlife_Despawn
 	{
 		private static bool Prefix(BaseAi __instance)
 		{
 			if (!MyMod.InOnline() || !MyMod.WildlifeSceneReady()) return true;
 			// The replica's native BaseAi may still exist until Unity processes Destroy.
 			if (__instance.GetComponent<Comps.AnimalActor>() != null) return false;
-			var rabbit = __instance.GetComponent<Comps.AnimalUpdates>();
-			if (rabbit == null || !rabbit.m_SharedRabbit || rabbit.m_PickedUp || rabbit.m_Banned ||
+			var updates = __instance.GetComponent<Comps.AnimalUpdates>();
+			if (updates == null || !updates.m_MyControlled || updates.m_PickedUp || updates.m_Banned ||
 				__instance.GetComponent<Comps.AnimalCorpseObject>() != null ||
 				__instance.m_CurrentHP <= 0f || __instance.GetAiMode() == AiMode.Dead ||
 				__instance.GetAiMode() == AiMode.Stunned) return true;
@@ -5761,14 +5760,17 @@ public class Pathes
 					}
 					if (MyMod.sendMyPosition)
 					{
-						using Packet packet = new Packet(114);
-						packet.Write(componentInParent.gameObject.GetComponent<ObjectGuid>().Get());
+					string guid = componentInParent.gameObject.GetComponent<ObjectGuid>().Get();
+					MyMod.OnHitRabbit(guid);
+					using Packet packet = new Packet((int)ClientPackets.HITRABBIT);
+					packet.Write(guid);
 						packet.Write(componentInParent.m_ClientController);
+					packet.Write(MyMod.level_guid);
 						SendTCPData(packet);
 					}
 					else if (MyMod.iAmHost)
 					{
-						ServerSend.HITRABBIT(componentInParent.m_ClientController, componentInParent.gameObject.GetComponent<ObjectGuid>().Get());
+					ServerSend.HITRABBIT(0, componentInParent.gameObject.GetComponent<ObjectGuid>().Get(), MyMod.level_guid);
 					}
 					break;
 				}
@@ -6264,7 +6266,7 @@ public class Pathes
 		{
 			if (!success)
 			{
-				MelonLogger.Error("[SaveGameSystem] Save failed; the game will remain open.");
+				MelonLogger.Error("[SaveGameSystem] Save failed. " + SaveVolumeStatus());
 				ResetPendingQuitAfterSaveFailure();
 			}
 			else
@@ -6509,31 +6511,54 @@ public class Pathes
 	[HarmonyPatch(typeof(GameManager), "AllowedToSave")]
 	internal static class GameManager_AllowedToSave
 	{
-		private static void Postfix(GameManager __instance, SaveState state, ref bool __result)
+		private static float nextDiagnostic;
+
+		private static void Postfix(SaveState state, bool __result)
 		{
-			if (state != SaveState.InMemory)
+			if (__result || state != SaveState.InMemory || !MyMod.InOnline() || !GameManager.m_PendingSave)
 			{
 				return;
 			}
-			MelonLogger.Msg("[GameManager][AllowedToSave] state " + state);
-			MelonLogger.Msg("s_SaveGameDelayTime " + GameManager.s_SaveGameDelayTime);
-			MelonLogger.Msg("(double)GameManager.s_SaveGameDelayTime <= (double)Time.time = " + ((double)GameManager.s_SaveGameDelayTime <= (double)Time.time));
-			MelonLogger.Msg("AllowedToLoadActiveGame() " + GameManager.AllowedToLoadActiveGame());
-			MelonLogger.Msg("m_AllowSaveWithoutGrounding " + GameManager.m_AllowSaveWithoutGrounding);
-			MelonLogger.Msg("GameManager.m_PendingSave " + GameManager.m_PendingSave);
-			if (!__result)
-			{
-				if (AutoSaveAllTheCost)
-				{
-					MelonLogger.Msg(System.ConsoleColor.Red, "Can't autosave now, but we really need to, saving... ");
-					AutoSaveAllTheCost = false;
-					__result = true;
-				}
-			}
-			else
-			{
-				AutoSaveAllTheCost = false;
-			}
+			if (Time.realtimeSinceStartup < nextDiagnostic) return;
+			nextDiagnostic = Time.realtimeSinceStartup + 5f;
+			MelonLogger.Warning($"[SaveGameSystem] Pending save blocked in {MyMod.level_guid}; activeSaveCanLoad={GameManager.AllowedToLoadActiveGame()}, delayElapsed={GameManager.s_SaveGameDelayTime <= Time.time}, allowWithoutGrounding={GameManager.m_AllowSaveWithoutGrounding}. {SaveVolumeStatus()}");
+		}
+	}
+
+	private static string SaveVolumeStatus()
+	{
+		try
+		{
+			string path = PersistentDataPath.GetPersistentDataPathForHardDrive();
+			var volume = new System.IO.DriveInfo(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(path)));
+			return $"Save path={path}, availableMiB={volume.AvailableFreeSpace / 1048576L}.";
+		}
+		catch (System.Exception ex)
+		{
+			return $"Could not check the save volume: {ex.Message}";
+		}
+	}
+
+	[HarmonyPatch]
+	private static class SaveErrorDialog
+	{
+		private static System.Collections.Generic.IEnumerable<MethodBase> TargetMethods()
+		{
+			return AccessTools.GetDeclaredMethods(typeof(Panel_Confirmation)).Where(method => method.Name == "AddConfirmation");
+		}
+
+		private static void Prefix(Panel_Confirmation.ConfirmationType __0, string __1, object[] __args)
+		{
+			if (__0 != Panel_Confirmation.ConfirmationType.ErrorMessage || !MyMod.InOnline()) return;
+			string detail = __args[2] as string;
+			if (!GameManager.m_PendingSave && !LooksLikeSaveError(__1) && !LooksLikeSaveError(detail)) return;
+			MelonLogger.Warning($"[SaveGameSystem] Error dialog: {__1} {detail}. {SaveVolumeStatus()}");
+		}
+
+		private static bool LooksLikeSaveError(string message)
+		{
+			return message != null && (message.Contains("disk", System.StringComparison.OrdinalIgnoreCase) ||
+				message.Contains("space", System.StringComparison.OrdinalIgnoreCase) || message.Contains("save", System.StringComparison.OrdinalIgnoreCase));
 		}
 	}
 
@@ -7079,7 +7104,6 @@ public class Pathes
 		}
 	}
 
-	public static bool AutoSaveAllTheCost = false;
 
 	public static int EmuGenVersion = -1;
 

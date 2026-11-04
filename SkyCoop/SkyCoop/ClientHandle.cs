@@ -39,10 +39,11 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.6");
+			packet.Write("0.16.7");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
+			packet.Write(WorldSaveMatch.Protocol);
 			MyMod.SendUDPData(packet);
 		}
 		if (MyMod.level_name != "Empty" && MyMod.level_name != "Boot" && !Shared.IsMainMenuScene(MyMod.level_name))
@@ -219,7 +220,7 @@ public class ClientHandle
 		{
 			return;
 		}
-		if (num != ClientUser.myId || !WildlifeSpawnAuthorityPolicy.AcceptGrant(MyMod.WildlifeSceneReady(), MyMod.level_guid, text))
+		if (num != ClientUser.myId || !WildlifeSpawnAuthorityPolicy.AcceptGrant(!flag || MyMod.WildlifeSceneReady(), MyMod.level_guid, text))
 		{
 			return;
 		}
@@ -230,13 +231,8 @@ public class ClientHandle
 			if (MyMod.AnimalsController)
 			{
 				WildlifeSpawnerAudit.HandoffQuietUntil = Time.realtimeSinceStartup + 4;
-				MyMod.SwitchToAnimalController();
 			}
-			else
-			{
-				MyMod.DropLocallyControlledAnimals();
-			}
-			MelonLogger.Msg("Got new animal controller role: " + MyMod.AnimalsController);
+			MelonLogger.Msg("[Wildlife] Local spawn controller=" + flag + " scene=" + text);
 		}
 	}
 
@@ -339,8 +335,12 @@ public class ClientHandle
 	{
 		DataStr.AnimalCompactData dat = _packet.ReadAnimalCompactData();
 		DataStr.AnimalAnimsSync anim = _packet.ReadAnimalAnim();
-		_packet.ReadInt();
-		MyMod.DoAnimalSync(dat, anim);
+		int sender = _packet.ReadInt();
+		if (sender < 0 || sender >= MyMod.playersData.Count || sender == ClientUser.myId)
+			return;
+		string scene = _packet.UnreadLength() >= 4 ? _packet.ReadString() : MyMod.playersData[sender]?.m_LevelGuid;
+		if (WildlifeSpawnAuthorityPolicy.SameScene(scene, MyMod.level_guid))
+			MyMod.DoAnimalSync(dat, anim, sender);
 	}
 
 	public static void ANIMALSYNCTRIGG(Packet _packet)
@@ -438,46 +438,53 @@ public class ClientHandle
 	{
 	}
 
-	private static float LastSaveDataTime = -100f;
+	private static bool receivedSaveData;
+	private static bool awaitingSaveVerification;
 
-	private static float LastVerifySaveTime = -100f;
+	internal static void ResetSaveJoin()
+	{
+		receivedSaveData = false;
+		awaitingSaveVerification = false;
+		MyMod.PendingSave = null;
+		MyMod.PendingSaveSlotInfo = null;
+		MyMod.ShouldCreateSaveForHost = false;
+	}
 
 	public static void SAVEDATA(Packet _packet)
 	{
 		// The host answers every repeated Welcome ack with SAVEDATA; handle one per join or character creation opens several times.
-		if (Time.realtimeSinceStartup - LastSaveDataTime < 10f)
+		if (receivedSaveData || !Shared.IsMainMenuScene(MyMod.level_name))
 		{
 			MelonLogger.Msg("Ignored duplicate SAVEDATA");
 			return;
 		}
-		LastSaveDataTime = Time.realtimeSinceStartup;
-		LastVerifySaveTime = -100f;
 		DataStr.SaveSlotSync saveSlotSync = _packet.ReadSaveSlot();
+		if (saveSlotSync.m_WorldId != "" && !System.Guid.TryParseExact(saveSlotSync.m_WorldId, "N", out _))
+		{
+			MyMod.DoKickMessage("The host sent an invalid world ID.");
+			return;
+		}
+		receivedSaveData = true;
+		awaitingSaveVerification = true;
 		MyMod.RemoveWaitForConnect();
 		MyMod.ApplyOtherCampfires = true;
-		if (Shared.IsMainMenuScene(MyMod.level_name))
-		{
-			MyMod.PendingSave = saveSlotSync;
-			MyMod.CheckHaveSaveFileToJoin(saveSlotSync);
-		}
+		MyMod.PendingSave = saveSlotSync;
+		MyMod.CheckHaveSaveFileToJoin(saveSlotSync);
 	}
 
 	public static void VERIFYSAVE(Packet _packet)
 	{
-		if (Time.realtimeSinceStartup - LastVerifySaveTime < 10f)
+		if (!awaitingSaveVerification || !Shared.IsMainMenuScene(MyMod.level_name))
 		{
 			MelonLogger.Msg("Ignored duplicate VERIFYSAVE");
 			return;
 		}
-		LastVerifySaveTime = Time.realtimeSinceStartup;
+		awaitingSaveVerification = false;
 		MyMod.RemoveWaitForConnect();
 		MyMod.RemovePleaseWait();
 		MyMod.MyUGUID = _packet.ReadString();
 		bool valid = _packet.ReadBool();
-		if (Shared.IsMainMenuScene(MyMod.level_name))
-		{
-			MyMod.VerifiedSave(valid);
-		}
+		MyMod.VerifiedSave(valid);
 	}
 
 	public static void CARRYBODY(Packet _packet)
@@ -1122,7 +1129,10 @@ public class ClientHandle
 
 	public static void HITRABBIT(Packet _packet)
 	{
-		MyMod.OnHitRabbit(_packet.ReadString());
+		string guid = _packet.ReadString();
+		string scene = _packet.UnreadLength() >= 4 ? _packet.ReadString() : MyMod.level_guid;
+		if (MyMod.WildlifeSceneReady() && WildlifeSpawnAuthorityPolicy.SameScene(scene, MyMod.level_guid))
+			MyMod.OnHitRabbit(guid);
 	}
 
 	public static void RABBITREVIVED(Packet _packet)

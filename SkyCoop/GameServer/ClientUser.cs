@@ -208,7 +208,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.16.6")
+				if (text2 != "0.16.7")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
@@ -296,6 +296,7 @@ internal class ClientUser
 
 	public static void InitializeClientData()
 	{
+		ClientHandle.ResetSaveJoin();
 		packetHandlers = new Dictionary<int, PacketHandler>
 		{
 			{

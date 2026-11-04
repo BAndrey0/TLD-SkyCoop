@@ -2,12 +2,15 @@ namespace SkyCoop;
 
 public static class WildlifeOwnershipPolicy
 {
-	public static bool Eligible(bool connected, bool loading, bool dead, bool knocked, int candidateScene, string candidateGuid, int currentScene, string currentGuid)
+	public static bool Eligible(bool connected, bool loading, bool dead, bool knocked, string candidateGuid, string currentGuid)
 	{
-		if (connected && !loading && !dead && !knocked && candidateScene == currentScene)
-		{
-			return candidateGuid == currentGuid;
-		}
-		return false;
+		return connected && !loading && !dead && !knocked &&
+			WildlifeSpawnAuthorityPolicy.SameScene(candidateGuid, currentGuid);
 	}
+
+	public static bool Closer(float candidateDistance, float ownerDistance) =>
+		candidateDistance + 5f < ownerDistance;
+
+	public static bool AcceptSnapshot(int owner, int sender, bool ownerActive) =>
+		owner < 0 || owner == sender || !ownerActive;
 }
