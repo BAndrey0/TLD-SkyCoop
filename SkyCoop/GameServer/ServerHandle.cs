@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.10")
+			if (text2 != "0.16.11")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.10");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.11");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -321,7 +321,10 @@ internal class ServerHandle
 	{
 		if (MyMod.playersData[_fromClient] != null)
 		{
-			MyMod.playersData[_fromClient].m_SleepHours = _packet.ReadInt();
+			int hours = _packet.ReadInt();
+			if (hours < -24 || hours > 24) return;
+			MyMod.playersData[_fromClient].m_SleepHours = hours;
+			SleepRendezvousFix.RecordVote(_fromClient, hours);
 		}
 	}
 

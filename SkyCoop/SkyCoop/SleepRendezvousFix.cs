@@ -16,6 +16,22 @@ public static class SleepRendezvousFix
 	private static int lastClickFrame = -1;
 
 	private static int requestedHours;
+	private static int offeredHours;
+	private static readonly System.Collections.Generic.List<int> VoteOrder = new();
+
+	internal static void RecordVote(int id, int hours)
+	{
+		if (hours == 0) VoteOrder.Remove(id);
+		else if (!VoteOrder.Contains(id)) VoteOrder.Add(id);
+	}
+
+	internal static int SelectOffer(Func<int, int> currentVote)
+	{
+		VoteOrder.RemoveAll(id => currentVote(id) == 0);
+		return VoteOrder.Count == 0 ? 0 : currentVote(VoteOrder[0]);
+	}
+
+	internal static void ClearVotes() => VoteOrder.Clear();
 
 	private static bool waiting;
 
@@ -194,6 +210,12 @@ public static class SleepRendezvousFix
 			return;
 		}
 		Bind(panel);
+		if (offeredHours != 0 && panel.m_ShowPassTime == (offeredHours < 0) && panel.m_SleepHours != Math.Abs(offeredHours))
+		{
+			panel.m_SleepHours = Math.Abs(offeredHours);
+			panel.UpdateRestDurationLabel();
+			panel.UpdateWakeTimeLabel();
+		}
 		if (waiting)
 		{
 			if (MyMod.WaitForSleepLable == null || !MyMod.WaitForSleepLable.activeSelf)
@@ -201,15 +223,15 @@ public static class SleepRendezvousFix
 				waiting = false;
 				requestedHours = 0;
 			}
-			else if (panel.m_ShowPassTime || MyMod.SaveExitPending || !NativeSleepAllowed(explain: false))
+			else if ((offeredHours != 0 && Math.Sign(offeredHours) != Math.Sign(requestedHours)) ||
+				panel.m_ShowPassTime != (requestedHours < 0) || MyMod.SaveExitPending ||
+				(requestedHours > 0 && !NativeSleepAllowed(explain: false)))
 			{
 				CancelWaiting(explain: false);
-				NativeSleepAllowed(explain: true);
 			}
 			else
 			{
-				panel.m_SleepHours = requestedHours;
-				MyMod.MyCycleSkip = requestedHours;
+				panel.m_SleepHours = Math.Abs(offeredHours != 0 ? offeredHours : requestedHours);
 			}
 		}
 	}
@@ -279,17 +301,24 @@ public static class SleepRendezvousFix
 		}
 		lastClickFrame = Time.frameCount;
 		Panel_Rest panel_Rest = GameCompat.Panel<Panel_Rest>();
-		if (!(panel_Rest != null) || !panel_Rest.isActiveAndEnabled || panel_Rest.m_ShowPassTime || !MyMod.InOnline() || MyMod.SaveExitPending || waiting)
+		if (!(panel_Rest != null) || !panel_Rest.isActiveAndEnabled || !MyMod.InOnline() || MyMod.SaveExitPending || waiting)
 		{
 			return;
 		}
+		bool passTime = panel_Rest.m_ShowPassTime;
+		if (offeredHours != 0 && passTime != (offeredHours < 0))
+		{
+			HUDMessage.AddMessage(offeredHours < 0 ? "Группа выбрала ожидание. Открой вкладку ожидания." : "Группа выбрала сон. Открой вкладку сна.");
+			return;
+		}
+		if (passTime && Panel_Rest.CheckPassTimeErrorMessage()) return;
 		if (panel_Rest.m_SleepHours <= 0)
 		{
-			HUDMessage.AddMessage("Выбери хотя бы один час сна.");
+			HUDMessage.AddMessage("Выбери хотя бы один час.");
 		}
 		else
 		{
-			if (!NativeSleepAllowed(explain: true))
+			if (!passTime && !NativeSleepAllowed(explain: true))
 			{
 				return;
 			}
@@ -298,7 +327,8 @@ public static class SleepRendezvousFix
 				HUDMessage.AddMessage("Окно ожидания сна ещё не готово.");
 				return;
 			}
-			requestedHours = panel_Rest.m_SleepHours;
+			requestedHours = offeredHours != 0 ? offeredHours : Math.Clamp(panel_Rest.m_SleepHours, 1, 24) * (passTime ? -1 : 1);
+			if (MyMod.iAmHost) RecordVote(0, requestedHours);
 			waiting = true;
 			AcceptedClicks++;
 			MyMod.MyCycleSkip = requestedHours;
@@ -330,11 +360,12 @@ public static class SleepRendezvousFix
 		if (num)
 		{
 			MyMod.MyCycleSkip = 0;
+			if (MyMod.iAmHost) RecordVote(0, 0);
 			if (MyMod.InOnline() && GameManager.GetPlayerManagerComponent() != null)
 			{
 				MyMod.SyncSleeping();
 			}
-			Status = "Ожидание сна отменено";
+			Status = "Совместное ожидание отменено";
 			if (explain)
 			{
 				HUDMessage.AddMessage(Status);
@@ -345,24 +376,26 @@ public static class SleepRendezvousFix
 
 	public static void ProcessReadiness(int sleepers, int required, bool everyoneReady, int commonHours)
 	{
+		offeredHours = commonHours;
 		if (!Waiting)
 		{
 			return;
 		}
-		Status = "ЖДЁМ ОСТАЛЬНЫХ ИГРОКОВ\nГотовы: " + sleepers + "/" + required + "\nESC — отмена";
+		Status = (commonHours < 0 ? "ОЖИДАНИЕ" : "СОН") + " · " + Math.Abs(commonHours != 0 ? commonHours : requestedHours) + " ч\nГотовы: " + sleepers + "/" + required + "\nESC — отмена";
 		SetLabel(Status);
 		if (!everyoneReady)
 		{
 			return;
 		}
-		if (commonHours <= 0 || commonHours > requestedHours)
+		if (commonHours == 0 || Math.Sign(commonHours) != Math.Sign(requestedHours))
 		{
 			Status = "ЖДЁМ ПОДТВЕРЖДЕНИЯ ВРЕМЕНИ СНА\nESC — отмена";
 			SetLabel(Status);
 			return;
 		}
 		Panel_Rest panel_Rest = GameCompat.Panel<Panel_Rest>();
-		if (panel_Rest == null || !panel_Rest.isActiveAndEnabled || panel_Rest.m_ShowPassTime || MyMod.SaveExitPending || !NativeSleepAllowed(explain: true))
+		if (panel_Rest == null || !panel_Rest.isActiveAndEnabled || panel_Rest.m_ShowPassTime != (commonHours < 0) || MyMod.SaveExitPending ||
+			(commonHours > 0 && !NativeSleepAllowed(explain: true)))
 		{
 			CancelWaiting(explain: false);
 			return;
@@ -375,6 +408,13 @@ public static class SleepRendezvousFix
 		if (MyMod.SleepingButtons != null)
 		{
 			MyMod.SleepingButtons.SetActive(value: true);
+		}
+		if (commonHours < 0)
+		{
+			panel_Rest.Enable(false);
+			HUDMessage.AddMessage("Совместное ожидание: " + Math.Abs(commonHours) + " ч");
+			MyMod.SyncSleeping();
+			return;
 		}
 		panel_Rest.m_SleepHours = num2;
 		MyMod.MyCycleSkip = num2;
@@ -409,6 +449,7 @@ public static class SleepRendezvousFix
 		waiting = false;
 		requestedHours = 0;
 		lastClickFrame = -1;
+		offeredHours = 0;
 		boundRoot = null;
 		childSignature = 0;
 		clickActions = null;

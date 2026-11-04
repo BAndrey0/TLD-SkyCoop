@@ -132,14 +132,11 @@ public class Comps
 			if (m_ShouldSendDrop)
 			{
 				var player = GameManager.GetPlayerManagerComponent();
-				if (player != null && (player.m_LastUnequippedItem == m_Gear || player.m_QueuedEquipItem == m_Gear))
+				if (player != null && (player.m_ItemInHands == m_Gear || player.m_LastUnequippedItem == m_Gear || player.m_QueuedEquipItem == m_Gear))
 				{
-					var replacement = GameManager.GetInventoryComponent()?.GetBestGearItemWithName("GEAR_Stone");
-					if (replacement == m_Gear) replacement = null;
-					if (player.m_LastUnequippedItem == m_Gear) player.m_LastUnequippedItem = replacement;
-					if (player.m_QueuedEquipItem == m_Gear) player.m_QueuedEquipItem = replacement;
+					Destroy(this);
+					return;
 				}
-				if (m_Gear.m_StackableItem != null) m_Gear.m_StackableItem.m_Units = 1;
 				MyMod.SendDropItem(m_Gear, 0, 0, samepose: true);
 			}
 			else

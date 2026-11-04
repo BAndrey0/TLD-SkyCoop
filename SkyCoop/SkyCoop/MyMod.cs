@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.10";
+		public const string Version = "0.16.11";
 
 		public const string DownloadLink = null;
 
@@ -3761,6 +3761,14 @@ public class MyMod : MelonMod
 		IsSmallGamePrefab(GetAnimalPrefabName(corpse.gameObject.name)) &&
 		(corpse.m_Knocked || corpse.gameObject.name.Contains("Rabbit"));
 
+	internal static void InitializeSmallGameCondition(GearItem gear)
+	{
+		if (gear == null || gear.m_GearItemData == null) return;
+		gear.SkipSpawnChanceRollInitialDecayAndAutoEvolve();
+		if (!float.IsFinite(gear.m_CurrentHP) || gear.m_CurrentHP <= 0f)
+			gear.m_CurrentHP = gear.m_GearItemData.MaxHP;
+	}
+
 	public static void FinallyPickupRabbit(int result, string species)
 	{
 		RemovePleaseWait();
@@ -3778,6 +3786,7 @@ public class MyMod : MelonMod
 				gameObject2.name = gearItemObject.name;
 				if ((bool)gameObject2 && (bool)gameObject2.GetComponent<GearItem>())
 				{
+					InitializeSmallGameCondition(gameObject2.GetComponent<GearItem>());
 					Comps.DropFakeOnLeave dropFakeOnLeave = gameObject2.AddComponent<Comps.DropFakeOnLeave>();
 					dropFakeOnLeave.m_OldPossition = gameObject2.transform.position;
 					dropFakeOnLeave.m_OldRotation = gameObject2.transform.rotation;
@@ -3804,10 +3813,9 @@ public class MyMod : MelonMod
 				{
 					component.m_PickedUp = true;
 				}
-				if ((bool)gameObject.GetComponent<WildlifeItem>())
-				{
-					GameManager.GetPlayerManagerComponent().ProcessPickupItemInteraction(gameObject.GetComponent<WildlifeItem>().m_GearItem, forceEquip: false, forceEquipImmediate: false, skipAudio: false);
-				}
+				var wildlife = gameObject.GetComponent<WildlifeItem>();
+				if (wildlife != null)
+					wildlife.PickupWildlifeItem();
 			}
 			break;
 		}
@@ -4905,35 +4913,7 @@ public class MyMod : MelonMod
 			component.m_ArrowItem.Fire(1f);
 			return;
 		}
-		if (shoot.m_projectilename == "GEAR_Stone")
-		{
-			GameObject stonePrefab = GetGearItemObject("GEAR_Stone");
-			if (stonePrefab == null) return;
-			GameObject gameObject2 = UnityEngine.Object.Instantiate(stonePrefab, shoot.m_position, shoot.m_rotation);
-			GearItem component2 = gameObject2.GetComponent<GearItem>();
-			Rigidbody component3 = gameObject2.GetComponent<Rigidbody>();
-			if (component2 == null || component2.m_StoneItem == null || component3 == null)
-			{
-				UnityEngine.Object.Destroy(gameObject2);
-				return;
-			}
-			component2.m_StoneItem.PrepareForThrow();
-			component2.m_StoneItem.SetThrown(thrown: true);
-			float throwForce = component2.m_StoneItem.m_ThrowForce;
-			float throwTorque = GameManager.m_PlayerManager.m_ThrowTorque;
-			component3.isKinematic = false;
-			component3.velocity = shoot.m_camera_forward * throwForce;
-			Vector3 vector = shoot.m_camera_right + UnityEngine.Random.Range(-0.2f, 0.2f) * shoot.m_camera_up;
-			vector.Normalize();
-			component3.angularVelocity = vector * throwTorque;
-			component3.angularDrag = 0f;
-			component3.drag = 0f;
-			Comps.DestoryStoneOnStop destoryStoneOnStop = gameObject2.AddComponent<Comps.DestoryStoneOnStop>();
-			destoryStoneOnStop.m_Obj = gameObject2;
-			destoryStoneOnStop.m_RB = component3;
-			destoryStoneOnStop.m_Gear = component2;
-			return;
-		}
+		if (shoot.m_projectilename == "GEAR_Stone") return;
 		if (shoot.m_projectilename == "GEAR_NoiseMaker")
 		{
 			GameObject gameObject3 = UnityEngine.Object.Instantiate(GetGearItemObject("GEAR_NoiseMaker"), shoot.m_position, shoot.m_rotation);

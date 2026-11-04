@@ -33,6 +33,7 @@ public class Pathes
 
 		public static bool Prefix(GearItem __instance, int numUnits)
 		{
+			if (PlayerManager_Throw.StoneReleaseDepth > 0 && __instance.m_StoneItem != null) return true;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -63,6 +64,11 @@ public class Pathes
 
 		public static void Postfix(GearItem __instance, int numUnits, GearItem __result)
 		{
+			if (PlayerManager_Throw.StoneReleaseDepth > 0 && __instance.m_StoneItem != null)
+			{
+				TrackThrownStone(__result);
+				return;
+			}
 			if (ScenePlacementSync.NativeCooking || ScenePlacementSync.IsCookingDummy(__instance)) return;
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2251,10 +2257,48 @@ public class Pathes
 		}
 	}
 
+	[HarmonyPatch(typeof(PlayerManager), "InstantiateCopyOfThrownObject")]
+	private static class PlayerManager_ThrownCopy
+	{
+		private static void Postfix(GearItem gi, GearItem __result)
+		{
+			if (__result != gi) TrackThrownStone(__result);
+		}
+	}
+
+	[HarmonyPatch(typeof(StoneItem), "SetThrown")]
+	private static class StoneItem_SetThrown
+	{
+		private static void Postfix(StoneItem __instance, bool thrown)
+		{
+			if (thrown && PlayerManager_Throw.StoneReleaseDepth > 0)
+				TrackThrownStone(__instance.GetComponent<GearItem>());
+		}
+	}
+
+	private static void TrackThrownStone(GearItem gear)
+	{
+		if (!MyMod.InOnline() || gear == null || gear.m_StoneItem == null ||
+			gear.GetComponent<Comps.DestoryStoneOnStop>() != null) return;
+		var body = gear.GetComponent<Rigidbody>();
+		if (body == null) return;
+		var tracker = gear.gameObject.AddComponent<Comps.DestoryStoneOnStop>();
+		tracker.m_Obj = gear.gameObject;
+		tracker.m_RB = body;
+		tracker.m_Gear = gear;
+		tracker.m_ShouldSendDrop = true;
+	}
+
 	[HarmonyPatch(typeof(PlayerManager), "ReleaseThrownObject")]
 	public class PlayerManager_Throw
 	{
-		public static void Prefix(PlayerManager __instance, out GearItem __state)
+		internal static int StoneReleaseDepth;
+
+		private static void Finalizer((GearItem Gear, bool Stone) __state)
+		{
+			if (__state.Stone) StoneReleaseDepth--;
+		}
+		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Stone) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2262,10 +2306,12 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			__state = __instance.m_ThrownItem;
+			var gear = __instance.m_ThrownItem;
+			__state = (gear, gear != null && gear.m_StoneItem != null);
+			if (__state.Stone) StoneReleaseDepth++;
 		}
 
-		public static void Postfix(GearItem __state)
+		public static void Postfix((GearItem Gear, bool Stone) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2273,39 +2319,31 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (__state != null)
+			if (__state.Stone)
 			{
-				MelonLogger.Msg("[PlayerManager][Postfix] ReleaseThrownObject SaveThrowingItem " + __state.name);
-				if (!__state.name.StartsWith("GEAR_Stone") && !__state.name.StartsWith("GEAR_NoiseMaker"))
+				MyMod.PushActionToMyDoll("Shoot");
+				return;
+			}
+			var gear = __state.Gear;
+			if (gear != null)
+			{
+				MelonLogger.Msg("[PlayerManager][Postfix] ReleaseThrownObject SaveThrowingItem " + gear.name);
+				if (!gear.name.StartsWith("GEAR_NoiseMaker"))
 				{
 					return;
 				}
-				Vector3 position = __state.transform.position;
-				Quaternion rotation = __state.transform.rotation;
+				Vector3 position = gear.transform.position;
+				Quaternion rotation = gear.transform.rotation;
 				MelonLogger.Msg("[PlayerManager][Postfix] Throwing stone " + position.x + " y " + position.y + " z " + position.z);
-				if (__state.name.StartsWith("GEAR_NoiseMaker") && !MyMod.ServerConfig.m_PVP)
+				if (gear.name.StartsWith("GEAR_NoiseMaker") && !MyMod.ServerConfig.m_PVP)
 				{
-					__state.m_NoiseMakerItem.m_PlayerDamageInflictionInRadius = 15f;
-					__state.m_NoiseMakerItem.m_PlayerDamageRadius = __state.m_NoiseMakerItem.m_AIDamageRadius;
+					gear.m_NoiseMakerItem.m_PlayerDamageInflictionInRadius = 15f;
+					gear.m_NoiseMakerItem.m_PlayerDamageRadius = gear.m_NoiseMakerItem.m_AIDamageRadius;
 				}
 				DataStr.ShootSync shootSync = new DataStr.ShootSync();
 				shootSync.m_position = position;
 				shootSync.m_rotation = rotation;
-				if (__state.name.StartsWith("GEAR_Stone"))
-				{
-					shootSync.m_projectilename = "GEAR_Stone";
-					var gear = __state;
-					var body = gear.GetComponent<Rigidbody>();
-					if (MyMod.InOnline() && body != null && gear.GetComponent<Comps.DestoryStoneOnStop>() == null)
-					{
-						var settledStone = gear.gameObject.AddComponent<Comps.DestoryStoneOnStop>();
-						settledStone.m_Obj = gear.gameObject;
-						settledStone.m_RB = body;
-						settledStone.m_Gear = gear;
-						settledStone.m_ShouldSendDrop = true;
-					}
-				}
-				if (__state.name.StartsWith("GEAR_NoiseMaker"))
+				if (gear.name.StartsWith("GEAR_NoiseMaker"))
 				{
 					shootSync.m_projectilename = "GEAR_NoiseMaker";
 				}
@@ -4500,6 +4538,17 @@ public class Pathes
 				return false;
 			}
 			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(Panel_Rest), "OnPassTime")]
+	private static class Panel_Rest_OnPassTime
+	{
+		private static bool Prefix()
+		{
+			if (!MyMod.InOnline()) return true;
+			SleepRendezvousFix.ClickWait();
+			return false;
 		}
 	}
 
@@ -6871,6 +6920,16 @@ public class Pathes
 			{
 				__result = false;
 			}
+		}
+	}
+
+	[HarmonyPatch(typeof(WildlifeItem), "SpawnCarcass")]
+	private static class WildlifeItem_SpawnCarcass
+	{
+		private static void Postfix(WildlifeItem __instance, GearItem __result)
+		{
+			if (MyMod.InOnline() && MyMod.IsSmallGamePrefab(MyMod.GetAnimalPrefabName(__instance.gameObject.name)))
+				MyMod.InitializeSmallGameCondition(__result);
 		}
 	}
 

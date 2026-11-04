@@ -417,6 +417,7 @@ public static class CoopReturnToMenu
 		MyMod.OpenablesObjs.Clear();
 		MyMod.OpenableThings.Clear();
 		SleepRendezvousFix.Reset();
+		SleepRendezvousFix.ClearVotes();
 		if (MyMod.LobbyUI != null)
 		{
 			MyMod.LobbyUI.SetActive(value: false);

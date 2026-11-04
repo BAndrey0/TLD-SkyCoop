@@ -27,7 +27,7 @@ internal static class ScenePlacementSync
     }
 
     private sealed record Move(string Id, string Parent, Pose Pose, string Operation, long Revision);
-    private sealed record Pot(string Gear, Pose Pose, Pose Slot, string Meshes, string Food, string Mode, int Minutes, bool CanTake);
+    private sealed record Pot(string Gear, Pose Pose, Pose Slot, string Meshes, string Food, string Mode, int Minutes, bool CanTake, int Liquid);
     private sealed record RemotePot(Pot State, GameObject Visual, float Expires);
     private static readonly Dictionary<string, Dictionary<string, Move>> Saved = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Move> Pending = new(StringComparer.Ordinal);
@@ -294,16 +294,21 @@ internal static class ScenePlacementSync
             }
             string name = pot.m_GearItem.GetGearName();
             if (!IsPotName(name)) continue;
-            var renderers = pot.GetComponentsInChildren<MeshRenderer>(true);
-            var visible = new System.Text.StringBuilder(Math.Min(renderers.Length, 128));
-            for (int i = 0; i < Math.Min(renderers.Length, 128); i++)
-                visible.Append(renderers[i].enabled && renderers[i].gameObject.activeInHierarchy ? '1' : '0');
-            string food = pot.m_GearItemBeingCooked != null ? pot.m_GearItemBeingCooked.GetGearName() : "";
-            bool canTake = !IsCookingDummyName(name) && !pot.IsCookingSomething() &&
-                pot.m_LitersWaterBeingBoiled.ToLiters() <= 0 && pot.m_LitersSnowBeingMelted.ToLiters() <= 0;
+            int liquid = pot.m_LitersSnowBeingMelted.ToLiters() > 0 ? 2 :
+                pot.m_LitersWaterBeingBoiled.ToLiters() > 0 ? 1 : 0;
+            var visible = new System.Text.StringBuilder();
+            foreach (var renderer in pot.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (visible.Length >= 256) break;
+                if (renderer == pot.m_GrubMeshRenderer && liquid != 0) continue;
+                if (renderer.enabled && renderer.gameObject.activeInHierarchy)
+                    visible.Append(PotMeshKey(renderer, pot.transform));
+            }
+            string food = liquid == 0 && pot.m_GearItemBeingCooked != null ? pot.m_GearItemBeingCooked.GetGearName() : "";
+            bool canTake = !IsCookingDummyName(name) && !pot.IsCookingSomething() && liquid == 0;
             PublishedPots.Add(pair.Key);
             PublishPot(pair.Key, new Pot(name, Pose.From(pot.transform), Pose.From(point.transform), visible.ToString(),
-                food, pot.GetCookingState().ToString(), Mathf.CeilToInt(pot.m_MinutesUntilCooked), canTake));
+                food, pot.GetCookingState().ToString(), Mathf.CeilToInt(pot.m_MinutesUntilCooked), canTake, liquid));
         }
     }
 
@@ -401,7 +406,7 @@ internal static class ScenePlacementSync
         if (!ValidPot(pot)) return;
         if (previous == null && RemotePots.Count >= 128) return;
         var visual = previous?.Visual;
-        if (previous != null && (previous.State.Gear != pot.Gear || previous.State.Meshes != pot.Meshes) && visual != null)
+        if (previous != null && (previous.State.Gear != pot.Gear || previous.State.Meshes != pot.Meshes || previous.State.Liquid != pot.Liquid) && visual != null)
         {
             UnityEngine.Object.Destroy(visual);
             visual = null;
@@ -412,27 +417,49 @@ internal static class ScenePlacementSync
     }
 
     private static bool ValidPot(Pot pot) => IsPotName(pot.Gear) && pot.Pose?.Valid == true && pot.Slot?.Valid == true &&
-        pot.Meshes != null && pot.Meshes.Length <= 128 && pot.Food != null && pot.Food.Length <= 80 && pot.Mode != null && pot.Mode.Length <= 32;
+        pot.Meshes != null && pot.Meshes.Length <= 256 && pot.Meshes.Length % 8 == 0 && pot.Liquid >= 0 && pot.Liquid <= 2 && pot.Food != null && pot.Food.Length <= 80 && pot.Mode != null && pot.Mode.Length <= 32;
+
+    private static string PotMeshKey(MeshRenderer renderer, Transform root)
+    {
+        var filter = renderer.GetComponent<MeshFilter>();
+        if (filter == null || filter.sharedMesh == null) return "";
+        string path = "";
+        for (var part = renderer.transform; part != null && part != root; part = part.parent)
+            path = part.name + "/" + path;
+        return Shared.StableHash(path + "|" + filter.sharedMesh.name).ToString("X8");
+    }
 
     private static GameObject CreatePotVisual(Pot pot)
     {
         var prefab = MyMod.GetGearItemObject(pot.Gear);
         if (prefab == null || prefab.GetComponent<CookingPotItem>() == null) return null;
         var root = new GameObject("SkyCoop shared cookware");
-        var renderers = prefab.GetComponentsInChildren<MeshRenderer>(true);
-        for (int i = 0; i < renderers.Length && i < pot.Meshes.Length; i++)
+        var cooking = prefab.GetComponent<CookingPotItem>();
+        var visible = new HashSet<string>();
+        for (int i = 0; i < pot.Meshes.Length; i += 8) visible.Add(pot.Meshes.Substring(i, 8));
+        foreach (var renderer in prefab.GetComponentsInChildren<MeshRenderer>(true))
         {
-            if (pot.Meshes[i] != '1') continue;
-            var renderer = renderers[i];
             var filter = renderer.GetComponent<MeshFilter>();
-            if (filter == null || filter.sharedMesh == null || !renderer.enabled) continue;
+            if (filter == null) continue;
+            Mesh sourceMesh = filter.sharedMesh;
+            var materials = renderer.sharedMaterials;
+            if (pot.Liquid != 0 && renderer == cooking.m_GrubMeshRenderer)
+            {
+                sourceMesh = pot.Liquid == 2 ? cooking.m_SnowMesh : cooking.m_WaterMesh;
+                var liquidMaterials = pot.Liquid == 2 ? cooking.m_MeltSnowMaterialsList : cooking.m_BoilWaterPotMaterialsList;
+                if (liquidMaterials != null && liquidMaterials.Length != 0)
+                    materials = new[] { liquidMaterials[0] };
+                else continue;
+            }
+            else if (!visible.Contains(PotMeshKey(renderer, prefab.transform))) continue;
+            if (sourceMesh == null) continue;
             var mesh = new GameObject(renderer.name);
             mesh.transform.SetParent(root.transform, false);
             mesh.transform.localPosition = prefab.transform.InverseTransformPoint(renderer.transform.position);
             mesh.transform.localRotation = Quaternion.Inverse(prefab.transform.rotation) * renderer.transform.rotation;
             mesh.transform.localScale = renderer.transform.lossyScale;
-            mesh.AddComponent<MeshFilter>().sharedMesh = filter.sharedMesh;
-            mesh.AddComponent<MeshRenderer>().sharedMaterials = renderer.sharedMaterials;
+            mesh.AddComponent<MeshFilter>().sharedMesh = sourceMesh;
+            mesh.AddComponent<MeshRenderer>().sharedMaterials = materials;
         }
         return root;
     }

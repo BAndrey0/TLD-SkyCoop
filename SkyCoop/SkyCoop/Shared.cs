@@ -947,14 +947,16 @@ public class Shared
 				{
 					GameObject gameObject = UnityEngine.Object.Instantiate(gearItemObject, vector, quaternion);
 					GearItem component = gameObject.GetComponent<GearItem>();
-					component.SkipSpawnChanceRollInitialDecayAndAutoEvolve();
 					BodyHarvest bodyHarvest = gameObject.GetComponent<BodyHarvest>();
 					if (bodyHarvest == null)
 					{
 						bodyHarvest = gameObject.AddComponent<BodyHarvest>();
 					}
 					gameObject.name = "gear_rabbitcarcass";
-					component.m_CurrentHP = bodyHarvest.GetCondition() / 100f * component.m_GearItemData.MaxHP;
+					float condition = bodyHarvest.GetCondition();
+					if (float.IsFinite(condition) && condition > 0f)
+						component.m_CurrentHP = Mathf.Min(condition, 100f) / 100f * component.m_GearItemData.MaxHP;
+					MyMod.InitializeSmallGameCondition(component);
 					json = gameObject.GetComponent<GearItem>().SerializeToString();
 					int vectorHash = GetVectorHash(vector);
 					int quaternionHash = GetQuaternionHash(quaternion);
@@ -1049,15 +1051,16 @@ public class Shared
 		{
 			return;
 		}
-		if (flag)
+		if (flag && FinalHours != 0)
 		{
-			if ((!GameManager.GetPlayerManagerComponent().PlayerIsSleeping() && !MyMod.IsDead) || MyMod.IsCycleSkiping)
+			if ((FinalHours > 0 && !MyMod.IsDead && !MyMod.DedicatedServerAppMode && !GameManager.GetPlayerManagerComponent().PlayerIsSleeping()) || MyMod.IsCycleSkiping)
 			{
 				return;
 			}
 			Log("Everyone sleep going to skip " + FinalHours);
 			MyMod.IsCycleSkiping = true;
-			int num = FinalHours;
+			int num = Math.Abs(FinalHours);
+			SleepRendezvousFix.ClearVotes();
 			for (int i = 0; i < MyMod.playersData.Count; i++)
 			{
 				if (MyMod.playersData[i] != null)
@@ -1067,7 +1070,7 @@ public class Shared
 			}
 			if (num > 0)
 			{
-				if (MyMod.IsDead)
+				if (MyMod.IsDead && FinalHours > 0)
 				{
 					MyMod.SimpleSleepWithNoSleep(num);
 				}
@@ -1131,8 +1134,6 @@ public class Shared
 		int num = 0;
 		int num2 = 0;
 		int num3 = 0;
-		System.Collections.Generic.List<int> list2 = new System.Collections.Generic.List<int>();
-		list2.Add(MyMod.MyCycleSkip);
 		if (!MyMod.DedicatedServerAppMode)
 		{
 			num++;
@@ -1142,10 +1143,6 @@ public class Shared
 			multiPlayerClientStatus.m_Sleep = MyMod.IsSleeping;
 			multiPlayerClientStatus.m_IsLoading = false;
 			multiPlayerClientStatus.m_Dead = MyMod.IsDead;
-			if (multiPlayerClientStatus.m_Sleep || multiPlayerClientStatus.m_Dead)
-			{
-				num2++;
-			}
 			if (multiPlayerClientStatus.m_Dead)
 			{
 				num3++;
@@ -1162,14 +1159,6 @@ public class Shared
 			DataStr.MultiPlayerClientStatus multiPlayerClientStatus2 = new DataStr.MultiPlayerClientStatus();
 			multiPlayerClientStatus2.m_ID = i;
 			multiPlayerClientStatus2.m_Name = MyMod.playersData[i].m_Name;
-			if (MyMod.playersData[i].m_SleepHours > 0)
-			{
-				multiPlayerClientStatus2.m_Sleep = true;
-			}
-			else
-			{
-				multiPlayerClientStatus2.m_Sleep = false;
-			}
 			if (MyMod.playersData[i].m_AnimState == "Knock")
 			{
 				multiPlayerClientStatus2.m_Dead = true;
@@ -1179,17 +1168,9 @@ public class Shared
 				multiPlayerClientStatus2.m_Dead = false;
 			}
 			multiPlayerClientStatus2.m_IsLoading = ClientIsLoading(i);
-			if (multiPlayerClientStatus2.m_Sleep || multiPlayerClientStatus2.m_Dead)
-			{
-				num2++;
-			}
 			if (multiPlayerClientStatus2.m_Dead)
 			{
 				num3++;
-			}
-			if (MyMod.iAmHost)
-			{
-				list2.Add(MyMod.playersData[multiPlayerClientStatus2.m_ID].m_SleepHours);
 			}
 			list.Add(multiPlayerClientStatus2);
 			int num4 = MyMod.TimeOutSeconds;
@@ -1240,11 +1221,18 @@ public class Shared
 				SendWildlifeSpawnRole(i, scene != "" ? scene : wildlife.m_WildlifeGrantedScene);
 			}
 		}
-		list2.Sort();
-		int num5 = 0;
-		if (list2.Count > 0)
+		int CurrentVote(int id)
 		{
-			num5 = SleepRendezvousPolicy.MinimumRequestedHours(list2);
+			if (id == 0) return SleepRendezvousFix.Waiting && !MyMod.IsDead ? MyMod.MyCycleSkip : 0;
+			return Server.clients.TryGetValue(id, out var client) && client.IsBusy() && !client.RCON &&
+				!ClientIsLoading(id) && MyMod.playersData[id] is { } player && player.m_AnimState != "Knock"
+				? player.m_SleepHours : 0;
+		}
+		int num5 = SleepRendezvousFix.SelectOffer(CurrentVote);
+		foreach (var status in list)
+		{
+			status.m_Sleep = num5 != 0 && Math.Sign(CurrentVote(status.m_ID)) == Math.Sign(num5);
+			if (status.m_Sleep || status.m_Dead) num2++;
 		}
 		packet.Write(num);
 		for (int j = 0; j < list.Count; j++)
