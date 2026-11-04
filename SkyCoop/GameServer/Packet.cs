@@ -406,9 +406,12 @@ public class Packet : IDisposable
 		Write(obj.m_Position);
 		Write(obj.m_Rotation);
 		Write(obj.m_IsCampfire);
-		Write(obj.m_FuelName);
+		Write(obj.m_Operation);
+		Write(obj.m_Generation);
+		Write(obj.m_WorldMinute);
+		Write(obj.m_Revision);
+		Write(obj.m_Capacity);
 		Write(obj.m_Fuel);
-		Write(obj.m_CurrentHeat);
 		Write(obj.m_MaxHeat);
 		Write(obj.m_HeatInnerRadius);
 		Write(obj.m_HeatOuterRadius);
@@ -1039,9 +1042,12 @@ public class Packet : IDisposable
 			m_Position = ReadVector3(),
 			m_Rotation = ReadQuaternion(),
 			m_IsCampfire = ReadBool(),
-			m_FuelName = ReadString(),
+			m_Operation = ReadString(),
+			m_Generation = ReadString(),
+			m_WorldMinute = ReadInt(),
+			m_Revision = ReadLong(),
+			m_Capacity = ReadFloat(),
 			m_Fuel = ReadFloat(),
-			m_CurrentHeat = ReadFloat(),
 			m_MaxHeat = ReadFloat(),
 			m_HeatInnerRadius = ReadFloat(),
 			m_HeatOuterRadius = ReadFloat(),

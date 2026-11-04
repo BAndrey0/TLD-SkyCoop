@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.5";
+		public const string Version = "0.16.6";
 
 		public const string DownloadLink = null;
 
@@ -672,7 +672,6 @@ public class MyMod : MelonMod
 
 	private static Quaternion previoustickrot;
 
-	public static System.Collections.Generic.List<DataStr.FireSourcesSync> FireSources = new System.Collections.Generic.List<DataStr.FireSourcesSync>();
 
 	public static bool DsServerIsUp = false;
 
@@ -789,8 +788,6 @@ public class MyMod : MelonMod
 	public static float RecordStartTime;
 
 	public static float RecordReleseButtonHold;
-
-	public static DataStr.FireSourcesSync DebugFireSource = null;
 
 	public static GameObject DiagnosisDummy = null;
 
@@ -2089,6 +2086,7 @@ public class MyMod : MelonMod
 		GameCompat.PruneDeadCaches();
 		SleepRendezvousFix.Reset();
 		WildlifeAuthorityScene = "";
+		WildlifeSpawnerAudit.HandoffQuietUntil = Time.realtimeSinceStartup + 4f;
 		if (sendMyPosition && !iAmHost)
 		{
 			AnimalsController = false;
@@ -3699,6 +3697,7 @@ public class MyMod : MelonMod
 				animalUpdates.m_RegionGUID = GUID;
 				animalUpdates.m_Animal = gameObject;
 			}
+			MarkSharedRabbit(baseAi);
 			if ((bool)spRobj.GetComponent<Comps.SpawnRegionSimple>())
 			{
 				spRobj.GetComponent<Comps.SpawnRegionSimple>().m_Spawned++;
@@ -3827,9 +3826,18 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void OnRabbitRevived(Vector3 v3)
+	private static void MarkSharedRabbit(BaseAi ai)
 	{
-		if (!AnimalsController)
+		if (ai == null || ai.GetComponent<AiRabbit>() == null) return;
+		var updates = ai.GetComponent<Comps.AnimalUpdates>();
+		if (updates == null) return;
+		updates.m_SharedRabbit = true;
+		updates.m_MyControlled = true;
+	}
+
+	public static void OnRabbitRevived(Vector3 v3, string regionGuid = "")
+	{
+		if (!CanSpawnWildlifeInCurrentScene())
 		{
 			return;
 		}
@@ -3851,6 +3859,9 @@ public class MyMod : MelonMod
 			{
 				component.m_SpawnPos = v3;
 				ObjectGuid.MaybeAttachObjectGuidAndRegister(component.gameObject, ObjectGuidManager.GenerateNewGuidString());
+				MarkSharedRabbit(component);
+				var updates = component.GetComponent<Comps.AnimalUpdates>();
+				if (updates != null) updates.m_RegionGUID = regionGuid;
 			}
 			component.FleeFrom(v3);
 		}
@@ -3858,7 +3869,7 @@ public class MyMod : MelonMod
 
 	public static void OnReleaseRabbit(int from)
 	{
-		if (!AnimalsController)
+		if (!CanSpawnWildlifeInCurrentScene())
 		{
 			return;
 		}
@@ -3887,6 +3898,7 @@ public class MyMod : MelonMod
 		}
 		if (!Physics.Raycast(position + forward * num + 1000f * Vector3.up, -Vector3.up, out var hitInfo, float.PositiveInfinity, Utils.m_PhysicalCollisionLayerMask))
 		{
+			UnityEngine.Object.Destroy(gameObject);
 			return;
 		}
 		gameObject.transform.position = hitInfo.point;
@@ -3901,6 +3913,7 @@ public class MyMod : MelonMod
 			{
 				component.m_SpawnPos = hitInfo.point;
 				ObjectGuid.MaybeAttachObjectGuidAndRegister(component.gameObject, ObjectGuidManager.GenerateNewGuidString());
+				MarkSharedRabbit(component);
 			}
 			component.FleeFrom(hitInfo.point);
 		}
@@ -4330,6 +4343,11 @@ public class MyMod : MelonMod
 				hashSet.Add(actors.Key);
 			}
 		}
+		foreach (var corpse in AnimalCorplesList)
+		{
+			if (corpse.Value != null && corpse.Value.m_Knocked && corpse.Value.m_RegionGUID == regionGuid)
+				hashSet.Add(corpse.Key);
+		}
 		Il2CppSystem.Collections.Generic.List<BaseAi>.Enumerator enumerator4 = BaseAiManager.m_BaseAis.GetEnumerator();
 		while (enumerator4.MoveNext())
 		{
@@ -4359,7 +4377,9 @@ public class MyMod : MelonMod
 		{
 			foreach (System.Collections.Generic.KeyValuePair<string, Comps.AnimalActor> actors in ActorsList)
 			{
-				actors.Value.m_ClientController = ClientUser.myId;
+				if (actors.Value == null) continue;
+				if (!actors.Value.m_SharedRabbit)
+					actors.Value.m_ClientController = ClientUser.myId;
 				string regionGUID = actors.Value.m_RegionGUID;
 				if (regionGUID != "")
 				{
@@ -4470,6 +4490,7 @@ public class MyMod : MelonMod
 			animalUpdates.m_Animal = gameObject;
 			animalUpdates.m_ToGo = position;
 			animalUpdates.m_MyControlled = true;
+			MarkSharedRabbit(component2);
 			animalUpdates.m_RegionGUID = RegionGUID;
 			animalUpdates.m_Arrows = Arrows ?? new System.Collections.Generic.List<DataStr.AnimalArrow>();
 			if (health != -1f)
@@ -4758,6 +4779,17 @@ public class MyMod : MelonMod
 		}
 	}
 
+	public static void SendWildlifeDespawn(string guid)
+	{
+		if (iAmHost) ServerSend.ANIMALDELETE(0, guid);
+		else if (sendMyPosition)
+		{
+			using Packet packet = new Packet(38);
+			packet.Write(guid);
+			SendUDPData(packet);
+		}
+	}
+
 	// A guest that loses the controller role used to keep its real, now unsynced animals: frozen, unkillable
 	// for it and unknown to the new controller. Remove them; the controller's updates recreate them as actors.
 	public static void DropLocallyControlledAnimals()
@@ -4771,6 +4803,10 @@ public class MyMod : MelonMod
 		{
 			BaseAi baseAi = BaseAiManager.m_BaseAis[i];
 			if (baseAi == null || baseAi.gameObject == null || baseAi.gameObject.GetComponent<Comps.AnimalActor>() != null || baseAi.GetAiMode() == AiMode.Dead)
+			{
+				continue;
+			}
+			if (baseAi.GetComponent<Comps.AnimalUpdates>()?.m_SharedRabbit == true)
 			{
 				continue;
 			}
@@ -4857,9 +4893,10 @@ public class MyMod : MelonMod
 				return;
 			}
 			component.NoResponce = 5;
+			component.m_LastRabbitSnapshot = Time.realtimeSinceStartup;
 			component.m_Hp = dat.m_Health;
 			component.m_RegionGUID = dat.m_RegionGUID;
-			component.m_ClientController = AnimalsController && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
+			component.m_ClientController = !component.m_SharedRabbit && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
 			SetAnimationParams(gameObject, anim);
 			SetAnimalPosition(gameObject, dat.m_Position, dat.m_Rotation);
 			component.m_NextMode = (AiMode)dat.m_LastAiMode;
@@ -4881,9 +4918,10 @@ public class MyMod : MelonMod
 			{
 				Comps.AnimalActor component2 = gameObject.GetComponent<Comps.AnimalActor>();
 				component2.NoResponce = 5;
+				component2.m_LastRabbitSnapshot = Time.realtimeSinceStartup;
 				component2.m_Hp = dat.m_Health;
 				component2.m_RegionGUID = dat.m_RegionGUID;
-				component2.m_ClientController = AnimalsController && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
+				component2.m_ClientController = !component2.m_SharedRabbit && CanSpawnWildlifeInCurrentScene() ? ClientUser.myId : dat.m_LastController;
 				SetAnimationParams(gameObject, anim);
 				SetAnimalPosition(gameObject, dat.m_Position, dat.m_Rotation);
 				component2.m_NextMode = (AiMode)dat.m_LastAiMode;
@@ -4956,15 +4994,20 @@ public class MyMod : MelonMod
 		}
 		if (shoot.m_projectilename == "GEAR_Stone")
 		{
-			GameObject gameObject2 = UnityEngine.Object.Instantiate(GetGearItemObject("GEAR_Stone"), shoot.m_position, shoot.m_rotation);
-			float throwForce = GameManager.m_PlayerManager.m_ThrowForce;
-			float throwTorque = GameManager.m_PlayerManager.m_ThrowTorque;
+			GameObject stonePrefab = GetGearItemObject("GEAR_Stone");
+			if (stonePrefab == null) return;
+			GameObject gameObject2 = UnityEngine.Object.Instantiate(stonePrefab, shoot.m_position, shoot.m_rotation);
 			GearItem component2 = gameObject2.GetComponent<GearItem>();
+			Rigidbody component3 = gameObject2.GetComponent<Rigidbody>();
+			if (component2 == null || component2.m_StoneItem == null || component3 == null)
+			{
+				UnityEngine.Object.Destroy(gameObject2);
+				return;
+			}
 			component2.m_StoneItem.PrepareForThrow();
 			component2.m_StoneItem.SetThrown(thrown: true);
-			throwForce = component2.m_StoneItem.m_ThrowForce;
-			throwTorque = component2.m_StoneItem.m_ThrowForce;
-			Rigidbody component3 = gameObject2.GetComponent<Rigidbody>();
+			float throwForce = component2.m_StoneItem.m_ThrowForce;
+			float throwTorque = GameManager.m_PlayerManager.m_ThrowTorque;
 			component3.isKinematic = false;
 			component3.velocity = shoot.m_camera_forward * throwForce;
 			Vector3 vector = shoot.m_camera_right + UnityEngine.Random.Range(-0.2f, 0.2f) * shoot.m_camera_up;
@@ -5242,299 +5285,6 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void MakeFakeFire(Fire fire)
-	{
-		fire.m_StartedByPlayer = false;
-		if (fire.m_FireState != FireState.FullBurn)
-		{
-			fire.FireStateSet(FireState.FullBurn);
-		}
-		fire.m_HeatSource.TurnOn();
-		fire.m_FX.TriggerStage(FireState.FullBurn, shouldPlay: true, stopOtherStages: true);
-		fire.m_FuelHeatIncrease = fire.m_HeatSource.m_MaxTempIncrease;
-		fire.m_ElapsedOnTODSeconds = 0f;
-		fire.m_ElapsedOnTODSecondsUnmodified = 0f;
-		fire.ForceBurnTimeInMinutes(5f);
-		fire.PlayFireLoop(100f);
-		if (fire.m_Campfire != null)
-		{
-			Campfire component = fire.m_Campfire.GetComponent<Campfire>();
-			if (component.m_State != CampfireState.Lit)
-			{
-				component.SetState(CampfireState.Lit);
-			}
-		}
-	}
-
-	public static void MakeFakeCampfire(DataStr.FireSourcesSync SyncData)
-	{
-		Fire fire = GameManager.GetFireManagerComponent().InstantiateCampFire();
-		GameObject obj = ((fire != null) ? fire.gameObject : null);
-		obj.name = "CAMPFIRE";
-		obj.transform.position = SyncData.m_Position;
-		obj.transform.rotation = SyncData.m_Rotation;
-		Fire component = obj.GetComponent<Fire>();
-		MakeFakeFire(component);
-		FireHeatSync.Apply(component, SyncData);
-		Campfire component2 = obj.GetComponent<Campfire>();
-		if (component2.m_State != CampfireState.Lit)
-		{
-			component2.SetState(CampfireState.Lit);
-		}
-	}
-
-	public static bool IsSameFire(DataStr.FireSourcesSync FindData, DataStr.FireSourcesSync SyncData)
-	{
-		if (SyncData.m_IsCampfire)
-		{
-			if (SyncData.m_Position == FindData.m_Position)
-			{
-				return true;
-			}
-		}
-		else if (FindData.m_Guid != "")
-		{
-			if (SyncData.m_Guid == FindData.m_Guid)
-			{
-				return true;
-			}
-		}
-		else if (SyncData.m_Position == FindData.m_Position)
-		{
-			return true;
-		}
-		return false;
-	}
-
-	public static void ApplyOtherFireSource(DataStr.FireSourcesSync SyncData)
-	{
-		if (!ApplyOtherCampfires || ServerConfig.m_FireSync == 0)
-		{
-			return;
-		}
-		bool flag = false;
-		for (int i = 0; i < FireManager.m_Fires.Count; i++)
-		{
-			Fire fire = FireManager.m_Fires[i];
-			if (!(fire != null))
-			{
-				continue;
-			}
-			DataStr.FireSourcesSync fireSourcesSync = new DataStr.FireSourcesSync();
-			fireSourcesSync.m_LevelId = levelid;
-			fireSourcesSync.m_LevelGUID = level_guid;
-			fireSourcesSync.m_Position = fire.gameObject.transform.position;
-			fireSourcesSync.m_Rotation = fire.gameObject.transform.rotation;
-			fireSourcesSync.m_Guid = "";
-			if (fire.gameObject.GetComponent<ObjectGuid>() != null)
-			{
-				fireSourcesSync.m_Guid = fire.gameObject.GetComponent<ObjectGuid>().Get();
-			}
-			if (IsSameFire(fireSourcesSync, SyncData))
-			{
-				if (fire.m_FireState == FireState.Off || !fire.m_StartedByPlayer)
-				{
-					MakeFakeFire(fire);
-					FireHeatSync.Apply(fire, SyncData);
-					flag = true;
-				}
-				else
-				{
-					flag = true;
-				}
-				break;
-			}
-		}
-		if (!flag && SyncData.m_IsCampfire)
-		{
-			MakeFakeCampfire(SyncData);
-		}
-	}
-
-	public static void AddFuelNoSync(Fire fire, GearItem fuel)
-	{
-		if (fire.gameObject != null && fuel != null)
-		{
-			MelonLogger.Msg("[Fire][AddFuelNoSync] " + fire.gameObject.name + " fuel is " + fuel.GetGearName());
-		}
-		else if (fire.gameObject != null && fuel == null)
-		{
-			MelonLogger.Msg("[Fire][AddFuelNoSync] " + fire.gameObject.name + " fuel is null");
-		}
-		else if (fire.gameObject == null)
-		{
-			MelonLogger.Msg("[Fire][AddFuelNoSync] firesource is null");
-		}
-		fire.OnFuelBurnt(fuel);
-		if (fire.IsEmbers())
-		{
-			fire.m_FX.TriggerStage(FireState.FullBurn, shouldPlay: true);
-			fire.m_HeatSource.TurnOn();
-		}
-		float num = (float)((double)fuel.m_FuelSourceItem.GetModifiedBurnDurationHours(fuel.GetNormalizedCondition()) * 60.0 * 60.0);
-		if (!fire.m_IsPerpetual)
-		{
-			fire.m_MaxOnTODSeconds += num;
-			float num2 = fire.m_MaxOnTODSeconds - (float)((double)GameManager.GetFireManagerComponent().m_MaxDurationHoursOfFire * 60.0 * 60.0);
-			if ((double)num2 > 0.0)
-			{
-				fire.m_ElapsedOnTODSeconds -= num2;
-				fire.m_ElapsedOnTODSeconds = Mathf.Clamp(fire.m_ElapsedOnTODSeconds, 0f, float.PositiveInfinity);
-			}
-			fire.m_MaxOnTODSeconds = Mathf.Clamp(fire.m_MaxOnTODSeconds, 0f, (float)((double)GameManager.GetFireManagerComponent().m_MaxDurationHoursOfFire * 60.0 * 60.0));
-		}
-		fire.m_FuelHeatIncrease += Mathf.Min(Mathf.Clamp(GameManager.GetFireManagerComponent().m_MaxHeatIncreaseOfFire - fire.m_FuelHeatIncrease, 0f, float.PositiveInfinity), fuel.m_FuelSourceItem.m_HeatIncrease * fuel.GetNormalizedCondition());
-		if (fire.m_ApplyToHeatSource)
-		{
-			fire.m_HeatSource.m_MaxTempIncrease = fire.m_FuelHeatIncrease;
-			fire.m_HeatSource.m_MaxTempIncreaseInnerRadius = Mathf.Max(fuel.m_FuelSourceItem.m_HeatInnerRadius, fire.m_HeatSource.m_MaxTempIncreaseInnerRadius);
-			fire.m_HeatSource.m_MaxTempIncreaseOuterRadius = Mathf.Max(fuel.m_FuelSourceItem.m_HeatOuterRadius * fire.GetFireOuterRadiusScale(), fire.m_HeatSource.m_MaxTempIncreaseOuterRadius);
-		}
-		fire.m_FX.TriggerFlareupLarge();
-		fire.m_StartedByPlayer = true;
-		if (fuel != null && (bool)fuel.gameObject)
-		{
-			UnityEngine.Object.Destroy(fuel.gameObject);
-		}
-	}
-
-	public static void AddOtherFuel(DataStr.FireSourcesSync SyncData, string fuelName)
-	{
-		if (!ApplyOtherCampfires || FireManager.m_Fires.Count <= 0)
-		{
-			return;
-		}
-		for (int i = 0; i < FireManager.m_Fires.Count; i++)
-		{
-			Fire fire = FireManager.m_Fires[i];
-			if (!(fire != null))
-			{
-				continue;
-			}
-			DataStr.FireSourcesSync fireSourcesSync = new DataStr.FireSourcesSync();
-			fireSourcesSync.m_LevelId = levelid;
-			fireSourcesSync.m_LevelGUID = level_guid;
-			fireSourcesSync.m_Position = fire.gameObject.transform.position;
-			fireSourcesSync.m_Rotation = fire.gameObject.transform.rotation;
-			fireSourcesSync.m_Guid = "";
-			if (fire.gameObject.GetComponent<ObjectGuid>() != null)
-			{
-				fireSourcesSync.m_Guid = fire.gameObject.GetComponent<ObjectGuid>().Get();
-			}
-			if (!IsSameFire(fireSourcesSync, SyncData))
-			{
-				continue;
-			}
-			if (fire.m_FireState != FireState.FullBurn)
-			{
-				break;
-			}
-			GameObject gameObject = UnityEngine.Object.Instantiate(Resources.Load(fuelName)).Cast<GameObject>();
-			if ((bool)gameObject)
-			{
-				GearItem component = gameObject.GetComponent<GearItem>();
-				if ((bool)component)
-				{
-					AddFuelNoSync(fire, component);
-				}
-			}
-			break;
-		}
-	}
-
-	public static void MayAddFireSources(DataStr.FireSourcesSync fire)
-	{
-		if (fire.m_LevelId != levelid || fire.m_LevelGUID != level_guid)
-		{
-			return;
-		}
-		fire.m_RemoveIn = 5;
-		for (int i = 0; i < FireSources.Count; i++)
-		{
-			DataStr.FireSourcesSync fireSourcesSync = FireSources[i];
-			bool flag = false;
-			if (fireSourcesSync.m_LevelId == fire.m_LevelId && fireSourcesSync.m_LevelGUID == fire.m_LevelGUID)
-			{
-				if (fireSourcesSync.m_Guid != "")
-				{
-					if (fireSourcesSync.m_Guid == fire.m_Guid)
-					{
-						flag = true;
-					}
-				}
-				else if (fireSourcesSync.m_Position == fire.m_Position)
-				{
-					flag = true;
-				}
-			}
-			if (flag)
-			{
-				FireSources[i].m_Fuel = fire.m_Fuel;
-				FireSources[i].m_CurrentHeat = fire.m_CurrentHeat;
-				FireSources[i].m_MaxHeat = fire.m_MaxHeat;
-				FireSources[i].m_HeatInnerRadius = fire.m_HeatInnerRadius;
-				FireSources[i].m_HeatOuterRadius = fire.m_HeatOuterRadius;
-				FireSources[i].m_HeatMasked = fire.m_HeatMasked;
-				FireSources[i].m_RemoveIn = fire.m_RemoveIn;
-				return;
-			}
-		}
-		FireSources.Add(fire);
-	}
-
-	public static void SendMyFire(Fire fireTosend, string fuel = "")
-	{
-		if (ServerConfig.m_FireSync == 0 || (fuel != "" && ServerConfig.m_FireSync == 1))
-		{
-			return;
-		}
-		DataStr.FireSourcesSync fireSourcesSync = new DataStr.FireSourcesSync();
-		FireHeatSync.Capture(fireTosend, fireSourcesSync);
-		fireSourcesSync.m_Guid = "";
-		if (fireTosend.gameObject.GetComponent<ObjectGuid>() != null)
-		{
-			fireSourcesSync.m_Guid = fireTosend.gameObject.GetComponent<ObjectGuid>().Get();
-		}
-		fireSourcesSync.m_LevelGUID = level_guid;
-		fireSourcesSync.m_LevelId = levelid;
-		fireSourcesSync.m_Position = fireTosend.gameObject.transform.position;
-		fireSourcesSync.m_Rotation = fireTosend.gameObject.transform.rotation;
-		if (fireTosend.m_Campfire == null)
-		{
-			fireSourcesSync.m_IsCampfire = false;
-		}
-		else
-		{
-			fireSourcesSync.m_IsCampfire = true;
-			fireSourcesSync.m_Guid = "";
-		}
-		if (fuel == "")
-		{
-			if (sendMyPosition)
-			{
-				using Packet packet = new Packet(77);
-				packet.Write(fireSourcesSync);
-				SendUDPData(packet);
-			}
-			if (iAmHost)
-			{
-				ServerSend.FIRE(0, fireSourcesSync, toEveryOne: true);
-			}
-			return;
-		}
-		fireSourcesSync.m_FuelName = fuel;
-		if (sendMyPosition)
-		{
-			using Packet packet2 = new Packet(84);
-			packet2.Write(fireSourcesSync);
-			SendUDPData(packet2);
-		}
-		if (iAmHost)
-		{
-			ServerSend.FIREFUEL(0, fireSourcesSync, toEveryOne: true);
-		}
-	}
-
 	public static int AnyOneClose(float minimalDistance, Vector3 point)
 	{
 		if (Vector3.Distance(GameManager.GetPlayerTransform().position, point) <= minimalDistance)
@@ -5683,38 +5433,8 @@ public class MyMod : MelonMod
 		if (!DedicatedServerAppMode)
 		{
 			PlayersUpdateManager();
-			for (int i = 0; i < FireSources.Count; i++)
-			{
-				if (FireSources[i] == null)
-				{
-					continue;
-				}
-				if (FireSources[i].m_RemoveIn > 0)
-				{
-					FireSources[i].m_RemoveIn = FireSources[i].m_RemoveIn - 1;
-					if (FireSources[i].m_LevelId == levelid && FireSources[i].m_LevelGUID == level_guid)
-					{
-						ApplyOtherFireSource(FireSources[i]);
-					}
-				}
-				else
-				{
-					FireHeatSync.Expire(FireSources[i]);
-					FireSources.RemoveAt(i--);
-				}
-			}
-			if (FireManager.m_Fires.Count > 0)
-			{
-				for (int j = 0; j < FireManager.m_Fires.Count; j++)
-				{
-					Fire fire = FireManager.m_Fires[j];
-					if (fire != null && fire.m_FireState == FireState.FullBurn && fire.m_StartedByPlayer)
-					{
-						SendMyFire(fire);
-					}
-				}
-			}
 		}
+		FireHeatSync.Tick();
 		if (Shared.IsMainMenuScene(level_name))
 		{
 			if (NeedConnectAfterLoad > 0)
@@ -6068,6 +5788,8 @@ public class MyMod : MelonMod
 		}
 		GameObject gameObject = UnityEngine.Object.Instantiate(prefab, v3, rot);
 		Comps.AnimalActor animalActor = gameObject.AddComponent<Comps.AnimalActor>();
+		animalActor.m_SharedRabbit = gameObject.GetComponent<AiRabbit>() != null;
+		animalActor.m_LastRabbitSnapshot = Time.realtimeSinceStartup;
 		animalActor.m_Animal = gameObject;
 		animalActor.m_Animator = RemoveAnimalComponents(gameObject);
 		animalActor.m_ToGo = v3;
@@ -6098,7 +5820,7 @@ public class MyMod : MelonMod
 		return gameObject;
 	}
 
-	public static void SpawnAnimalCorpse(string prefab, Vector3 v3, Quaternion rot, string GUID, string SpawnRegionGUID)
+	public static void SpawnAnimalCorpse(string prefab, Vector3 v3, Quaternion rot, string GUID, string SpawnRegionGUID, bool knocked)
 	{
 		MelonLogger.Msg("Going to spawn animal corpse " + GUID + " for Region " + SpawnRegionGUID);
 		GameObject prefab2 = WildlifeCompat.GetPrefab(prefab);
@@ -6112,6 +5834,7 @@ public class MyMod : MelonMod
 		{
 			if (gameObject.GetComponent<Comps.AnimalCorpseObject>() != null)
 			{
+				gameObject.GetComponent<Comps.AnimalCorpseObject>().m_Knocked = knocked;
 				MelonLogger.Msg("Corpse already exist, because been spawned myself");
 				return;
 			}
@@ -6135,6 +5858,7 @@ public class MyMod : MelonMod
 		Comps.AnimalCorpseObject animalCorpseObject = gameObject2.AddComponent<Comps.AnimalCorpseObject>();
 		animalCorpseObject.m_Animal = gameObject2;
 		animalCorpseObject.m_RegionGUID = SpawnRegionGUID;
+		animalCorpseObject.m_Knocked = knocked;
 		if ((bool)gameObject2.GetComponent<BodyHarvest>())
 		{
 			gameObject2.GetComponent<BodyHarvest>().enabled = true;
@@ -6191,7 +5915,7 @@ public class MyMod : MelonMod
 	{
 		if (Sync.m_LevelGUID == level_guid)
 		{
-			SpawnAnimalCorpse(Sync.m_PrefabName, Sync.m_Position, Sync.m_Rotation, Sync.m_GUID, Sync.m_RegionGUID);
+			SpawnAnimalCorpse(Sync.m_PrefabName, Sync.m_Position, Sync.m_Rotation, Sync.m_GUID, Sync.m_RegionGUID, Sync.m_Knocked);
 		}
 	}
 
@@ -8145,6 +7869,9 @@ public class MyMod : MelonMod
 		int quaternionHash = Shared.GetQuaternionHash(rotation);
 		int hashCode = Shared.StableHash(level_guid);
 		int hash = vectorHash + quaternionHash + hashCode;
+		// A second thrown stone may settle at the same pose as an existing drop.
+		if (gear.GetComponent<Comps.DestoryStoneOnStop>()?.m_ShouldSendDrop == true)
+			hash = System.Guid.NewGuid().GetHashCode();
 		string text4 = level_guid;
 		if (nums > 0 && gear.m_StackableItem != null)
 		{

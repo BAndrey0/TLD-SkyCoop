@@ -8,6 +8,19 @@ static class Program
  static void Main()
  {
   MyMod.sendMyPosition = true;
+  double fireDeadline=FireClockPolicy.SecondsAt(100)+3600;
+  Check(FireClockPolicy.Remaining(fireDeadline,105)==3300,"One hour of book work must consume only five shared minutes of fire");
+  Check(FireClockPolicy.Remaining(fireDeadline,105)==3300,"Reapplying an unchanged fire deadline must not refill it");
+  fireDeadline=FireClockPolicy.ChangeDeadline(fireDeadline,105,600,43200);
+  fireDeadline=FireClockPolicy.ChangeDeadline(fireDeadline,105,1200,43200);
+  Check(FireClockPolicy.Remaining(fireDeadline,105)==5100,"Fuel contributions from both players must accumulate exactly once");
+  fireDeadline=FireClockPolicy.ChangeDeadline(fireDeadline,105,-600,43200);
+  Check(FireClockPolicy.Remaining(fireDeadline,105)==4500,"Taking a torch must reduce the shared remaining fuel");
+  Check(FireClockPolicy.Remaining(fireDeadline,225)==0,"A shared two-hour sleep must expire a shorter fire");
+  Check(FireClockPolicy.Remaining(FireClockPolicy.SecondsAt(1430)+3600,1450)==2400,"Burning across midnight must use elapsed server time");
+  Check(FireClockPolicy.Remaining(FireClockPolicy.ChangeDeadline(fireDeadline,105,999999,43200),105)==43200,"Large fuel additions must respect the fire capacity");
+  Check(FireClockPolicy.Remaining(double.NaN,105)==0,"Invalid fire deadlines must not produce NaN UI or immortal fire");
+  Check(FireClockPolicy.Remaining(FireClockPolicy.ChangeDeadline(fireDeadline,105,float.NaN,43200),105)==4500,"Invalid fuel delta must not corrupt an existing fire");
   using(var bytes=new System.IO.MemoryStream())
   {
    using(var writer=new System.IO.BinaryWriter(bytes,System.Text.Encoding.UTF8,true))

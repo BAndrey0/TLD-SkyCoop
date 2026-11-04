@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.5");
+			packet.Write("0.16.6");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -875,19 +875,12 @@ public class ClientHandle
 
 	public static void FIRE(Packet _packet)
 	{
-		DataStr.FireSourcesSync fire = _packet.ReadFire();
-		_packet.ReadInt();
-		MyMod.MayAddFireSources(fire);
+		FireHeatSync.ReceiveSnapshot(_packet.ReadFire());
 	}
 
 	public static void FIREFUEL(Packet _packet)
 	{
-		DataStr.FireSourcesSync fireSourcesSync = _packet.ReadFire();
-		if (fireSourcesSync.m_LevelId == MyMod.levelid && !(fireSourcesSync.m_LevelGUID != MyMod.level_guid))
-		{
-			_packet.ReadInt();
-			MyMod.AddOtherFuel(fireSourcesSync, fireSourcesSync.m_FuelName);
-		}
+		FireHeatSync.Acknowledge(_packet.ReadFire().m_Operation);
 	}
 
 	public static void CUSTOM(Packet _packet)
@@ -1135,9 +1128,9 @@ public class ClientHandle
 	public static void RABBITREVIVED(Packet _packet)
 	{
 		Vector3 v = _packet.ReadVector3();
-		if (MyMod.AnimalsController)
+		if (MyMod.CanSpawnWildlifeInCurrentScene())
 		{
-			MyMod.OnRabbitRevived(v);
+			MyMod.OnRabbitRevived(v, _packet.UnreadLength() >= sizeof(int) ? _packet.ReadString() : "");
 		}
 	}
 

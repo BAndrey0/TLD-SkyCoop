@@ -1502,8 +1502,9 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "ProcessPickupItemInteraction")]
 	private static class Inventory_Pickup
 	{
-		internal static void Prefix(PlayerManager __instance, GearItem item)
+		internal static bool Prefix(PlayerManager __instance, GearItem item)
 		{
+			if (item != null && item.GetComponent<Comps.DestoryStoneOnStop>() != null) return false;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -1534,14 +1535,16 @@ public class Pathes
 					Shared.AddPickedGear(position, MyMod.levelid, GameManager.m_SceneTransitionData.m_SceneSaveFilenameCurrent, ClientUser.myId, instanceID, gearName, needSync: true);
 				}
 			}
+			return true;
 		}
 	}
 
 	[HarmonyPatch(typeof(PlayerManager), "ProcessPickupWithNoInspectScreen")]
 	private static class Inventory_Pickup2
 	{
-		internal static void Prefix(PlayerManager __instance, GearItem pickupItem)
+		internal static bool Prefix(PlayerManager __instance, GearItem pickupItem)
 		{
+			if (pickupItem != null && pickupItem.GetComponent<Comps.DestoryStoneOnStop>() != null) return false;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -1572,6 +1575,7 @@ public class Pathes
 					Shared.AddPickedGear(position, MyMod.levelid, GameManager.m_SceneTransitionData.m_SceneSaveFilenameCurrent, ClientUser.myId, instanceID, gearName, needSync: true);
 				}
 			}
+			return true;
 		}
 	}
 
@@ -2328,6 +2332,16 @@ public class Pathes
 				if (MyMod.SaveThrowingItem.name.StartsWith("GEAR_Stone"))
 				{
 					shootSync.m_projectilename = "GEAR_Stone";
+					var gear = MyMod.SaveThrowingItem;
+					var body = gear.GetComponent<Rigidbody>();
+					if (MyMod.InOnline() && body != null && gear.GetComponent<Comps.DestoryStoneOnStop>() == null)
+					{
+						var settledStone = gear.gameObject.AddComponent<Comps.DestoryStoneOnStop>();
+						settledStone.m_Obj = gear.gameObject;
+						settledStone.m_RB = body;
+						settledStone.m_Gear = gear;
+						settledStone.m_ShouldSendDrop = true;
+					}
 				}
 				if (MyMod.SaveThrowingItem.name.StartsWith("GEAR_NoiseMaker"))
 				{
@@ -4374,134 +4388,40 @@ public class Pathes
 	[HarmonyPatch(typeof(Fire), "AddFuel")]
 	public static class Fire_AddFuel
 	{
-		public static void Postfix(Fire __instance, GearItem fuel)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (__instance.gameObject != null && fuel != null)
-			{
-				MelonLogger.Msg("[Fire][AddFuel] " + __instance.gameObject.name + " fuel is " + fuel.GetGearName());
-			}
-			else if (__instance.gameObject != null && fuel == null)
-			{
-				MelonLogger.Msg("[Fire][AddFuel] " + __instance.gameObject.name + " fuel is null");
-			}
-			else if (__instance.gameObject == null)
-			{
-				MelonLogger.Msg("[Fire][AddFuel] firesource is null");
-			}
-			if (!__instance.m_StartedByPlayer)
-			{
-				MelonLogger.Msg("Assign firesource of other player to myself");
-				__instance.m_StartedByPlayer = true;
-				MyMod.SendMyFire(__instance);
-			}
-			if (__instance.m_StartedByPlayer)
-			{
-				MelonLogger.Msg("Added fuel to fire " + fuel.GetGearName());
-				MyMod.SendMyFire(__instance, fuel.GetGearName());
-			}
-		}
+		public static void Prefix(Fire __instance, GearItem fuel, out DataStr.FireSourcesSync __state)
+			=> __state = fuel != null ? FireHeatSync.BeforeFuelChange(__instance) : null;
+
+		public static void Postfix(Fire __instance, DataStr.FireSourcesSync __state)
+			=> FireHeatSync.AfterFuelChange(__instance, __state, add: true);
+	}
+
+	[HarmonyPatch(typeof(Fire), "ReduceDurationByTODSeconds")]
+	public static class Fire_ReduceDuration
+	{
+		public static void Prefix(Fire __instance, out DataStr.FireSourcesSync __state)
+			=> __state = FireHeatSync.BeforeFuelChange(__instance);
+
+		public static void Postfix(Fire __instance, DataStr.FireSourcesSync __state)
+			=> FireHeatSync.AfterFuelChange(__instance, __state, add: false);
 	}
 
 	[HarmonyPatch(typeof(CookingSlot), "CanCookingSlotBeUsed")]
 	public static class CookingSlot_CanBeInteractedWith
 	{
 		public static bool Prefix(CookingSlot __instance)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (__instance.m_GearPlacePoint != null && __instance.m_GearPlacePoint.m_FireToAttach != null && __instance.m_GearPlacePoint.m_FireToAttach.IsBurning() && !__instance.m_GearPlacePoint.m_FireToAttach.m_StartedByPlayer)
-			{
-				return false;
-			}
-			return true;
-		}
+			=> __instance.m_GearPlacePoint == null || FireHeatSync.AllowCooking(__instance.m_GearPlacePoint.m_FireToAttach);
 	}
 
 	[HarmonyPatch(typeof(CookingPotItem), "CanOpenCookingInterface")]
 	public static class CookingPotItem_CanOpenCookingInterface
 	{
-		public static bool Prefix(CookingPotItem __instance)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (__instance.m_FireBeingUsed != null && __instance.m_FireBeingUsed.IsBurning() && !__instance.m_FireBeingUsed.m_StartedByPlayer)
-			{
-				return false;
-			}
-			return true;
-		}
+		public static bool Prefix(CookingPotItem __instance) => FireHeatSync.AllowCooking(__instance.m_FireBeingUsed);
 	}
 
 	[HarmonyPatch(typeof(CookingPotItem), "AttachToFire")]
 	public static class CookingPotItem_AttachToFire
 	{
-		public static bool Prefix(CookingPotItem __instance, Fire fire, GearPlacePoint gpp)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (fire != null && fire.IsBurning() && !fire.m_StartedByPlayer)
-			{
-				return false;
-			}
-			return true;
-		}
-	}
-
-	[HarmonyPatch(typeof(FireplaceInteraction), "GetHoverText")]
-	public static class WoodStove_GetHoverText
-	{
-		public static void Postfix(FireplaceInteraction __instance, ref string __result)
-		{
-			if (!(__instance == null) && !(__instance.TryCast<WoodStove>() == null))
-			{
-				if (MyMod.CrazyPatchesLogger)
-				{
-					StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-					MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-					MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-				}
-				if (__instance.Fire != null && __instance.Fire.IsBurning() && !__instance.Fire.m_StartedByPlayer)
-				{
-					__result += "\nSHARED WARMTH\nADD YOUR OWN FUEL TO COOK";
-				}
-			}
-		}
-	}
-
-	[HarmonyPatch(typeof(Campfire), "GetHoverText")]
-	public static class Campfire_GetHoverText
-	{
-		public static void Postfix(Campfire __instance, ref string __result)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (__instance.Fire != null && __instance.Fire.IsBurning() && !__instance.Fire.m_StartedByPlayer)
-			{
-				__result += "\nSHARED WARMTH\nADD YOUR OWN FUEL TO COOK";
-			}
-		}
+		public static bool Prefix(Fire fire) => FireHeatSync.AllowCooking(fire);
 	}
 
 	[HarmonyPatch(typeof(InterfaceManager), "Awake")]
@@ -5256,6 +5176,26 @@ public class Pathes
 		}
 	}
 
+	[HarmonyPatch(typeof(BaseAi), "Despawn")]
+	private static class SharedRabbit_Despawn
+	{
+		private static bool Prefix(BaseAi __instance)
+		{
+			if (!MyMod.InOnline() || !MyMod.WildlifeSceneReady()) return true;
+			// The replica's native BaseAi may still exist until Unity processes Destroy.
+			if (__instance.GetComponent<Comps.AnimalActor>() != null) return false;
+			var rabbit = __instance.GetComponent<Comps.AnimalUpdates>();
+			if (rabbit == null || !rabbit.m_SharedRabbit || rabbit.m_PickedUp || rabbit.m_Banned ||
+				__instance.GetComponent<Comps.AnimalCorpseObject>() != null ||
+				__instance.m_CurrentHP <= 0f || __instance.GetAiMode() == AiMode.Dead ||
+				__instance.GetAiMode() == AiMode.Stunned) return true;
+			if (MyMod.AnyOneClose(MyMod.MinimalDistanceForSpawn, __instance.transform.position) != -1) return false;
+			var guid = __instance.GetComponent<ObjectGuid>()?.Get();
+			if (!string.IsNullOrEmpty(guid)) MyMod.SendWildlifeDespawn(guid);
+			return true;
+		}
+	}
+
 	[HarmonyPatch(typeof(ConsoleManager), "spawn_common")]
 	internal static class ConsoleManager_Spawn
 	{
@@ -5809,11 +5749,13 @@ public class Pathes
 			}
 			if (MyMod.InOnline())
 			{
+				var stone = __instance.GetComponent<Comps.DestoryStoneOnStop>();
+				if (stone != null && !stone.m_ShouldSendDrop) return false;
 				Il2CppStructArray<ContactPoint> contacts = collisionInfo.contacts;
 				for (int i = 0; i < contacts.Length; i++)
 				{
 					Comps.AnimalActor componentInParent = contacts[i].otherCollider.GetComponentInParent<Comps.AnimalActor>();
-					if (!(componentInParent != null) || !componentInParent.gameObject.GetComponent<ObjectGuid>())
+					if (componentInParent == null || !componentInParent.m_SharedRabbit || !componentInParent.gameObject.GetComponent<ObjectGuid>())
 					{
 						continue;
 					}
@@ -5828,6 +5770,7 @@ public class Pathes
 					{
 						ServerSend.HITRABBIT(componentInParent.m_ClientController, componentInParent.gameObject.GetComponent<ObjectGuid>().Get());
 					}
+					break;
 				}
 			}
 			return true;
@@ -8261,7 +8204,7 @@ public class Pathes
 		{
 			flag = component3.Fire.IsBurning();
 		}
-		if (flag)
+		if (flag && GameManager.GetInventoryComponent().HasNonRuinedItem("GEAR_ScrapLead"))
 		{
 			panel_ActionPicker.m_ActionPickerItemDataList.Add(new ActionPickerItemData("ico_forge", "Smelt lead", action));
 			panel_ActionPicker.m_ObjectInteractedWith = objectInteractedWith;

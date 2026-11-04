@@ -2162,32 +2162,15 @@ public class Shared
 	{
 		MPSaveManager.AnimalsKilledChanged = true;
 		ServerSend.ANIMALDELETE(0, GUID);
-		GameObject gameObject = ObjectGuidManager.Lookup(GUID);
-		DataStr.AnimalKilled value2;
-		if (MyMod.AnimalsController)
+		if (!AnimalsKilled.Remove(GUID, out var rabbit)) return;
+		if (rabbit.m_LevelGUID == MyMod.level_guid) MyMod.DeleteAnimal(GUID);
+		if (rabbit.m_LevelGUID == MyMod.level_guid && MyMod.CanSpawnWildlifeInCurrentScene())
 		{
-			DataStr.AnimalKilled value;
-			if ((bool)gameObject)
-			{
-				Vector3 position = gameObject.transform.position;
-				UnityEngine.Object.Destroy(gameObject);
-				AnimalsKilled.Remove(GUID);
-				MyMod.OnRabbitRevived(position);
-			}
-			else if (AnimalsKilled.TryGetValue(GUID, out value))
-			{
-				Vector3 position = value.m_Position;
-				string levelGUID = value.m_LevelGUID;
-				AnimalsKilled.Remove(GUID);
-				ServerSend.RABBITREVIVED(0, position, levelGUID);
-			}
+			MyMod.OnRabbitRevived(rabbit.m_Position, rabbit.m_RegionGUID);
 		}
-		else if (AnimalsKilled.TryGetValue(GUID, out value2))
+		else
 		{
-			Vector3 position = value2.m_Position;
-			string levelGUID = value2.m_LevelGUID;
-			AnimalsKilled.Remove(GUID);
-			ServerSend.RABBITREVIVED(0, position, levelGUID);
+			ServerSend.RABBITREVIVED(0, rabbit.m_Position, rabbit.m_LevelGUID, rabbit.m_RegionGUID);
 		}
 	}
 

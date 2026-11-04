@@ -705,8 +705,6 @@ public class DataStr
 
 		public float m_Fuel;
 
-		public float m_CurrentHeat;
-
 		public float m_MaxHeat;
 
 		public float m_HeatInnerRadius;
@@ -715,11 +713,19 @@ public class DataStr
 
 		public bool m_HeatMasked;
 
-		public int m_RemoveIn;
-
 		public bool m_IsCampfire;
 
-		public string m_FuelName = "";
+		public string m_Operation = "";
+
+		public string m_Generation = "";
+
+		public int m_WorldMinute;
+
+		public long m_Revision;
+
+		public float m_Capacity;
+
+		internal FireSourcesSync Copy() => (FireSourcesSync)MemberwiseClone();
 
 		public bool Equals(FireSourcesSync other)
 		{

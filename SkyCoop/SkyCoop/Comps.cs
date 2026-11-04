@@ -5,6 +5,7 @@ using Il2Cpp;
 using Il2CppAK;
 using Il2CppInterop.Runtime.Injection;
 using Il2CppSystem.Collections.Generic;
+using Il2CppTLD.AI;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.UI;
@@ -101,6 +102,8 @@ public class Comps
 
 		private bool m_SendDrop;
 
+		private float m_StationarySince = -1f;
+
 		public DestoryStoneOnStop(IntPtr ptr)
 			: base(ptr)
 		{
@@ -108,17 +111,28 @@ public class Comps
 
 		private void Update()
 		{
-			if (!(m_Obj != null) || !(m_RB != null) || !(m_Gear != null) || !m_RB.isKinematic)
+			if (m_Obj == null || m_RB == null || m_Gear == null || m_SendDrop)
 			{
 				return;
 			}
+			if (!MyMod.InOnline() || m_Gear.m_InPlayerInventory)
+			{
+				Destroy(this);
+				return;
+			}
+			if (!m_RB.isKinematic && !m_RB.IsSleeping() &&
+				(m_RB.velocity.sqrMagnitude > 0.01f || m_RB.angularVelocity.sqrMagnitude > 0.01f))
+			{
+				m_StationarySince = -1f;
+				return;
+			}
+			if (m_StationarySince < 0f) m_StationarySince = Time.realtimeSinceStartup;
+			if (Time.realtimeSinceStartup - m_StationarySince < 0.35f) return;
+			m_SendDrop = true;
 			if (m_ShouldSendDrop)
 			{
-				if (!m_SendDrop)
-				{
-					m_SendDrop = true;
-					MyMod.SendDropItem(m_Gear, 0, 0, samepose: true);
-				}
+				if (m_Gear.m_StackableItem != null) m_Gear.m_StackableItem.m_Units = 1;
+				MyMod.SendDropItem(m_Gear, 0, 0, samepose: true);
 			}
 			else
 			{
@@ -340,6 +354,8 @@ public class Comps
 
 		public bool m_MyControlled;
 
+		public bool m_SharedRabbit;
+
 		public bool m_PickedUp;
 
 		public string m_RegionGUID = "";
@@ -415,7 +431,9 @@ public class Comps
 			{
 				return;
 			}
-			int num = (compactDataForAnimal.m_LastController = MyMod.GetClosestPlayerToAnimal(m_Animal, ReTakeCoolDown, ClientUser.myId, GameManager.GetPlayerTransform().position, MyMod.levelid));
+			// Keep rabbit simulation with one peer until that peer leaves the scene.
+			int num = m_SharedRabbit ? ClientUser.myId : MyMod.GetClosestPlayerToAnimal(m_Animal, ReTakeCoolDown, ClientUser.myId, GameManager.GetPlayerTransform().position, MyMod.levelid);
+			compactDataForAnimal.m_LastController = num;
 			if (num != ClientUser.myId)
 			{
 				if (MyMod.RecreateAnimalToActor(m_Animal, m_Arrows, num))
@@ -481,6 +499,16 @@ public class Comps
 				if (!(m_Animal != null) || m_PickedUp || m_Banned)
 				{
 					return;
+				}
+				if (MyMod.InOnline() && !m_SharedRabbit && m_Animal.GetComponent<AiRabbit>() != null &&
+					m_Animal.GetComponent<AnimalActor>() == null && m_Animal.GetComponent<AnimalCorpseObject>() == null)
+				{
+					BaseAi rabbit = m_Animal.GetComponent<BaseAi>();
+					if (rabbit != null && rabbit.GetAiMode() != AiMode.Dead && rabbit.GetAiMode() != AiMode.Stunned)
+					{
+						Destroy(m_Animal);
+						return;
+					}
 				}
 				MaybeAddToSpawnRegion();
 				if (Time.time > nextActionSync)
@@ -556,7 +584,7 @@ public class Comps
 						MyMod.SendUDPData(packet);
 					}
 					m_MarkToDestroy = true;
-					MyMod.SpawnAnimalCorpse(animalPrefabName, animalKilled.m_Position, animalKilled.m_Rotation, animalKilled.m_GUID, m_RegionGUID);
+					MyMod.SpawnAnimalCorpse(animalPrefabName, animalKilled.m_Position, animalKilled.m_Rotation, animalKilled.m_GUID, m_RegionGUID, animalKilled.m_Knocked);
 				}
 			}
 		}
@@ -627,6 +655,10 @@ public class Comps
 		public bool m_Bleeding;
 
 		public int m_ClientController = -1;
+
+		public bool m_SharedRabbit;
+
+		public float m_LastRabbitSnapshot;
 
 		public bool m_Banned;
 
@@ -1163,7 +1195,7 @@ public class Comps
 					return;
 				}
 				MaybeAddToSpawnRegion();
-				if (!MyMod.AnimalsController || m_ClientController != ClientUser.myId)
+				if (m_SharedRabbit || !MyMod.AnimalsController || m_ClientController != ClientUser.myId)
 				{
 					SetAnimations();
 					SetPosition();
@@ -1187,6 +1219,18 @@ public class Comps
 					NoResponce--;
 					if (NoResponce <= 0 && m_ClientController != ClientUser.myId)
 					{
+						if (m_SharedRabbit)
+						{
+							if (!MyMod.IsEligibleWildlifeController(m_ClientController, MyMod.levelid, MyMod.level_guid) &&
+								MyMod.CanSpawnWildlifeInCurrentScene())
+							{
+								m_ClientController = ClientUser.myId;
+								return;
+							}
+							if (Time.realtimeSinceStartup - m_LastRabbitSnapshot < 15f &&
+								MyMod.AnyOneClose(MyMod.MinimalDistanceForSpawn, m_Animal.transform.position) != -1)
+								return;
+						}
 						GameAudioManager.StopAllSoundsFromGameObject(m_Animal);
 						m_MarkToDestroy = true;
 					}
@@ -1198,6 +1242,8 @@ public class Comps
 	public class AnimalCorpseObject : MonoBehaviour
 	{
 		public GameObject m_Animal;
+
+		public bool m_Knocked;
 
 		public string m_RegionGUID = "";
 
@@ -1322,8 +1368,9 @@ public class Comps
 			{
 				return;
 			}
-			if (MyMod.AnyOneClose(m_Region.m_Radius + MyMod.MinimalDistanceForSpawn, m_Region.m_Center) != -1 && MyMod.SpawnInBlizzard(m_Region))
+			if (MyMod.AnyOneClose(m_Region.m_Radius + MyMod.MinimalDistanceForSpawn, m_Region.m_Center) != -1)
 			{
+				if (!MyMod.SpawnInBlizzard(m_Region)) return;
 				m_Spawned = MyMod.CountKnownWildlifeInRegion(m_GUID, m_Animals);
 				if (!(m_Region != null) || !MyMod.AnimalsController || m_Spawned >= MyMod.CalculateTargetPopulation(m_Region))
 				{
@@ -1352,9 +1399,14 @@ public class Comps
 				foreach (System.Collections.Generic.KeyValuePair<string, GameObject> animal in m_Animals)
 				{
 					GameObject value = animal.Value;
-					if (value != null && value.GetComponent<BaseAi>() != null)
+					if (value != null && value.GetComponent<AnimalActor>() == null &&
+						value.GetComponent<AnimalCorpseObject>() == null && value.GetComponent<BaseAi>() != null)
 					{
 						BaseAi component = value.GetComponent<BaseAi>();
+						if (MyMod.AnyOneClose(MyMod.MinimalDistanceForSpawn, value.transform.position) != -1)
+						{
+							continue;
+						}
 						if (component.GetAiMode() != AiMode.Flee && component.GetAiMode() != AiMode.Dead && component.GetAiMode() != AiMode.Struggle && (component.m_CurrentTarget == null || !component.m_CurrentTarget.IsPlayer()))
 						{
 							list.Add(value);
@@ -1365,16 +1417,7 @@ public class Comps
 				{
 					if ((bool)list[i].GetComponent<ObjectGuid>())
 					{
-						if (MyMod.iAmHost)
-						{
-							ServerSend.ANIMALDELETE(0, list[i].GetComponent<ObjectGuid>().Get());
-						}
-						else if (MyMod.sendMyPosition)
-						{
-							using Packet packet = new Packet(38);
-							packet.Write(list[i].GetComponent<ObjectGuid>().Get());
-							MyMod.SendUDPData(packet);
-						}
+						MyMod.SendWildlifeDespawn(list[i].GetComponent<ObjectGuid>().Get());
 					}
 					UnityEngine.Object.Destroy(list[i]);
 					m_Spawned--;

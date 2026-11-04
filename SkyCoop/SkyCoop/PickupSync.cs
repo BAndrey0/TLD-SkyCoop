@@ -28,18 +28,22 @@ public static class PickupSync
 	[HarmonyPatch(typeof(GearItem), "PerformInteraction")]
 	private static class RememberWorldItem
 	{
-		private static void Prefix(GearItem __instance)
+		private static bool Prefix(GearItem __instance)
 		{
+			if (__instance.GetComponent<Comps.DestoryStoneOnStop>() != null) return false;
 			Remember(__instance);
+			return true;
 		}
 	}
 
 	[HarmonyPatch(typeof(GearItem), "PerformAlternativeInteraction")]
 	private static class RememberWorldItemAlt
 	{
-		private static void Prefix(GearItem __instance)
+		private static bool Prefix(GearItem __instance)
 		{
+			if (__instance.GetComponent<Comps.DestoryStoneOnStop>() != null) return false;
 			Remember(__instance);
+			return true;
 		}
 	}
 

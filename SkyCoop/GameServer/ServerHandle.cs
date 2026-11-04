@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.5")
+			if (text2 != "0.16.6")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.5");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.6");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -388,6 +388,15 @@ internal class ServerHandle
 		DataStr.AnimalCompactData animalCompactData = _packet.ReadAnimalCompactData();
 		DataStr.AnimalAnimsSync anim = _packet.ReadAnimalAnim();
 		int num = _packet.ReadInt();
+		if (string.Equals(animalCompactData.m_PrefabName, "WILDLIFE_Rabbit", StringComparison.OrdinalIgnoreCase))
+		{
+			if (num < 0 || num >= MyMod.playersData.Count || _fromClient <= 0 || _fromClient >= MyMod.playersData.Count)
+				return;
+			var source = MyMod.playersData[_fromClient];
+			string destinationScene = num == 0 ? MyMod.level_guid : MyMod.playersData[num]?.m_LevelGuid;
+			if (source == null || string.IsNullOrEmpty(destinationScene) || source.m_LevelGuid != destinationScene)
+				return;
+		}
 		if (num == 0)
 		{
 			MyMod.DoAnimalSync(animalCompactData, anim);
@@ -849,21 +858,9 @@ internal class ServerHandle
 		ServerSend.USESHELTER(_fromClient, showShelterByOther, toEveryOne: false);
 	}
 
-	public static void FIRE(int _fromClient, Packet _packet)
-	{
-		DataStr.FireSourcesSync fireSourcesSync = _packet.ReadFire();
-		MyMod.MayAddFireSources(fireSourcesSync);
-		ServerSend.FIRE(_fromClient, fireSourcesSync, toEveryOne: false);
-	}
-
 	public static void FIREFUEL(int _fromClient, Packet _packet)
 	{
-		DataStr.FireSourcesSync fireSourcesSync = _packet.ReadFire();
-		if (fireSourcesSync.m_LevelId == MyMod.levelid && fireSourcesSync.m_LevelGUID == MyMod.level_guid)
-		{
-			MyMod.AddOtherFuel(fireSourcesSync, fireSourcesSync.m_FuelName);
-		}
-		ServerSend.FIREFUEL(_fromClient, fireSourcesSync, toEveryOne: false);
+		FireHeatSync.ReceiveOperation(_fromClient, _packet.ReadFire());
 	}
 
 	public static void CUSTOM(int _fromClient, Packet _packet)

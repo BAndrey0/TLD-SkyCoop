@@ -1310,7 +1310,7 @@ internal class ServerSend
 		{
 			packet.Write(_msg);
 			packet.Write(0);
-			SendUDPDataToAll(packet);
+			SendUDPDataToAll(packet, _msg.m_LevelGUID);
 		}
 		else if (OnlyFor == -1)
 		{
@@ -1667,10 +1667,11 @@ internal class ServerSend
 		SendUDPData(For, packet);
 	}
 
-	public static void RABBITREVIVED(int _from, Vector3 v3, string LEVELGUID)
+	public static void RABBITREVIVED(int _from, Vector3 v3, string LEVELGUID, string regionGuid)
 	{
 		using Packet packet = new Packet(115);
 		packet.Write(v3);
+		packet.Write(regionGuid ?? "");
 		SendUDPDataToAllButNotSender(packet, _from, LEVELGUID);
 	}
 
@@ -1928,7 +1929,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.5");
+		packet.Write("0.16.6");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));
