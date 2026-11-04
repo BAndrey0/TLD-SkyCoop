@@ -177,7 +177,7 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "PlaceMeshInWorld")]
 	private static class PlayerManager_PlaceMeshInWorld
 	{
-		internal static void Prefix(PlayerManager __instance, out GameObject __state)
+		internal static bool Prefix(PlayerManager __instance, out GameObject __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -186,6 +186,9 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
 			__state = MyMod.InOnline() ? __instance.m_ObjectToPlace : null;
+			if (ScenePlacementSync.CanPlace(__state)) return true;
+			__state = null;
+			return false;
 		}
 
 		internal static void Postfix(GameObject __state)

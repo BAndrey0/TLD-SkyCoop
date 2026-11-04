@@ -65,15 +65,37 @@ internal static class ScenePlacementSync
     private static GameObject Find(string id)
     {
         if (string.IsNullOrEmpty(id)) return null;
-        var registry = PlaceableManager.s_Placeables;
-        if (registry != null && registry.TryGetValue(id, out var entry) && entry?.m_Handle != null)
-            return entry.m_Handle.gameObject;
-        return ObjectGuidManager.Lookup(id);
+        var obj = ObjectGuidManager.Lookup(id);
+        if (obj != null) return obj;
+        var placeables = UnityEngine.Object.FindObjectsOfType<Placeable>();
+        for (int i = 0; i < placeables.Length; i++)
+        {
+            var placeable = placeables[i];
+            if (placeable != null && !placeable.m_Invalidated && placeable.m_Guid == id)
+                return placeable.gameObject;
+        }
+        return null;
+    }
+
+    private static bool IsFixedBed(GameObject obj) => obj != null && obj.GetComponentInChildren<Bed>(true) != null &&
+        (obj.GetComponent<GearItem>() == null || obj.GetComponent<DecorationItem>() != null);
+
+    internal static bool CanPlace(GameObject obj)
+    {
+        if (!MyMod.InOnline() || !IsFixedBed(obj)) return true;
+        HUDMessage.AddMessage("Перенос стационарной кровати временно отключён в коопе");
+        return false;
+    }
+
+    [HarmonyPatch(typeof(PlayerManager), "AttemptToPlaceMesh")]
+    private static class BedPlacementGuard
+    {
+        private static bool Prefix(PlayerManager __instance) => CanPlace(__instance.m_ObjectToPlace);
     }
 
     internal static void PublishFurniture(GameObject obj)
     {
-        if (!InWorld || obj == null) return;
+        if (!InWorld || obj == null || IsFixedBed(obj)) return;
         var decoration = obj.GetComponent<DecorationItem>();
         if (decoration == null && obj.GetComponent<Placeable>() == null) return;
         string id = Id(obj);
@@ -155,6 +177,7 @@ internal static class ScenePlacementSync
     {
         var obj = Find(move.Id);
         if (obj == null) return false;
+        if (IsFixedBed(obj)) return true;
         var player = GameManager.GetPlayerManagerComponent();
         if (player != null && player.m_ObjectToPlace == obj) return false;
         var decoration = obj.GetComponent<DecorationItem>();
