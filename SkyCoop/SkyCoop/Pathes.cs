@@ -191,7 +191,7 @@ public class Pathes
 			return false;
 		}
 
-		internal static void Postfix(GameObject __state)
+		internal static void Postfix(PlayerManager __instance, GameObject __state)
 		{
 			var saveObj = __state;
 			if (MyMod.CrazyPatchesLogger)
@@ -219,6 +219,8 @@ public class Pathes
 				}
 			}
 			if (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(saveObj.GetComponent<GearItem>())) return;
+			var placedPoint = __instance.m_LastGearPlacePoint;
+			if (placedPoint != null && placedPoint.m_FireToAttach != null && placedPoint.GetPlacedGear()?.gameObject == saveObj) return;
 			if (saveObj.GetComponent<DecorationItem>() != null || (saveObj.GetComponent<GearItem>() == null &&
 				saveObj.GetComponent<Il2CppTLD.Placement.Placeable>() != null))
 			{
@@ -2252,7 +2254,7 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "ReleaseThrownObject")]
 	public class PlayerManager_Throw
 	{
-		public static void Prefix(PlayerManager __instance)
+		public static void Prefix(PlayerManager __instance, out GearItem __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2260,17 +2262,10 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (__instance.m_ThrownItem != null)
-			{
-				MyMod.SaveThrowingItem = __instance.m_ThrownItem;
-			}
-			else
-			{
-				MelonLogger.Msg("[PlayerManager][PreFix] Trying throw NULL somehow, wot?");
-			}
+			__state = __instance.m_ThrownItem;
 		}
 
-		public static void Postfix(PlayerManager __instance)
+		public static void Postfix(GearItem __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2278,28 +2273,28 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (MyMod.SaveThrowingItem != null)
+			if (__state != null)
 			{
-				MelonLogger.Msg("[PlayerManager][Postfix] ReleaseThrownObject SaveThrowingItem " + MyMod.SaveThrowingItem.name);
-				if (!MyMod.SaveThrowingItem.name.StartsWith("GEAR_Stone") && !MyMod.SaveThrowingItem.name.StartsWith("GEAR_NoiseMaker"))
+				MelonLogger.Msg("[PlayerManager][Postfix] ReleaseThrownObject SaveThrowingItem " + __state.name);
+				if (!__state.name.StartsWith("GEAR_Stone") && !__state.name.StartsWith("GEAR_NoiseMaker"))
 				{
 					return;
 				}
-				Vector3 position = MyMod.SaveThrowingItem.transform.position;
-				Quaternion rotation = MyMod.SaveThrowingItem.transform.rotation;
+				Vector3 position = __state.transform.position;
+				Quaternion rotation = __state.transform.rotation;
 				MelonLogger.Msg("[PlayerManager][Postfix] Throwing stone " + position.x + " y " + position.y + " z " + position.z);
-				if (MyMod.SaveThrowingItem.name.StartsWith("GEAR_NoiseMaker") && !MyMod.ServerConfig.m_PVP)
+				if (__state.name.StartsWith("GEAR_NoiseMaker") && !MyMod.ServerConfig.m_PVP)
 				{
-					MyMod.SaveThrowingItem.m_NoiseMakerItem.m_PlayerDamageInflictionInRadius = 15f;
-					MyMod.SaveThrowingItem.m_NoiseMakerItem.m_PlayerDamageRadius = MyMod.SaveThrowingItem.m_NoiseMakerItem.m_AIDamageRadius;
+					__state.m_NoiseMakerItem.m_PlayerDamageInflictionInRadius = 15f;
+					__state.m_NoiseMakerItem.m_PlayerDamageRadius = __state.m_NoiseMakerItem.m_AIDamageRadius;
 				}
 				DataStr.ShootSync shootSync = new DataStr.ShootSync();
 				shootSync.m_position = position;
 				shootSync.m_rotation = rotation;
-				if (MyMod.SaveThrowingItem.name.StartsWith("GEAR_Stone"))
+				if (__state.name.StartsWith("GEAR_Stone"))
 				{
 					shootSync.m_projectilename = "GEAR_Stone";
-					var gear = MyMod.SaveThrowingItem;
+					var gear = __state;
 					var body = gear.GetComponent<Rigidbody>();
 					if (MyMod.InOnline() && body != null && gear.GetComponent<Comps.DestoryStoneOnStop>() == null)
 					{
@@ -2310,7 +2305,7 @@ public class Pathes
 						settledStone.m_ShouldSendDrop = true;
 					}
 				}
-				if (MyMod.SaveThrowingItem.name.StartsWith("GEAR_NoiseMaker"))
+				if (__state.name.StartsWith("GEAR_NoiseMaker"))
 				{
 					shootSync.m_projectilename = "GEAR_NoiseMaker";
 				}
@@ -3405,6 +3400,8 @@ public class Pathes
 	{
 		internal static void Postfix(PlayerManager __instance, ref string __result)
 		{
+			string cookware = ScenePlacementSync.CookingHover(__instance.GetInteractiveObjectUnderCrosshair());
+			if (cookware != null) { __result = cookware; return; }
 			PostfixInternal(__instance, __instance.GetInteractiveObjectUnderCrosshair(), ref __result);
 		}
 
@@ -3504,7 +3501,7 @@ public class Pathes
 					__result = GetCureableHoverString(component2, interactiveObject.name);
 				}
 			}
-			else if (interactiveObject.gameObject.name.Contains("Rabbit") && interactiveObject.GetComponent<Comps.AnimalCorpseObject>() != null)
+			else if (MyMod.CanPickUpSmallGame(interactiveObject.GetComponentInParent<Comps.AnimalCorpseObject>()))
 			{
 				__result = "Pickup";
 			}
@@ -3612,7 +3609,7 @@ public class Pathes
 		{
 			var target = __instance.GetInteractiveObjectUnderCrosshair();
 			var corpse = target != null ? target.GetComponentInParent<Comps.AnimalCorpseObject>() : null;
-			if (MyMod.InOnline() && corpse != null && corpse.gameObject.name.Contains("Rabbit"))
+			if (MyMod.InOnline() && MyMod.CanPickUpSmallGame(corpse))
 			{
 				// The postfix below handles pickup. Do not let the native interaction
 				// dereference the BaseAi/interaction removed when this corpse was made.
@@ -3698,7 +3695,7 @@ public class Pathes
 				MyMod.PickupSpecialItem(interactiveObjectUnderCrosshair, interactiveObjectUnderCrosshair.GetComponent<Comps.SpecialItemDummy>().m_Extra.m_PhotoGUID);
 				__result = true;
 			}
-			else if (interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>() != null && interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>().gameObject.name.Contains("Rabbit"))
+			else if (MyMod.CanPickUpSmallGame(interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>()))
 			{
 				var corpse = interactiveObjectUnderCrosshair.GetComponentInParent<Comps.AnimalCorpseObject>();
 				if (corpse.GetComponent<ObjectGuid>() != null)
@@ -5677,18 +5674,21 @@ public class Pathes
 			}
 			if (MyMod.InOnline())
 			{
+				string species = MyMod.GetAnimalPrefabName(__instance.gameObject.name);
+				if (!MyMod.IsSmallGamePrefab(species)) return true;
 				if (MyMod.AnimalsController)
 				{
-					MyMod.OnReleaseRabbit(ClientUser.myId);
+					MyMod.OnReleaseRabbit(ClientUser.myId, species);
 				}
 				else if (MyMod.iAmHost)
 				{
-					ServerSend.RELEASERABBIT(0, MyMod.level_guid);
+					ServerSend.RELEASERABBIT(0, MyMod.level_guid, species);
 				}
 				else if (MyMod.sendMyPosition)
 				{
 					using Packet packet = new Packet(113);
 					packet.Write(MyMod.level_guid);
+					packet.Write(species);
 					SendTCPData(packet);
 				}
 				__instance.ResetControls();
@@ -6532,14 +6532,15 @@ public class Pathes
 	[HarmonyPatch(typeof(WeatherSet), "Update")]
 	internal static class WeatherSet_Update
 	{
-		private static void Prefix(WeatherSet __instance)
+		private static void Prefix(out float __state)
 		{
-			WeatherTransition.m_WeatherTransitionTimeScalar = 0f;
+			__state = WeatherTransition.m_WeatherTransitionTimeScalar;
+			if (ClientHandle.HasCurrentWeatherSync) WeatherTransition.m_WeatherTransitionTimeScalar = 0f;
 		}
 
-		private static void Postfix(WeatherSet __instance)
+		private static void Finalizer(float __state)
 		{
-			WeatherTransition.m_WeatherTransitionTimeScalar = 1f;
+			WeatherTransition.m_WeatherTransitionTimeScalar = __state;
 		}
 	}
 
@@ -7684,6 +7685,7 @@ public class Pathes
 			WeatherSetData currentWeatherSet = GameManager.GetWeatherTransitionComponent().m_CurrentWeatherSet;
 			currentWeatherSet.m_WeatherStages[0].m_PreviousType = currentWeatherStage;
 			weatherVolunteerData.WeatherType = (int)currentWeatherSet.m_CharacterizingType;
+			weatherVolunteerData.SetName = currentWeatherSet.name;
 			weatherVolunteerData.WeatherDuration = currentWeatherSet.m_CurrentSetDuration;
 			weatherVolunteerData.CurrentRegion = (int)RegionCompat.GetCurrentRegion();
 			weatherVolunteerData.PreviousStage = (int)currentWeatherStage;

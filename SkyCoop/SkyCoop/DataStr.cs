@@ -924,6 +924,7 @@ public class DataStr
 
 	public class WeatherVolunteerData
 	{
+		public string SetName = "";
 		public int WeatherType;
 
 		public float WeatherDuration = 1f;

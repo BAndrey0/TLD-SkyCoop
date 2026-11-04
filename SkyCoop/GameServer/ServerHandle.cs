@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.9")
+			if (text2 != "0.16.10")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.9");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.10");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -1201,8 +1201,8 @@ internal class ServerHandle
 
 	public static void PICKUPRABBIT(int _fromClient, Packet _packet)
 	{
-		int result = Shared.PickUpRabbit(_packet.ReadString());
-		ServerSend.GOTRABBIT(_fromClient, result);
+		int result = Shared.PickUpRabbit(_packet.ReadString(), Shared.ReadyWildlifeScene(_fromClient), out string species);
+		ServerSend.GOTRABBIT(_fromClient, result, species);
 	}
 
 	public static void HITRABBIT(int _fromClient, Packet _packet)
@@ -1218,8 +1218,10 @@ internal class ServerHandle
 	public static void RELEASERABBIT(int _fromClient, Packet _packet)
 	{
 		string lEVELGUID = _packet.ReadString();
-		MyMod.OnReleaseRabbit(_fromClient);
-		ServerSend.RELEASERABBIT(_fromClient, lEVELGUID);
+		string species = _packet.ReadString();
+		if (!MyMod.IsSmallGamePrefab(species) || Shared.ReadyWildlifeScene(_fromClient) != lEVELGUID) return;
+		if (MyMod.level_guid == lEVELGUID) MyMod.OnReleaseRabbit(_fromClient, species);
+		ServerSend.RELEASERABBIT(_fromClient, lEVELGUID, species);
 	}
 
 	public static void SENDMYAFFLCTIONS(int _fromClient, Packet _packet)

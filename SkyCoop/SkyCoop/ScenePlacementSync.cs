@@ -5,6 +5,7 @@ using System.Text.Json;
 using GameServer;
 using HarmonyLib;
 using Il2Cpp;
+using Il2CppTLD.IntBackedUnit;
 using Il2CppTLD.Placement;
 using UnityEngine;
 
@@ -26,7 +27,7 @@ internal static class ScenePlacementSync
     }
 
     private sealed record Move(string Id, string Parent, Pose Pose, string Operation, long Revision);
-    private sealed record Pot(string Gear, Pose Pose, Pose Slot);
+    private sealed record Pot(string Gear, Pose Pose, Pose Slot, string Meshes, string Food, string Mode, int Minutes, bool CanTake);
     private sealed record RemotePot(Pot State, GameObject Visual, float Expires);
     private static readonly Dictionary<string, Dictionary<string, Move>> Saved = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Move> Pending = new(StringComparer.Ordinal);
@@ -45,7 +46,9 @@ internal static class ScenePlacementSync
     internal static bool NativeCooking => cookingDepth > 0;
 
     internal static bool IsCookingDummy(GearItem gear) =>
-        gear != null && gear.GetGearName().EndsWith("Dummy", StringComparison.Ordinal) && IsPotName(gear.GetGearName());
+        gear != null && IsCookingDummyName(gear.GetGearName());
+
+    internal static bool IsCookingDummyName(string name) => IsPotName(name) && name.EndsWith("Dummy", StringComparison.OrdinalIgnoreCase);
 
     internal static bool KeepNativeCookingObject(GearItem gear) =>
         gear != null && (IsCookingDummy(gear) || gear.m_CookingPotItem?.GetGearPlacePoint() != null);
@@ -204,10 +207,68 @@ internal static class ScenePlacementSync
             AccessTools.Method(typeof(Panel_Cooking), nameof(Panel_Cooking.OnCookNormalFood)),
             AccessTools.Method(typeof(Panel_Cooking), nameof(Panel_Cooking.OnCookRecipe)),
             AccessTools.Method(typeof(Panel_GearSelect), "DoFirePickerAction"),
+            AccessTools.Method(typeof(Panel_CookWater), nameof(Panel_CookWater.OnBoil)),
+            AccessTools.Method(typeof(Panel_CookWater), nameof(Panel_CookWater.OnMeltSnow)),
+            AccessTools.Method(typeof(Panel_CookWater), nameof(Panel_CookWater.OnDoWater)),
             AccessTools.Method(typeof(CookingPotItem), nameof(CookingPotItem.StartCooking))
         };
         private static void Prefix() => cookingDepth++;
         private static void Finalizer() => cookingDepth--;
+    }
+
+    [HarmonyPatch(typeof(GearPlacePoint), nameof(GearPlacePoint.DropAndPlaceItem))]
+    private static class PlaceCookingGear
+    {
+        private static bool Prefix(GearPlacePoint __instance, out bool __state)
+        {
+            __state = false;
+            if (!MyMod.InOnline() || __instance.m_FireToAttach == null) return true;
+            if (RemotePotAt(__instance))
+            {
+                HUDMessage.AddMessage("Конфорка занята");
+                return false;
+            }
+            __state = true;
+            cookingDepth++;
+            return true;
+        }
+
+        private static void Finalizer(bool __state)
+        {
+            if (__state) cookingDepth--;
+        }
+    }
+
+    [HarmonyPatch(typeof(GearPlacePoint), nameof(GearPlacePoint.IsAllowedGearItem))]
+    private static class ValidateSlot
+    {
+        private static void Postfix(GearPlacePoint __instance, ref bool __result)
+        {
+            if (RemotePotAt(__instance)) __result = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(GearPlacePoint), nameof(GearPlacePoint.PlaceGear))]
+    private static class ReserveSlot
+    {
+        private static bool Prefix(GearPlacePoint __instance) => !RemotePotAt(__instance);
+    }
+
+    [HarmonyPatch(typeof(GearPlacePoint), nameof(GearPlacePoint.FindFirstEmptyPlacePoint))]
+    private static class FindFreeSlot
+    {
+        private static void Postfix(GameObject __0, ref GearPlacePoint __result)
+        {
+            if (__0 == null || !RemotePotAt(__result)) return;
+            __result = null;
+            foreach (var slot in __0.GetComponentsInChildren<CookingSlot>())
+            {
+                var point = slot.m_GearPlacePoint;
+                if (point == null || point.GetPlacedGear() != null || RemotePotAt(point)) continue;
+                __result = point;
+                break;
+            }
+        }
     }
 
     [HarmonyPatch(typeof(CookingPotItem), nameof(CookingPotItem.AttachToFire))]
@@ -232,10 +293,17 @@ internal static class ScenePlacementSync
                 continue;
             }
             string name = pot.m_GearItem.GetGearName();
-            if (name.EndsWith("Dummy", StringComparison.Ordinal)) name = name.Substring(0, name.Length - 5);
             if (!IsPotName(name)) continue;
+            var renderers = pot.GetComponentsInChildren<MeshRenderer>(true);
+            var visible = new System.Text.StringBuilder(Math.Min(renderers.Length, 128));
+            for (int i = 0; i < Math.Min(renderers.Length, 128); i++)
+                visible.Append(renderers[i].enabled && renderers[i].gameObject.activeInHierarchy ? '1' : '0');
+            string food = pot.m_GearItemBeingCooked != null ? pot.m_GearItemBeingCooked.GetGearName() : "";
+            bool canTake = !IsCookingDummyName(name) && !pot.IsCookingSomething() &&
+                pot.m_LitersWaterBeingBoiled.ToLiters() <= 0 && pot.m_LitersSnowBeingMelted.ToLiters() <= 0;
             PublishedPots.Add(pair.Key);
-            PublishPot(pair.Key, new Pot(name, Pose.From(pot.transform), Pose.From(point.transform)));
+            PublishPot(pair.Key, new Pot(name, Pose.From(pot.transform), Pose.From(point.transform), visible.ToString(),
+                food, pot.GetCookingState().ToString(), Mathf.CeilToInt(pot.m_MinutesUntilCooked), canTake));
         }
     }
 
@@ -250,8 +318,74 @@ internal static class ScenePlacementSync
         else SendToHost(2, MyMod.level_guid, data, key);
     }
 
-    internal static bool RemotePotAt(GearPlacePoint point) => point != null &&
-        RemotePots.Values.Any(p => (p.State.Slot.Position - point.transform.position).sqrMagnitude < .04f);
+    internal static bool RemotePotAt(GearPlacePoint point) => FindRemotePot(point).HasValue;
+
+    private static KeyValuePair<(int Owner, int Key), RemotePot>? FindRemotePot(GearPlacePoint point)
+    {
+        if (point == null || !MyMod.InOnline()) return null;
+        Vector3 position = point.transform.position;
+        foreach (var pot in RemotePots)
+            if ((pot.Value.State.Slot.Position - position).sqrMagnitude < .04f) return pot;
+        return null;
+    }
+
+    internal static string CookingHover(GameObject target)
+    {
+        var slot = target != null ? target.GetComponentInParent<CookingSlot>() : null;
+        if (slot == null || FindRemotePot(slot.m_GearPlacePoint) is not { } entry) return null;
+        var state = entry.Value.State;
+        string contents = state.Food.Length > 0 ? GameCompat.GetGearDisplayName(state.Food) :
+            state.Mode.Contains("Snow", StringComparison.OrdinalIgnoreCase) ? "Снег" :
+            state.Mode.Contains("Water", StringComparison.OrdinalIgnoreCase) ? "Вода" : "";
+        string label = GameCompat.GetGearDisplayName(state.Gear);
+        if (contents.Length > 0) label += "\n" + contents;
+        if (state.Minutes > 0 && contents.Length > 0) label += " · " + state.Minutes + " мин";
+        if (state.CanTake) label += "\nСнять посуду";
+        return label;
+    }
+
+    [HarmonyPatch(typeof(CookingSlot), nameof(CookingSlot.PerformInteraction))]
+    private static class InteractWithRemoteCookware
+    {
+        private static bool Prefix(CookingSlot __instance, ref bool __result)
+        {
+            if (FindRemotePot(__instance.m_GearPlacePoint) is not { } entry) return true;
+            __result = true;
+            if (!entry.Value.State.CanTake)
+                HUDMessage.AddMessage("Сначала освободите посуду от еды или воды");
+            else if (MyMod.iAmHost)
+                RequestCookwareRelease(0, entry.Key.Owner, entry.Key.Key, MyMod.level_guid);
+            else
+                SendToHost(4, MyMod.level_guid, entry.Key.Owner.ToString(System.Globalization.CultureInfo.InvariantCulture), entry.Key.Key);
+            return false;
+        }
+    }
+
+    private static void RequestCookwareRelease(int requester, int owner, int key, string area)
+    {
+        if (owner == requester || owner < 0 || Shared.ReadyWildlifeScene(owner) != area) return;
+        if (owner == 0) ReleaseCookware(key);
+        else
+        {
+            using var packet = MakeServerPacket(4, area, "", requester, key);
+            ServerSend.SendUDPData(owner, packet);
+        }
+    }
+
+    private static void ReleaseCookware(int key)
+    {
+        if (!LocalPots.TryGetValue(key, out var pot) || pot == null) return;
+        var point = pot.GetGearPlacePoint();
+        var gear = pot.m_GearItem;
+        if (point == null || gear == null || !IsPotName(gear.GetGearName()) || IsCookingDummy(gear) ||
+            pot.IsCookingSomething() || pot.m_LitersWaterBeingBoiled.ToLiters() > 0 || pot.m_LitersSnowBeingMelted.ToLiters() > 0) return;
+        LocalPots.Remove(key);
+        PublishedPots.Remove(key);
+        pot.DetachFromFire();
+        if (point.GetPlacedGear() == gear) point.ResetPlacedGear();
+        PublishPot(key, null);
+        MyMod.SendDropItem(gear, samepose: true);
+    }
 
     private static void ReceivePot(string area, int owner, int key, Pot pot)
     {
@@ -264,26 +398,32 @@ internal static class ScenePlacementSync
             RemotePots.Remove(identity);
             return;
         }
-        if (!IsPotName(pot.Gear) || pot.Pose?.Valid != true || pot.Slot?.Valid != true) return;
+        if (!ValidPot(pot)) return;
         if (previous == null && RemotePots.Count >= 128) return;
         var visual = previous?.Visual;
-        if (previous != null && previous.State.Gear != pot.Gear && visual != null)
+        if (previous != null && (previous.State.Gear != pot.Gear || previous.State.Meshes != pot.Meshes) && visual != null)
         {
             UnityEngine.Object.Destroy(visual);
             visual = null;
         }
-        if (visual == null) visual = CreatePotVisual(pot.Gear);
+        if (visual == null) visual = CreatePotVisual(pot);
         if (visual != null) visual.transform.SetPositionAndRotation(pot.Pose.Position, pot.Pose.Rotation);
         RemotePots[identity] = new RemotePot(pot, visual, Time.realtimeSinceStartup + 7f);
     }
 
-    private static GameObject CreatePotVisual(string gear)
+    private static bool ValidPot(Pot pot) => IsPotName(pot.Gear) && pot.Pose?.Valid == true && pot.Slot?.Valid == true &&
+        pot.Meshes != null && pot.Meshes.Length <= 128 && pot.Food != null && pot.Food.Length <= 80 && pot.Mode != null && pot.Mode.Length <= 32;
+
+    private static GameObject CreatePotVisual(Pot pot)
     {
-        var prefab = MyMod.GetGearItemObject(gear);
+        var prefab = MyMod.GetGearItemObject(pot.Gear);
         if (prefab == null || prefab.GetComponent<CookingPotItem>() == null) return null;
         var root = new GameObject("SkyCoop shared cookware");
-        foreach (var renderer in prefab.GetComponentsInChildren<MeshRenderer>(false))
+        var renderers = prefab.GetComponentsInChildren<MeshRenderer>(true);
+        for (int i = 0; i < renderers.Length && i < pot.Meshes.Length; i++)
         {
+            if (pot.Meshes[i] != '1') continue;
+            var renderer = renderers[i];
             var filter = renderer.GetComponent<MeshFilter>();
             if (filter == null || filter.sharedMesh == null || !renderer.enabled) continue;
             var mesh = new GameObject(renderer.name);
@@ -356,10 +496,11 @@ internal static class ScenePlacementSync
             else if (kind == 2)
             {
                 var pot = JsonSerializer.Deserialize<Pot>(data);
-                if (pot != null && (!IsPotName(pot.Gear) || pot.Pose?.Valid != true || pot.Slot?.Valid != true)) return;
+                if (pot != null && !ValidPot(pot)) return;
                 ReceivePot(area, from, key, pot);
                 SendToPeers(2, area, data, from, key);
             }
+            else if (kind == 4 && int.TryParse(data, out int owner)) RequestCookwareRelease(from, owner, key, area);
         }
         catch (JsonException) { }
     }
@@ -376,6 +517,7 @@ internal static class ScenePlacementSync
         {
             if (kind == 1) ReceiveMove(area, JsonSerializer.Deserialize<Move>(data));
             else if (kind == 2) ReceivePot(area, owner, key, JsonSerializer.Deserialize<Pot>(data));
+            else if (kind == 4) ReleaseCookware(key);
             else if (kind == 3)
             {
                 foreach (var move in Pending.Values.ToArray())

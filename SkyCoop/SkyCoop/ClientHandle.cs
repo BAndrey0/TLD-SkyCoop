@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.9");
+			packet.Write("0.16.10");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1119,12 +1119,12 @@ public class ClientHandle
 
 	public static void GOTRABBIT(Packet _packet)
 	{
-		MyMod.FinallyPickupRabbit(_packet.ReadInt());
+		MyMod.FinallyPickupRabbit(_packet.ReadInt(), _packet.ReadString());
 	}
 
 	public static void RELEASERABBIT(Packet _packet)
 	{
-		MyMod.OnReleaseRabbit(_packet.ReadInt());
+		MyMod.OnReleaseRabbit(_packet.ReadInt(), _packet.ReadString());
 	}
 
 	public static void HITRABBIT(Packet _packet)
@@ -1140,7 +1140,7 @@ public class ClientHandle
 		Vector3 v = _packet.ReadVector3();
 		if (MyMod.CanSpawnWildlifeInCurrentScene())
 		{
-			MyMod.OnRabbitRevived(v, _packet.UnreadLength() >= sizeof(int) ? _packet.ReadString() : "");
+			MyMod.OnRabbitRevived(v, _packet.ReadString(), _packet.ReadString());
 		}
 	}
 
@@ -1355,115 +1355,57 @@ public class ClientHandle
 		MyMod.RepeatLastRequest();
 	}
 
-	public static void DoWeatherSync(float StartAtFrac, int WeatherSeed, float Duration, WeatherStage ST, int Indx, System.Collections.Generic.List<float> Durations, System.Collections.Generic.List<float> Transitions, int TOD, float High, float Low, int PreviousStage)
-	{
-		if (MyMod.level_name != "Boot" && MyMod.level_name != "Empty" && GameManager.m_Wind != null && GameManager.m_Wind.m_ActiveSettings != null && GameManager.m_Weather != null && GameManager.m_WeatherTransition != null && GameManager.GetUniStorm() != null && MyMod.m_InterfaceManager != null && GameCompat.Panel<Panel_Loading>() != null && !GameCompat.Panel<Panel_Loading>().IsLoading())
-		{
-			System.Random random = new System.Random(WeatherSeed);
-			Weather weatherComponent = GameManager.GetWeatherComponent();
-			WeatherSetData currentWeatherSet = GameManager.GetWeatherTransitionComponent().m_CurrentWeatherSet;
-			if (currentWeatherSet == null)
-			{
-				return;
-			}
-			int num = 0;
-			for (int i = 0; i < weatherComponent.m_WeatherSetsForScene.Count; i++)
-			{
-				if (weatherComponent.m_WeatherSetsForScene[i].name == currentWeatherSet.name)
-				{
-					num = i;
-					break;
-				}
-			}
-			if (num == Indx)
-			{
-				currentWeatherSet.m_WeatherStages[0].m_PreviousType = (WeatherStage)PreviousStage;
-				currentWeatherSet.Activate(StartAtFrac, (WeatherStage)PreviousStage);
-				currentWeatherSet.m_WeatherStages[0].m_PreviousType = (WeatherStage)PreviousStage;
-				WeatherTransition.m_WeatherTransitionTimeScalar = 0f;
-				weatherComponent.m_TempHigh = High;
-				weatherComponent.m_TempLow = Low;
-			}
-			else
-			{
-				if (weatherComponent == null)
-				{
-					return;
-				}
-				if (weatherComponent.m_WeatherSetsForScene.Count == 0)
-				{
-					for (int j = 0; j < weatherComponent.m_DefaultWeatherSets.Length; j++)
-					{
-						if (weatherComponent.m_DefaultWeatherSets[j] != null)
-						{
-							weatherComponent.m_WeatherSetsForScene.Add(weatherComponent.m_DefaultWeatherSets[j]);
-						}
-					}
-				}
-				WeatherSetData weatherSetData = null;
-				if (Indx >= 0 && Indx < weatherComponent.m_WeatherSetsForScene.Count)
-				{
-					weatherSetData = weatherComponent.m_WeatherSetsForScene[Indx];
-				}
-				else
-				{
-					int num2 = 0;
-					for (int k = 0; k < weatherComponent.m_WeatherSetsForScene.Count; k++)
-					{
-						WeatherSetData weatherSetData2 = weatherComponent.m_WeatherSetsForScene[k];
-						if (weatherSetData2.m_CharacterizingType == ST)
-						{
-							num2 += weatherSetData2.m_SameTypeSelectionWeight;
-						}
-					}
-					int num3 = random.Next(0, num2);
-					for (int num4 = weatherComponent.m_WeatherSetsForScene.Count - 1; num4 >= 0; num4--)
-					{
-						WeatherSetData weatherSetData3 = weatherComponent.m_WeatherSetsForScene[num4];
-						if (weatherSetData3.m_CharacterizingType == ST)
-						{
-							num2 -= weatherSetData3.m_SameTypeSelectionWeight;
-							if (num3 >= num2)
-							{
-								weatherSetData = weatherSetData3;
-								break;
-							}
-						}
-					}
-				}
-				if (weatherSetData != null)
-				{
-					_ = weatherSetData.m_IsDefaultSet;
-				}
-				WeatherSetData weatherSetData4 = weatherSetData;
-				if (weatherSetData4 == null)
-				{
-					return;
-				}
-				weatherSetData4.m_CurrentSetDuration = Duration;
-				for (int l = 0; l < weatherSetData4.m_WeatherStages.Length; l++)
-				{
-					WeatherSetStage weatherSetStage = weatherSetData4.m_WeatherStages[l];
-					if (Durations.Count > l && Transitions.Count > l)
-					{
-						weatherSetStage.m_CurrentDuration = Durations[l];
-						weatherSetStage.m_CurrentTransitionTime = Transitions[l];
-					}
-				}
-				WeatherTransition.m_WeatherTransitionTimeScalar = 0f;
-				GameManager.GetWeatherTransitionComponent().ActivateWeatherSet(weatherSetData4, StartAtFrac, (WeatherStage)PreviousStage);
-				currentWeatherSet.m_WeatherStages[0].m_PreviousType = (WeatherStage)PreviousStage;
-				weatherComponent.m_TempHigh = High;
-				weatherComponent.m_TempLow = Low;
-			}
-		}
-		else
-		{
-			MelonLogger.Msg("Can't apply WeatherSync, because loading, skipping");
-		}
-	}
+    private static string syncedWeatherScene;
+    private static float syncedWeatherUntil;
+    internal static bool HasCurrentWeatherSync => MyMod.InOnline() && syncedWeatherScene == MyMod.level_guid &&
+        Time.realtimeSinceStartup < syncedWeatherUntil;
 
-	public static void DEDICATEDWEATHER(Packet _packet)
+    public static void DoWeatherSync(float start, int seed, float duration, WeatherStage type, int index,
+        System.Collections.Generic.List<float> durations, System.Collections.Generic.List<float> transitions,
+        int tod, float high, float low, int previousStage, string setName)
+    {
+        if (MyMod.LoadingScreenIsOn || !WildlifeSpawnAuthorityPolicy.WorldScene(MyMod.level_name) ||
+            !float.IsFinite(start) || !float.IsFinite(duration) || duration <= 0) return;
+        var weather = GameManager.m_Weather;
+        var transition = GameManager.m_WeatherTransition;
+        if (weather == null || transition == null || transition.m_CurrentWeatherSet == null) return;
+        var sets = weather.m_WeatherSetsForScene;
+        if (sets == null || string.IsNullOrEmpty(setName)) return;
+        WeatherSetData selected = null;
+        for (int i = 0; i < sets.Count; i++)
+        {
+            var candidate = sets[i];
+            if (candidate != null && candidate.name == setName && candidate.m_CharacterizingType == type)
+            {
+                selected = candidate;
+                break;
+            }
+        }
+        var current = transition.m_CurrentWeatherSet;
+        if (selected == null && current.name == setName && current.m_CharacterizingType == type) selected = current;
+        if (selected == null || selected.m_WeatherStages == null || selected.m_WeatherStages.Length == 0)
+        {
+            syncedWeatherUntil = 0;
+            return;
+        }
+        selected.m_CurrentSetDuration = duration;
+        for (int i = 0; i < selected.m_WeatherStages.Length && i < durations.Count && i < transitions.Count; i++)
+        {
+            selected.m_WeatherStages[i].m_CurrentDuration = durations[i];
+            selected.m_WeatherStages[i].m_CurrentTransitionTime = transitions[i];
+        }
+        var previous = (WeatherStage)previousStage;
+        if (current.name == setName)
+            current.Activate(Mathf.Clamp01(start), previous);
+        else
+            transition.ActivateWeatherSet(selected, Mathf.Clamp01(start), previous);
+        weather.m_TempHigh = high;
+        weather.m_TempLow = low;
+        syncedWeatherScene = MyMod.level_guid;
+        syncedWeatherUntil = Time.realtimeSinceStartup + 4f;
+    }
+
+    public static void DEDICATEDWEATHER(Packet _packet)
 	{
 		WeatherStage sT = (WeatherStage)_packet.ReadInt();
 		int indx = _packet.ReadInt();
@@ -1476,7 +1418,7 @@ public class ClientHandle
 		float high = _packet.ReadFloat();
 		float low = _packet.ReadFloat();
 		int previousStage = _packet.ReadInt();
-		DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage);
+		DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, _packet.ReadString());
 	}
 
 	public static void WEATHERVOLUNTEER(Packet _packet)

@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.9";
+		public const string Version = "0.16.10";
 
 		public const string DownloadLink = null;
 
@@ -330,7 +330,6 @@ public class MyMod : MelonMod
 
 	public static int NoHostResponceSeconds = 0;
 
-	public static GearItem SaveThrowingItem = null;
 
 	public static int OverridedHourse = 12;
 
@@ -3754,7 +3753,15 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void FinallyPickupRabbit(int result)
+	public static bool IsSmallGamePrefab(string species) =>
+		string.Equals(species, "WILDLIFE_Rabbit", System.StringComparison.OrdinalIgnoreCase) ||
+		string.Equals(species, "WILDLIFE_Ptarmigan", System.StringComparison.OrdinalIgnoreCase);
+
+	public static bool CanPickUpSmallGame(Comps.AnimalCorpseObject corpse) => corpse != null &&
+		IsSmallGamePrefab(GetAnimalPrefabName(corpse.gameObject.name)) &&
+		(corpse.m_Knocked || corpse.gameObject.name.Contains("Rabbit"));
+
+	public static void FinallyPickupRabbit(int result, string species)
 	{
 		RemovePleaseWait();
 		switch (result)
@@ -3781,7 +3788,7 @@ public class MyMod : MelonMod
 		}
 		case 2:
 		{
-			GameObject prefab = WildlifeCompat.GetPrefab("WILDLIFE_Rabbit");
+			GameObject prefab = IsSmallGamePrefab(species) ? WildlifeCompat.GetPrefab(species) : null;
 			if ((bool)prefab)
 			{
 				GameObject gameObject = UnityEngine.Object.Instantiate(prefab, GameManager.GetPlayerTransform().transform.position, GameManager.GetPlayerTransform().transform.rotation);
@@ -3828,20 +3835,20 @@ public class MyMod : MelonMod
 
 	private static void MarkSharedRabbit(BaseAi ai)
 	{
-		if (ai == null || ai.GetComponent<AiRabbit>() == null) return;
+		if (ai == null || (ai.GetComponent<AiRabbit>() == null && ai.GetComponent<AiPtarmigan>() == null)) return;
 		var updates = ai.GetComponent<Comps.AnimalUpdates>();
 		if (updates == null) return;
 		updates.m_SharedRabbit = true;
 		updates.m_MyControlled = true;
 	}
 
-	public static void OnRabbitRevived(Vector3 v3, string regionGuid = "")
+	public static void OnRabbitRevived(Vector3 v3, string regionGuid, string species)
 	{
 		if (!CanSpawnWildlifeInCurrentScene())
 		{
 			return;
 		}
-		GameObject prefab = WildlifeCompat.GetPrefab("WILDLIFE_Rabbit");
+		GameObject prefab = IsSmallGamePrefab(species) ? WildlifeCompat.GetPrefab(species) : null;
 		if (prefab == null)
 		{
 			return;
@@ -3867,13 +3874,13 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void OnReleaseRabbit(int from)
+	public static void OnReleaseRabbit(int from, string species)
 	{
 		if (!CanSpawnWildlifeInCurrentScene())
 		{
 			return;
 		}
-		GameObject prefab = WildlifeCompat.GetPrefab("WILDLIFE_Rabbit");
+		GameObject prefab = IsSmallGamePrefab(species) ? WildlifeCompat.GetPrefab(species) : null;
 		if (prefab == null)
 		{
 			return;
@@ -3932,7 +3939,8 @@ public class MyMod : MelonMod
 		}
 		if (iAmHost)
 		{
-			FinallyPickupRabbit(Shared.PickUpRabbit(GUID));
+			int result = Shared.PickUpRabbit(GUID, level_guid, out string species);
+			FinallyPickupRabbit(result, species);
 		}
 	}
 
@@ -5696,7 +5704,7 @@ public class MyMod : MelonMod
 		}
 		GameObject gameObject = UnityEngine.Object.Instantiate(prefab, v3, rot);
 		Comps.AnimalActor animalActor = gameObject.AddComponent<Comps.AnimalActor>();
-		animalActor.m_SharedRabbit = gameObject.GetComponent<AiRabbit>() != null;
+		animalActor.m_SharedRabbit = gameObject.GetComponent<AiRabbit>() != null || gameObject.GetComponent<AiPtarmigan>() != null;
 		animalActor.m_LastWildlifeSnapshot = Time.realtimeSinceStartup;
 		animalActor.m_Animal = gameObject;
 		animalActor.m_Animator = RemoveAnimalComponents(gameObject);
@@ -7682,6 +7690,7 @@ public class MyMod : MelonMod
 
 	public static void SendDropItem(GearItem gear, int nums = 0, int total = 0, bool samepose = false, int variant = 0, GameObject Around = null)
 	{
+		if (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(gear)) return;
 		if (!(gear != null) || !(gear.gameObject != null))
 		{
 			return;

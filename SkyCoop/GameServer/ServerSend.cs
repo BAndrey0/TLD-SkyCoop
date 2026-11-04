@@ -1611,11 +1611,11 @@ internal class ServerSend
 		SendTCPData(_toClient, packet);
 	}
 
-	public static void GOTRABBIT(int _toClient, int result)
+	public static void GOTRABBIT(int _toClient, int result, string species)
 	{
 		using Packet packet = new Packet(112);
 		packet.Write(result);
-		packet.Write(_toClient);
+		packet.Write(species);
 		SendTCPData(_toClient, packet);
 	}
 
@@ -1654,10 +1654,11 @@ internal class ServerSend
 		SendUDPDataToAllButNotSender(packet, _from, LEVELGUID);
 	}
 
-	public static void RELEASERABBIT(int _from, string LEVELGUID)
+	public static void RELEASERABBIT(int _from, string LEVELGUID, string species)
 	{
 		using Packet packet = new Packet(113);
 		packet.Write(_from);
+		packet.Write(species);
 		SendUDPDataToAllButNotSender(packet, _from, LEVELGUID);
 	}
 
@@ -1676,11 +1677,12 @@ internal class ServerSend
 		}
 	}
 
-	public static void RABBITREVIVED(int _from, Vector3 v3, string LEVELGUID, string regionGuid)
+	public static void RABBITREVIVED(int _from, Vector3 v3, string LEVELGUID, string regionGuid, string species)
 	{
 		using Packet packet = new Packet(115);
 		packet.Write(v3);
 		packet.Write(regionGuid ?? "");
+		packet.Write(species);
 		SendUDPDataToAllButNotSender(packet, _from, LEVELGUID);
 	}
 
@@ -1938,7 +1940,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.9");
+		packet.Write("0.16.10");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));
@@ -1951,7 +1953,7 @@ internal class ServerSend
 		SendUDPDataToAll(packet);
 	}
 
-	public static void DEDICATEDWEATHER(int Region, int Type, int Indx, float StartAtFrac, int Seed, float Duration, List<float> Durations, List<float> Transitions, int TOD, float High, float Low, int PreviousStage)
+	public static void DEDICATEDWEATHER(int Region, int Type, int Indx, float StartAtFrac, int Seed, float Duration, List<float> Durations, List<float> Transitions, int TOD, float High, float Low, int PreviousStage, string setName)
 	{
 		using Packet packet = new Packet(150);
 		packet.Write(Type);
@@ -1965,6 +1967,7 @@ internal class ServerSend
 		packet.Write(High);
 		packet.Write(Low);
 		packet.Write(PreviousStage);
+		packet.Write(setName ?? "");
 		SendUDPDataToAll(packet, Region, IgnoreLoaders: true);
 	}
 

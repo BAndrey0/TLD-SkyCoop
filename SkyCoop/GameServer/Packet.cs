@@ -1185,6 +1185,7 @@ public class Packet : IDisposable
 
 	public void Write(DataStr.WeatherVolunteerData obj)
 	{
+		Write(obj.SetName);
 		Write(obj.WeatherType);
 		Write(obj.WeatherDuration);
 		Write(obj.CurrentRegion);
@@ -1204,6 +1205,7 @@ public class Packet : IDisposable
 	{
 		return new DataStr.WeatherVolunteerData
 		{
+			SetName = ReadString(),
 			WeatherType = ReadInt(),
 			WeatherDuration = ReadFloat(),
 			CurrentRegion = ReadInt(),

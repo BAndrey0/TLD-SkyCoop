@@ -67,6 +67,7 @@ public class Shared
 		public int m_WeatherType;
 
 		public int m_WeatherSetIndex;
+		public string m_WeatherSetName = "";
 
 		public float m_Time;
 
@@ -145,6 +146,7 @@ public class Shared
 		{
 			m_Region = Data.CurrentRegion;
 			m_WeatherSetIndex = Data.SetIndex;
+			m_WeatherSetName = Data.SetName;
 			m_Duration = Data.WeatherDuration;
 			m_WeatherType = Data.WeatherType;
 			m_StageDuration = Data.StageDuration;
@@ -166,6 +168,7 @@ public class Shared
 			m_Progress = 0f;
 			m_WeatherTimeOfDayCount = 0;
 			m_WeatherSetIndex = Data.SetIndex;
+			m_WeatherSetName = Data.SetName;
 			m_Duration = Data.WeatherDuration;
 			m_WeatherType = Data.WeatherType;
 			m_StageDuration = Data.StageDuration;
@@ -709,9 +712,9 @@ public class Shared
 				regionWeather.AddTOD(90, CurrentTimeOfDayStatus);
 				if (regionWeather.m_Region == MyMod.GetCurrentRegionIfPossible())
 				{
-					ClientHandle.DoWeatherSync(regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, (WeatherStage)regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage);
+					ClientHandle.DoWeatherSync(regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, (WeatherStage)regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage, regionWeather.m_WeatherSetName);
 				}
-				ServerSend.DEDICATEDWEATHER(regionWeather.m_Region, regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage);
+				ServerSend.DEDICATEDWEATHER(regionWeather.m_Region, regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage, regionWeather.m_WeatherSetName);
 			}
 		}
 	}
@@ -2069,8 +2072,14 @@ public class Shared
 		}
 	}
 
-	public static int PickUpRabbit(string GUID)
+	public static int PickUpRabbit(string GUID, string scene, out string species)
 	{
+		species = "";
+		if (!AnimalsKilled.TryGetValue(GUID, out var animal) || animal.m_LevelGUID != scene ||
+			!MyMod.IsSmallGamePrefab(animal.m_PrefabName)) return 0;
+		bool stunned = StunnedRabbits.ContainsKey(GUID);
+		if (!stunned && !animal.m_PrefabName.Equals("WILDLIFE_Rabbit", StringComparison.OrdinalIgnoreCase)) return 0;
+		species = animal.m_PrefabName;
 		MPSaveManager.AnimalsKilledChanged = true;
 		if (StunnedRabbits.ContainsKey(GUID))
 		{
@@ -2169,11 +2178,11 @@ public class Shared
 		if (rabbit.m_LevelGUID == MyMod.level_guid) MyMod.DeleteAnimal(GUID);
 		if (rabbit.m_LevelGUID == MyMod.level_guid && MyMod.CanSpawnWildlifeInCurrentScene())
 		{
-			MyMod.OnRabbitRevived(rabbit.m_Position, rabbit.m_RegionGUID);
+			MyMod.OnRabbitRevived(rabbit.m_Position, rabbit.m_RegionGUID, rabbit.m_PrefabName);
 		}
 		else
 		{
-			ServerSend.RABBITREVIVED(0, rabbit.m_Position, rabbit.m_LevelGUID, rabbit.m_RegionGUID);
+			ServerSend.RABBITREVIVED(0, rabbit.m_Position, rabbit.m_LevelGUID, rabbit.m_RegionGUID, rabbit.m_PrefabName);
 		}
 	}
 
@@ -2228,6 +2237,7 @@ public class Shared
 			animalKilled.m_LevelGUID = LevelGUID;
 			animalKilled.m_CreatedTime = MyMod.MinutesFromStartServer;
 			animalKilled.m_RegionGUID = RegionGUID;
+			animalKilled.m_Knocked = knocked;
 			DataStr.BodyHarvestUnits bodyHarvestUnits = GetBodyHarvestUnits(prefab);
 			animalKilled.m_Meat = bodyHarvestUnits.m_Meat;
 			animalKilled.m_Guts = bodyHarvestUnits.m_Guts;
@@ -2507,6 +2517,7 @@ public class Shared
 
 	public static void FakeDropItem(DataStr.DroppedGearItemDataPacket GearData, bool JustLoad = false)
 	{
+		if (ScenePlacementSync.IsCookingDummyName(GearData?.m_Extra?.m_GearName)) return;
 		DroppedGearDiagnostics.ObserveVisual(GearData, JustLoad);
 		if (MyMod.iAmHost && !JustLoad)
 		{
