@@ -6,7 +6,7 @@ namespace SkyCoop;
 // boundaries can be checked without loading a save.
 public static class CoopBalancePolicy
 {
-	public const float BaseAwakeHours = 20f;
+	public const float BaseAwakeHours = 16f;
 	public const float RecoverySeconds = 600f;
 	public static float Cost(float hours, float rate) => Math.Max(0, hours) * Math.Max(0, rate);
 	public static bool CanStart(float strength, float cost, bool resumable) => resumable ? strength > .5f : strength + .001f >= cost;

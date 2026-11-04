@@ -63,6 +63,7 @@ public class Pathes
 
 		public static void Postfix(GearItem __instance, int numUnits, GearItem __result)
 		{
+			if (ScenePlacementSync.NativeCooking || ScenePlacementSync.IsCookingDummy(__instance)) return;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -104,45 +105,6 @@ public class Pathes
 			{
 				MelonLogger.Msg("[Postfix]Gear has IgnoreDropOverride doing drop without sync");
 				UnityEngine.Object.Destroy(__instance.gameObject.GetComponent<Comps.IgnoreDropOverride>());
-			}
-		}
-	}
-
-	[HarmonyPatch(typeof(Panel_GearSelect), "DoFirePickerAction")]
-	private static class Panel_GearSelect_DoFirePickerAction
-	{
-		internal static void Prefix(Panel_GearSelect __instance)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			GearItem selectedItem = __instance.GetSelectedItem();
-			if (selectedItem != null)
-			{
-				MelonLogger.Msg("Gear going to be placed adding IgnoreDropOverride");
-				selectedItem.gameObject.AddComponent<Comps.IgnoreDropOverride>();
-			}
-		}
-	}
-
-	[HarmonyPatch(typeof(CookingPotItem), "StartCooking")]
-	private static class CookingPotItem_StartCooking
-	{
-		internal static void Prefix(CookingPotItem __instance, GearItem gearItemToCook)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (gearItemToCook != null)
-			{
-				MelonLogger.Msg("Going to cook " + gearItemToCook.GetGearName() + " IgnoreDropOverride");
-				gearItemToCook.gameObject.AddComponent<Comps.IgnoreDropOverride>();
 			}
 		}
 	}
@@ -215,9 +177,7 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "PlaceMeshInWorld")]
 	private static class PlayerManager_PlaceMeshInWorld
 	{
-		private static GameObject saveObj;
-
-		internal static void Prefix(PlayerManager __instance)
+		internal static void Prefix(PlayerManager __instance, out GameObject __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -225,15 +185,12 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (MyMod.InOnline() && __instance.m_ObjectToPlace != null)
-			{
-				MelonLogger.Msg("Going to place mesh!");
-				saveObj = __instance.m_ObjectToPlace;
-			}
+			__state = MyMod.InOnline() ? __instance.m_ObjectToPlace : null;
 		}
 
-		internal static void Postfix(PlayerManager __instance)
+		internal static void Postfix(GameObject __state)
 		{
+			var saveObj = __state;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -257,6 +214,13 @@ public class Pathes
 						return;
 					}
 				}
+			}
+			if (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(saveObj.GetComponent<GearItem>())) return;
+			if (saveObj.GetComponent<DecorationItem>() != null || (saveObj.GetComponent<GearItem>() == null &&
+				saveObj.GetComponent<Il2CppTLD.Placement.Placeable>() != null))
+			{
+				ScenePlacementSync.PublishFurniture(saveObj);
+				return;
 			}
 			MelonLogger.Msg("Gear placed!");
 			int variant = 0;
@@ -4408,7 +4372,7 @@ public class Pathes
 	public static class CookingSlot_CanBeInteractedWith
 	{
 		public static bool Prefix(CookingSlot __instance)
-			=> __instance.m_GearPlacePoint == null || FireHeatSync.AllowCooking(__instance.m_GearPlacePoint.m_FireToAttach);
+			=> __instance.m_GearPlacePoint == null || (!ScenePlacementSync.RemotePotAt(__instance.m_GearPlacePoint) && FireHeatSync.AllowCooking(__instance.m_GearPlacePoint.m_FireToAttach));
 	}
 
 	[HarmonyPatch(typeof(CookingPotItem), "CanOpenCookingInterface")]
@@ -7085,6 +7049,28 @@ public class Pathes
 	[HarmonyPatch(typeof(Panel_Inventory_Examine), "OnRead")]
 	private static class Panel_Inventory_Examine_OnRead
 	{
+		private static System.Exception Finalizer(Panel_Inventory_Examine __instance, System.Exception __exception)
+		{
+			if (__exception is not Il2CppInterop.Runtime.Il2CppException ||
+				!__exception.Message.Contains("NullReferenceException") || !MyMod.InOnline()) return __exception;
+			var book = __instance.m_GearItem;
+			var research = book != null ? book.m_ResearchItem : null;
+			if (research == null || __instance.IsReading() || __instance.m_HoursToRead <= 0 || research.IsResearchComplete()) return __exception;
+			if (GameManager.GetWeatherComponent()?.IsTooDarkForAction(ActionsToBlock.Reading) == true)
+			{
+				HUDMessage.AddMessage("Слишком темно для чтения");
+				return null;
+			}
+			if (GameManager.GetFatigueComponent()?.IsExhausted() == true)
+			{
+				HUDMessage.AddMessage("Вы слишком устали для чтения");
+				return null;
+			}
+			__instance.StartRead(__instance.m_HoursToRead * 60, research.m_ReadAudio);
+			MelonLogger.Msg("[Research] Started reading after native OnRead failure: " + book.GetGearName());
+			return null;
+		}
+
 		private static bool Prefix(Panel_Inventory_Examine __instance)
 		{
 			if ((bool)__instance.m_GearItem && __instance.m_GearItem.GetGearName() == "GEAR_SCSanityBook")
