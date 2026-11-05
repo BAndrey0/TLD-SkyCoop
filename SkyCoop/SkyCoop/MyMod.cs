@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.11";
+		public const string Version = "0.16.12";
 
 		public const string DownloadLink = null;
 
@@ -1647,6 +1647,7 @@ public class MyMod : MelonMod
 		uConsole.RegisterCommand("play_sound", (System.Action)ConsolePlaySound);
 		CheatConsole.RegisterCommands();
 		Comps.RegisterComponents();
+		SelfTest.ProbeInteractions();
 		ExpeditionManager.InitClues();
 		Shared.LoadInterloperReplace();
 		TFHUD.Enabled = System.Environment.GetCommandLineArgs().Contains("-tfhud");
@@ -6860,6 +6861,13 @@ public class MyMod : MelonMod
 				gameObject.GetComponent<SnareItem>().SetState((SnareState)num);
 			}
 			ThrownFlareSync.PrepareReplica(gameObject, extra);
+			// Prefab interactions refer to the native GearItem, which the shared replica removes.
+			foreach (var interaction in gameObject.GetComponentsInChildren<Il2CppTLD.Interactions.BaseInteraction>(true))
+			{
+				interaction.enabled = false;
+				UnityEngine.Object.Destroy(interaction);
+			}
+			foreach (var body in gameObject.GetComponentsInChildren<Rigidbody>(true)) body.isKinematic = true;
 			foreach (Component component3 in gameObject.GetComponents<Component>())
 			{
 				string name = component3.GetIl2CppType().Name;
@@ -9633,6 +9641,10 @@ public class MyMod : MelonMod
 		return result;
 	}
 
+	private static int lastSleepVote;
+	private static float nextSleepVoteSend;
+	private static float sleepVoteChangedAt;
+
 	public static void SyncSleeping()
 	{
 		if (WaitForSleepLable != null && WaitForSleepLable.activeSelf)
@@ -9643,12 +9655,23 @@ public class MyMod : MelonMod
 		{
 			IsSleeping = GameManager.GetPlayerManagerComponent().PlayerIsSleeping();
 		}
-		if (PreviousSleeping == IsSleeping)
+		bool stateChanged = PreviousSleeping != IsSleeping;
+		if (!IsSleeping) MyCycleSkip = 0;
+		bool voteChanged = lastSleepVote != MyCycleSkip;
+		float now = Time.realtimeSinceStartup;
+		if (voteChanged)
+		{
+			lastSleepVote = MyCycleSkip;
+			sleepVoteChangedAt = now;
+		}
+		bool resend = sendMyPosition && now >= nextSleepVoteSend &&
+			(SleepRendezvousFix.Waiting || (MyCycleSkip == 0 && now < sleepVoteChangedAt + 3f));
+		if (!stateChanged && !voteChanged && !resend)
 		{
 			return;
 		}
 		PreviousSleeping = IsSleeping;
-		if (GameManager.GetRestComponent().IsSleeping() || (WaitForSleepLable != null && WaitForSleepLable.activeSelf))
+		if (stateChanged && (GameManager.GetRestComponent().IsSleeping() || (WaitForSleepLable != null && WaitForSleepLable.activeSelf)))
 		{
 			MelonLogger.Msg("Going to sleep");
 			MelonLogger.Msg("Skiping Cycle time " + MyCycleSkip);
@@ -9659,7 +9682,7 @@ public class MyMod : MelonMod
 				SyncMovement(InFight: false, GameManager.GetPlayerObject().transform);
 			}
 		}
-		else
+		else if (stateChanged)
 		{
 			MyCycleSkip = 0;
 			MelonLogger.Msg("Has wakeup or cancle sleep");
@@ -9668,6 +9691,7 @@ public class MyMod : MelonMod
 		}
 		if (sendMyPosition)
 		{
+			nextSleepVoteSend = now + .5f;
 			using (Packet packet = new Packet(12))
 			{
 				packet.Write(MyCycleSkip);
@@ -11320,6 +11344,8 @@ public class MyMod : MelonMod
 		SessionPing.Tick();
 		DroppedInspectSync.Tick();
 		PendingPickupVisual.Tick();
+		DroppedGearInteraction.Tick();
+		ThrownStoneSync.Tick();
 		WildlifeSceneHandshake.Tick();
 		WildlifeSpawnerAudit.Tick();
 		AnimalTracksSync.Tick();

@@ -151,6 +151,8 @@ public static class SleepRendezvousFix
 		{
 			return;
 		}
+		// The native sleep navigation parent is hidden on the pass-time tab.
+		if (new_button.transform.parent != panel.transform) new_button.transform.SetParent(panel.transform, true);
 		GenericButtonMouseSpawner component = new_button.GetComponent<GenericButtonMouseSpawner>();
 		System.Collections.Generic.List<UIButton> list = GatherButtons(new_button, component, panel.m_SleepButton);
 		int num = 17;
@@ -183,7 +185,9 @@ public static class SleepRendezvousFix
 			}
 			MelonLogger.Msg("[Sleep wait] Bound explicit wait action to " + list.Count + " native button(s).");
 		}
-		bool flag = panel.isActiveAndEnabled && !panel.m_ShowPassTime && MyMod.InOnline();
+		bool flag = panel.isActiveAndEnabled && MyMod.InOnline() && !waiting;
+		foreach (var label in new_button.GetComponentsInChildren<UILabel>(true))
+			label.text = panel.m_ShowPassTime ? "ПОДОЖДАТЬ ВСЕМ ВМЕСТЕ" : "СПАТЬ ВСЕМ ВМЕСТЕ";
 		new_button.SetActive(flag);
 		if (component != null)
 		{
@@ -234,6 +238,7 @@ public static class SleepRendezvousFix
 				panel.m_SleepHours = Math.Abs(offeredHours != 0 ? offeredHours : requestedHours);
 			}
 		}
+		MyMod.MyCycleSkip = waiting ? requestedHours : MyMod.IsSleeping ? MyMod.MyCycleSkip : 0;
 	}
 
 	private static bool NativeSleepAllowed(bool explain)
@@ -311,7 +316,11 @@ public static class SleepRendezvousFix
 			HUDMessage.AddMessage(offeredHours < 0 ? "Группа выбрала ожидание. Открой вкладку ожидания." : "Группа выбрала сон. Открой вкладку сна.");
 			return;
 		}
-		if (passTime && Panel_Rest.CheckPassTimeErrorMessage()) return;
+		if (passTime && (!panel_Rest.GetPassTimeAllowed() || GameManager.GetPlayerStruggleComponent().InStruggle()))
+		{
+			HUDMessage.AddMessage("Сейчас нельзя ждать.");
+			return;
+		}
 		if (panel_Rest.m_SleepHours <= 0)
 		{
 			HUDMessage.AddMessage("Выбери хотя бы один час.");

@@ -153,7 +153,9 @@ public static class GameCompat
 		{
 			return null;
 		}
-		return pm.GetInteractiveObjectUnderCrosshairs(2.5f);
+		var target = pm.GetInteractiveObjectUnderCrosshairs(2.5f);
+		var dropped = DroppedGearInteraction.Find(target);
+		return dropped != null ? dropped.gameObject : target;
 	}
 
 	public static ItemWeight Kilograms(float kilograms)

@@ -62,8 +62,55 @@ public static class SelfTest
 		}
 	}
 
+	internal static void ProbeInteractions()
+	{
+		if (Environment.GetEnvironmentVariable("SKYCOOP_INTERACTION_PROBE") == "1")
+		{
+			Application.runInBackground = true;
+			if (!started)
+			{
+				started = true;
+				bool previousHost = MyMod.iAmHost;
+				bool previousLoading = MyMod.LoadingScreenIsOn;
+				MyMod.iAmHost = true;
+				MyMod.LoadingScreenIsOn = false;
+				var obj = new GameObject("Shared drop probe");
+				try
+				{
+					var dummy = obj.AddComponent<Comps.DroppedGearDummy>();
+					dummy.m_LocalizedDisplayName = "Stone probe";
+					var interaction = dummy.Cast<Il2CppTLD.Interactions.IInteraction>();
+					interaction.InitializeInteraction();
+					interaction.UpdateInteraction();
+					if (!interaction.HoverText.Contains("Stone probe") || interaction.GetInteractiveObject() != obj || !interaction.CanInteract)
+						throw new InvalidOperationException("Shared drop native interaction failed: text=" + interaction.HoverText +
+							", object=" + interaction.GetInteractiveObject()?.name + ", canInteract=" + interaction.CanInteract + ", enabled=" + interaction.IsEnabled);
+					SleepRendezvousFix.RecordVote(2, -5);
+					SleepRendezvousFix.RecordVote(1, -2);
+					if (SleepRendezvousFix.SelectOffer(id => id == 2 ? -5 : -2) != -5)
+						throw new InvalidOperationException("First group wait duration was replaced");
+					SleepRendezvousFix.RecordVote(2, 0);
+					if (SleepRendezvousFix.SelectOffer(id => id == 1 ? -2 : 0) != -2)
+						throw new InvalidOperationException("Group wait cancellation failed");
+					MelonLogger.Msg("[Interaction probe] PASS native shared-drop interface, hover, target and first-voter wait duration");
+				}
+				catch (Exception ex) { MelonLogger.Error("[Interaction probe] FAIL " + ex); }
+				finally
+				{
+					SleepRendezvousFix.ClearVotes();
+					MyMod.iAmHost = previousHost;
+					MyMod.LoadingScreenIsOn = previousLoading;
+					UnityEngine.Object.Destroy(obj);
+					Application.Quit();
+				}
+			}
+			return;
+		}
+	}
+
 	public static void Tick()
 	{
+		if (Environment.GetEnvironmentVariable("SKYCOOP_INTERACTION_PROBE") == "1") return;
 		if(Environment.GetEnvironmentVariable("SKYCOOP_CATALOG_PROBE")=="1")
 		{
 			Application.runInBackground=true;

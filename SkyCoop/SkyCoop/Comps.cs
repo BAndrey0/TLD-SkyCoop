@@ -14,7 +14,7 @@ namespace SkyCoop;
 
 public class Comps
 {
-	public class DroppedGearDummy : MonoBehaviour
+	public class DroppedGearDummy : Il2CppTLD.Interactions.SimpleInteraction
 	{
 		public string m_LocalizedDisplayName;
 
@@ -28,6 +28,27 @@ public class Comps
 			: base(ptr)
 		{
 		}
+
+		public override bool IsEnabled => MyMod.InOnline() && !MyMod.LoadingScreenIsOn;
+
+		public override void Start() => RefreshText();
+
+		public override void InitializeInteraction() => RefreshText();
+
+		public override void UpdateInteraction(float deltaTime) => RefreshText();
+
+		public override void HideInteraction() { }
+
+		private void RefreshText()
+		{
+			m_CanInteract = true;
+			string text = m_LocalizedDisplayName;
+			Pathes.PlayerManager_GetInteractiveObjectDisplayText.PostfixInternal(
+				GameManager.GetPlayerManagerComponent(), gameObject, ref text);
+			HoverText = text ?? "";
+		}
+
+		public override bool PerformInteraction() => DroppedGearInteraction.PickUp(this);
 	}
 
 	public class SpecialItemDummy : MonoBehaviour
@@ -104,6 +125,10 @@ public class Comps
 
 		private float m_StationarySince = -1f;
 
+		private float m_NextFlightSend;
+
+		private int m_FlightSequence;
+
 		public DestoryStoneOnStop(IntPtr ptr)
 			: base(ptr)
 		{
@@ -117,8 +142,14 @@ public class Comps
 			}
 			if (!MyMod.InOnline() || m_Gear.m_InPlayerInventory)
 			{
+				if (m_ShouldSendDrop && m_FlightSequence > 0) ThrownStoneSync.Publish(m_Gear, ++m_FlightSequence, true);
 				Destroy(this);
 				return;
+			}
+			if (m_ShouldSendDrop && Time.realtimeSinceStartup >= m_NextFlightSend)
+			{
+				m_NextFlightSend = Time.realtimeSinceStartup + 1f / 15f;
+				ThrownStoneSync.Publish(m_Gear, ++m_FlightSequence, false);
 			}
 			if (!m_RB.isKinematic && !m_RB.IsSleeping() &&
 				(m_RB.velocity.sqrMagnitude > 0.01f || m_RB.angularVelocity.sqrMagnitude > 0.01f))
@@ -131,6 +162,7 @@ public class Comps
 			m_SendDrop = true;
 			if (m_ShouldSendDrop)
 			{
+				ThrownStoneSync.Publish(m_Gear, ++m_FlightSequence, true);
 				var player = GameManager.GetPlayerManagerComponent();
 				if (player != null && (player.m_ItemInHands == m_Gear || player.m_LastUnequippedItem == m_Gear || player.m_QueuedEquipItem == m_Gear))
 				{

@@ -118,10 +118,9 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "RestoreTransform")]
 	private static class PlayerManager_RestoreTransform
 	{
-		private static GameObject saveObj;
-
-		internal static void Prefix(PlayerManager __instance)
+		internal static void Prefix(PlayerManager __instance, out GameObject __state)
 		{
+			__state = null;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -133,13 +132,14 @@ public class Pathes
 				MelonLogger.Msg("Going to cancle placement");
 				if (__instance.m_ObjectToPlace != null && __instance.m_ObjectToPlace.GetComponent<Comps.DropFakeOnLeave>() != null)
 				{
-					saveObj = __instance.m_ObjectToPlace;
+					__state = __instance.m_ObjectToPlace;
 				}
 			}
 		}
 
-		internal static void Postfix(PlayerManager __instance)
+		internal static void Postfix(PlayerManager __instance, GameObject __state)
 		{
+			var saveObj = __state;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -333,7 +333,10 @@ public class Pathes
 			}
 			else
 			{
-				MyMod.PlaceDroppedGear(__instance.GetInteractiveObjectUnderCrosshair());
+				var target = __instance.GetInteractiveObjectUnderCrosshair();
+				var dropped = DroppedGearInteraction.Find(target);
+				if (dropped != null) DroppedGearInteraction.Place(dropped);
+				else MyMod.PlaceDroppedGear(target);
 				MelonLogger.Msg("Going to place object");
 			}
 		}
@@ -350,7 +353,6 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			MyMod.MyCycleSkip = __instance.m_SleepHours;
 			SleepRendezvousFix.Tick(__instance);
 		}
 	}
@@ -2415,6 +2417,7 @@ public class Pathes
 		{
 			if (SleepRendezvousFix.IsWaitButton(__instance))
 			{
+				SleepRendezvousFix.ClickWait();
 				return;
 			}
 			if (MyMod.CrazyPatchesLogger)
@@ -3443,7 +3446,7 @@ public class Pathes
 			PostfixInternal(__instance, __instance.GetInteractiveObjectUnderCrosshair(), ref __result);
 		}
 
-		private static void PostfixInternal(PlayerManager __instance, GameObject interactiveObject, ref string __result)
+		internal static void PostfixInternal(PlayerManager __instance, GameObject interactiveObject, ref string __result)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -3587,6 +3590,14 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
+			if (hit.transform == null) return;
+			var dropped = DroppedGearInteraction.Find(hit.transform.gameObject);
+			if (dropped != null)
+			{
+				gi = null;
+				interactiveObj = dropped.gameObject;
+				return;
+			}
 			if (hit.transform.gameObject != null)
 			{
 				if (hit.transform.gameObject.GetComponent<Comps.DroppedGearDummy>() != null)
@@ -3715,17 +3726,8 @@ public class Pathes
 			else if (interactiveObjectUnderCrosshair.GetComponent<Comps.DroppedGearDummy>() != null)
 			{
 				MelonLogger.Msg("Trying interact with fake gear");
-				if (interactiveObjectUnderCrosshair.GetComponent<Comps.FakeBed>() == null)
-				{
-					MelonLogger.Msg("Trying pickup fake drop");
-					MyMod.PickupDroppedGear(interactiveObjectUnderCrosshair);
-					__result = true;
-				}
-				else
-				{
-					MyMod.UseFakeBed(interactiveObjectUnderCrosshair);
-					__result = true;
-				}
+				DroppedGearInteraction.PickUp(interactiveObjectUnderCrosshair.GetComponent<Comps.DroppedGearDummy>());
+				__result = true;
 			}
 			else if (interactiveObjectUnderCrosshair.GetComponent<Comps.SpecialItemDummy>() != null)
 			{
@@ -4541,6 +4543,17 @@ public class Pathes
 		}
 	}
 
+	[HarmonyPatch(typeof(Panel_Rest), "OnRest")]
+	private static class Panel_Rest_OnRest
+	{
+		private static bool Prefix()
+		{
+			if (!MyMod.InOnline() || SleepRendezvousFix.GroupStart || MyMod.IsDead) return true;
+			SleepRendezvousFix.ClickWait();
+			return false;
+		}
+	}
+
 	[HarmonyPatch(typeof(Panel_Rest), "OnPassTime")]
 	private static class Panel_Rest_OnPassTime
 	{
@@ -4548,6 +4561,18 @@ public class Pathes
 		{
 			if (!MyMod.InOnline()) return true;
 			SleepRendezvousFix.ClickWait();
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Panel_Rest), "DoPassTime")]
+	private static class Panel_Rest_DoPassTime
+	{
+		private static bool Prefix(ref bool __result)
+		{
+			if (!MyMod.InOnline()) return true;
+			SleepRendezvousFix.ClickWait();
+			__result = false;
 			return false;
 		}
 	}
