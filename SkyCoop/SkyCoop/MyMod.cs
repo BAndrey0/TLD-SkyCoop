@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.15";
+		public const string Version = "0.16.16";
 
 		public const string DownloadLink = null;
 
@@ -1082,6 +1082,8 @@ public class MyMod : MelonMod
 		}
 	}
 
+	private static readonly System.Collections.Generic.Dictionary<int, float> RecentBedrollPickups = new();
+
 	public static void AddSlicedJsonDataForPicker(DataStr.SlicedJsonData jData, bool place)
 	{
 		if (SlicedJsonDataBuffer.ContainsKey(jData.m_Hash))
@@ -1117,6 +1119,14 @@ public class MyMod : MelonMod
 		SlicedJsonDataBuffer.Remove(jData.m_Hash);
 		MelonLogger.Msg(System.ConsoleColor.Green, "Finished getting data for:" + jData.m_Hash);
 		string gearName = jData.m_Extra.m_GearName;
+		if (!place && jData.m_Extra.m_Variant == 1 && gearName.Contains("bedroll", System.StringComparison.OrdinalIgnoreCase))
+		{
+			float now = Time.realtimeSinceStartup;
+			foreach (var recent in RecentBedrollPickups.ToArray())
+				if (recent.Value <= now) RecentBedrollPickups.Remove(recent.Key);
+			if (RecentBedrollPickups.ContainsKey(jData.m_Hash)) return;
+			RecentBedrollPickups[jData.m_Hash] = now + 30f;
+		}
 		MelonLogger.Msg(System.ConsoleColor.Cyan, "Going to get " + jData.m_Extra.m_GearName);
 		GameObject gearItemObject = GetGearItemObject(gearName);
 		if (gearItemObject == null)
@@ -1198,7 +1208,7 @@ public class MyMod : MelonMod
 		if (!place)
 		{
 			bool flag2 = false;
-			if (component.m_Bed != null && component.m_Bed.GetState() == BedRollState.Placed)
+			if (component.m_Bed != null)
 			{
 				component.m_Bed.SetState(BedRollState.Rolled);
 				flag2 = true;
@@ -7113,6 +7123,7 @@ public class MyMod : MelonMod
 		if (obj.GetComponent<Comps.DroppedGearDummy>() != null)
 		{
 			num = obj.GetComponent<Comps.DroppedGearDummy>().m_SearchKey;
+			if (PendingPickupVisual.IsPending(num) || GameCompat.Panel<Panel_Rest>()?.isActiveAndEnabled == true) return;
 			MelonLogger.Msg("Searching for " + text + " with hash " + num);
 			GameObject gameObject = UnityEngine.Object.Instantiate(GetGearItemObject(text), position, rotation);
 			gameObject.name = CloneTrimer(gameObject.name);
@@ -7180,6 +7191,7 @@ public class MyMod : MelonMod
 			LastPickedVisualRotation = obj.transform.rotation;
 			if (sendMyPosition)
 			{
+				if (PendingPickupVisual.IsPending(num)) return;
 				DoPleaseWait("Please wait...", "Downloading gear...");
 				using Packet packet = new Packet(88);
 				packet.Write(num);
@@ -7721,9 +7733,9 @@ public class MyMod : MelonMod
 		return 7200;
 	}
 
-	public static void SendDropItem(GearItem gear, int nums = 0, int total = 0, bool samepose = false, int variant = 0, GameObject Around = null, bool settledThrow = false)
+	public static void SendDropItem(GearItem gear, int nums = 0, int total = 0, bool samepose = false, int variant = 0, GameObject Around = null, bool settledThrow = false, bool cookingOutput = false)
 	{
-		if (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(gear)) return;
+		if (!cookingOutput && (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(gear))) return;
 		if (!(gear != null) || !(gear.gameObject != null))
 		{
 			return;
@@ -7775,13 +7787,13 @@ public class MyMod : MelonMod
 		}
 		string name = gameObject.name;
 		string text2 = CloneTrimer(name).ToLower();
-		string text3 = CloneTrimer(name);
+		string text3 = cookingOutput ? gear.GetGearName() : CloneTrimer(name);
 		int vectorHash = Shared.GetVectorHash(position2);
 		int quaternionHash = Shared.GetQuaternionHash(rotation);
 		int hashCode = Shared.StableHash(level_guid);
 		int hash = vectorHash + quaternionHash + hashCode;
 		// A second thrown stone may settle at the same pose as an existing drop.
-		if (settledThrow)
+		if (settledThrow || cookingOutput || (variant == 1 && gear.m_Bed != null))
 			hash = System.Guid.NewGuid().GetHashCode();
 		string text4 = level_guid;
 		if (nums > 0 && gear.m_StackableItem != null)
@@ -11532,6 +11544,7 @@ public class MyMod : MelonMod
 		SteamFriendsWindow.Draw();
 		CoopFatigue.Draw();
 		BedRest.Draw();
+		SleepRendezvousFix.Draw();
 		DeathRespawn.Draw();
 	}
 

@@ -17,6 +17,8 @@ public static class SleepRendezvousFix
 
 	private static int requestedHours;
 	private static int offeredHours;
+	private static string offerText;
+	private static float lastOffer;
 	private static readonly System.Collections.Generic.List<int> VoteOrder = new();
 
 	internal static void RecordVote(int id, int hours)
@@ -385,15 +387,18 @@ public static class SleepRendezvousFix
 		}
 	}
 
+	internal static void Draw()
+	{
+		if (string.IsNullOrEmpty(offerText) || !MyMod.InOnline() || MyMod.LoadingScreenIsOn || MyMod.IsDead ||
+			Waiting || Time.realtimeSinceStartup - lastOffer > 10f) return;
+		GUI.Box(new Rect((Screen.width - 480f) * .5f, 30f, 480f, 36f), offerText);
+	}
+
 	public static void ProcessReadiness(int sleepers, int required, bool everyoneReady, int commonHours, string proposer)
 	{
-		if (commonHours != 0 && offeredHours != commonHours && !Waiting && !everyoneReady &&
-			!MyMod.DedicatedServerAppMode && !MyMod.LoadingScreenIsOn && !string.IsNullOrEmpty(proposer))
-		{
-			string action = commonHours < 0 ? "совместное ожидание" : "совместный сон";
-			HUDMessage.AddMessage(proposer + " предлагает " + action + " на " + Math.Abs(commonHours) + " ч",
-				highPriority: true, ignoreOverlayActive: true);
-		}
+		lastOffer = Time.realtimeSinceStartup;
+		offerText = commonHours == 0 || everyoneReady || string.IsNullOrEmpty(proposer) ? null :
+			$"{proposer} предлагает {(commonHours < 0 ? "подождать" : "поспать")} · {Math.Abs(commonHours)} ч";
 		offeredHours = commonHours;
 		if (!Waiting)
 		{

@@ -120,6 +120,7 @@ public class Comps
 		public GearItem m_Gear;
 
 		public bool m_ShouldSendDrop;
+		internal bool LitAtLaunch;
 
 		private bool m_SendDrop;
 
@@ -143,14 +144,14 @@ public class Comps
 			}
 			if (!MyMod.InOnline() || m_Gear.m_InPlayerInventory)
 			{
-				if (m_ShouldSendDrop && m_FlightSequence > 0) ThrownGearSync.Publish(m_Gear, FlightKey, ++m_FlightSequence, true);
+				if (m_ShouldSendDrop && m_FlightSequence > 0) ThrownGearSync.Publish(m_Gear, FlightKey, ++m_FlightSequence, true, LitAtLaunch);
 				Destroy(this);
 				return;
 			}
 			if (m_ShouldSendDrop && Time.realtimeSinceStartup >= m_NextFlightSend)
 			{
 				m_NextFlightSend = Time.realtimeSinceStartup + 1f / 15f;
-				ThrownGearSync.Publish(m_Gear, FlightKey, ++m_FlightSequence, false);
+				ThrownGearSync.Publish(m_Gear, FlightKey, ++m_FlightSequence, false, LitAtLaunch);
 			}
 			if (!m_RB.isKinematic && !m_RB.IsSleeping() &&
 				(m_RB.velocity.sqrMagnitude > 0.01f || m_RB.angularVelocity.sqrMagnitude > 0.01f))
@@ -163,7 +164,7 @@ public class Comps
 			m_SendDrop = true;
 			if (m_ShouldSendDrop)
 			{
-				ThrownGearSync.Publish(m_Gear, FlightKey, ++m_FlightSequence, true);
+				ThrownGearSync.Publish(m_Gear, FlightKey, ++m_FlightSequence, true, LitAtLaunch);
 				var player = GameManager.GetPlayerManagerComponent();
 				if (player != null && (player.m_ItemInHands == m_Gear || player.m_LastUnequippedItem == m_Gear || player.m_QueuedEquipItem == m_Gear))
 				{

@@ -36,12 +36,14 @@ internal static class ThrownGearSync
     private static int nextKey;
     internal static int NextKey() => ++nextKey;
 
-    internal static void Publish(GearItem gear, int key, int sequence, bool end)
+    internal static bool IsLit(GearItem gear) => gear != null && (gear.m_FlareItem?.IsBurning() == true || gear.m_TorchItem?.IsBurning() == true);
+
+    internal static void Publish(GearItem gear, int key, int sequence, bool end, bool litAtLaunch)
     {
         if (gear == null || !MyMod.InOnline() || MyMod.LoadingScreenIsOn) return;
         var p = gear.transform.position;
         var q = gear.transform.rotation;
-        var state = new Flight(p.x, p.y, p.z, q.x, q.y, q.z, q.w, sequence, end, gear.GetGearName(), gear.m_FlareItem?.IsBurning() == true || gear.m_TorchItem?.IsBurning() == true);
+        var state = new Flight(p.x, p.y, p.z, q.x, q.y, q.z, q.w, sequence, end, gear.GetGearName(), litAtLaunch || IsLit(gear));
         ScenePlacementSync.PublishThrownFlight(key, JsonSerializer.Serialize(state));
     }
 
@@ -63,6 +65,7 @@ internal static class ThrownGearSync
             current = new RemoteFlight();
             Flights.Add(id, current);
         }
+        bool rebuild = current.State != null && current.State.Lit != state.Lit;
         current.State = state;
         current.Expires = Time.realtimeSinceStartup + (state.End ? 10f : 2f);
         if (state.End)
@@ -70,6 +73,11 @@ internal static class ThrownGearSync
             if (current.Visual != null) UnityEngine.Object.Destroy(current.Visual);
             current.Visual = null;
             return true;
+        }
+        if (rebuild && current.Visual != null)
+        {
+            UnityEngine.Object.Destroy(current.Visual);
+            current.Visual = null;
         }
         if (current.Visual == null)
         {
@@ -85,7 +93,15 @@ internal static class ThrownGearSync
         if (prefab == null || prefab.GetComponent<GearItem>() == null) return null;
         var root = new GameObject("TLD Coop thrown gear");
         var flare = prefab.GetComponent<FlareItem>();
-        var source = !lit ? null : flare != null ? flare.m_LightOutdoor : prefab.GetComponentInChildren<Light>(true);
+        if (lit && flare != null && flare.m_FXGameObject != null && flare.m_FXGameObject != prefab)
+        {
+            var effects = UnityEngine.Object.Instantiate(flare.m_FXGameObject, root.transform, false);
+            effects.transform.localPosition = prefab.transform.InverseTransformPoint(flare.m_FXGameObject.transform.position);
+            effects.SetActive(true);
+            foreach (var particles in effects.GetComponentsInChildren<ParticleSystem>(true))
+                if (particles.gameObject.activeInHierarchy) particles.Play();
+        }
+        var source = !lit ? null : flare != null ? flare.m_LightOutdoor ?? flare.m_LightIndoor : prefab.GetComponentInChildren<Light>(true);
         if (source != null)
         {
             var light = root.AddComponent<Light>();
@@ -96,7 +112,8 @@ internal static class ThrownGearSync
         }
         foreach (var renderer in prefab.GetComponentsInChildren<MeshRenderer>(true))
         {
-            if (!renderer.enabled || !renderer.gameObject.activeSelf) continue;
+            if (!renderer.enabled || !renderer.gameObject.activeSelf || (lit && flare != null &&
+                flare.m_FlareCapMeshObject != null && renderer.transform.IsChildOf(flare.m_FlareCapMeshObject.transform))) continue;
             var filter = renderer.GetComponent<MeshFilter>();
             if (filter == null || filter.sharedMesh == null) continue;
             var mesh = new GameObject(renderer.name);

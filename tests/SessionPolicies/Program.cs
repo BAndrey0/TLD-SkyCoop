@@ -111,8 +111,8 @@ static class Program
   Check(CoopBalancePolicy.AdvanceClock(16, 25, 8) == 25, "Exactly midnight must be 00 not 24");
   Check(CoopBalancePolicy.AdvanceClock(16, 25, 26) == 18*60+25, "Long skip must wrap multiple days");
   Check(CoopBalancePolicy.RecoveryRate(false, true, .9f) < CoopBalancePolicy.RecoveryRate(false, true, 0), "Severe tiredness must slow work recovery");
-  Check(Math.Abs(CoopBalancePolicy.BedRecoveryRate(0) * 180 - 100) < .001f && CoopBalancePolicy.BedRecoveryRate(0) > CoopBalancePolicy.RecoveryRate(false, true, 0), "Bed rest must refill strength in three minutes and beat crouching");
-  Check(Math.Abs(CoopBalancePolicy.BedRecoveryRate(1) * 450 - 100) < .001f, "Full fatigue still slows real-time bed recovery");
+  Check(Math.Abs(CoopBalancePolicy.BedRecoveryRate(0) * 330 - 100) < .001f && CoopBalancePolicy.BedRecoveryRate(0) > CoopBalancePolicy.RecoveryRate(false, true, 0), "Bed rest must refill strength in five and a half minutes and beat crouching");
+  Check(Math.Abs(CoopBalancePolicy.BedRecoveryRate(1) * 825 - 100) < .001f, "Full fatigue still slows real-time bed recovery");
   GameServer.ClientUser.myId = 1;
   ConnectionWatchdog.Tick(0);
   ConnectionWatchdog.Tick(19);

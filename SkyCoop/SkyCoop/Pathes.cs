@@ -385,6 +385,17 @@ public class Pathes
 		}
 	}
 
+	[HarmonyPatch(typeof(PlayerManager), nameof(PlayerManager.ProcessPickupItemInteraction))]
+	private static class BlockBedrollProxyPickup
+	{
+		private static bool Prefix(GearItem __0, ref bool __result)
+		{
+			if (__0 == null || __0.GetComponent<Comps.FakeBedDummy>() == null) return true;
+			__result = false;
+			return false;
+		}
+	}
+
 	[HarmonyPatch(typeof(Panel_Rest), "OnPickUp")]
 	private static class Panel_Rest_Close2
 	{
@@ -398,13 +409,13 @@ public class Pathes
 			}
 			if (__instance.m_Bed != null && __instance.m_Bed.gameObject != null && __instance.m_Bed.gameObject.GetComponent<Comps.FakeBedDummy>() != null)
 			{
-				if (__instance.m_Bed.gameObject.GetComponent<Comps.FakeBedDummy>().m_LinkedFakeObject != null)
-				{
-					MyMod.PickupDroppedGear(__instance.m_Bed.gameObject.GetComponent<Comps.FakeBedDummy>().m_LinkedFakeObject);
-				}
-				UnityEngine.Object.Destroy(__instance.m_Bed.gameObject);
+				var bedObject = __instance.m_Bed.gameObject;
+				var sharedBed = bedObject.GetComponent<Comps.FakeBedDummy>().m_LinkedFakeObject;
 				__instance.m_Bed = null;
 				__instance.Enable(enable: false);
+				bedObject.SetActive(false);
+				UnityEngine.Object.Destroy(bedObject);
+				if (sharedBed != null) MyMod.PickupDroppedGear(sharedBed);
 				return false;
 			}
 			return true;
@@ -2264,7 +2275,7 @@ public class Pathes
 	{
 		private static void Postfix(GearItem gi, GearItem __result)
 		{
-			if (__result != gi) TrackThrownGear(__result);
+			if (__result != gi) TrackThrownGear(__result, ThrownGearSync.IsLit(gi));
 		}
 	}
 
@@ -2278,7 +2289,7 @@ public class Pathes
 		}
 	}
 
-	private static void TrackThrownGear(GearItem gear)
+	private static void TrackThrownGear(GearItem gear, bool lit = false)
 	{
 		if (!MyMod.InOnline() || !ThrownGearSync.Supports(gear) ||
 			gear.GetComponent<Comps.DestoryStoneOnStop>() != null) return;
@@ -2289,6 +2300,7 @@ public class Pathes
 		tracker.m_RB = body;
 		tracker.m_Gear = gear;
 		tracker.m_ShouldSendDrop = true;
+		tracker.LitAtLaunch = lit || ThrownGearSync.IsLit(gear);
 	}
 
 	[HarmonyPatch(typeof(PlayerManager), "ReleaseThrownObject")]
@@ -2296,11 +2308,11 @@ public class Pathes
 	{
 		internal static int TrackedThrowDepth;
 
-		private static void Finalizer((GearItem Gear, bool Tracked) __state)
+		private static void Finalizer((GearItem Gear, bool Tracked, bool Lit) __state)
 		{
 			if (__state.Tracked) TrackedThrowDepth--;
 		}
-		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Tracked) __state)
+		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Tracked, bool Lit) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2309,11 +2321,11 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
 			var gear = __instance.m_ThrownItem;
-			__state = (gear, ThrownGearSync.Supports(gear));
+			__state = (gear, ThrownGearSync.Supports(gear), ThrownGearSync.IsLit(gear));
 			if (__state.Tracked) TrackedThrowDepth++;
 		}
 
-		public static void Postfix((GearItem Gear, bool Tracked) __state)
+		public static void Postfix((GearItem Gear, bool Tracked, bool Lit) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2324,7 +2336,7 @@ public class Pathes
 			if (__state.Tracked)
 			{
 				if (__state.Gear != null && __state.Gear.m_StoneItem == null && !__state.Gear.m_InPlayerInventory)
-					TrackThrownGear(__state.Gear);
+					TrackThrownGear(__state.Gear, __state.Lit);
 				MyMod.PushActionToMyDoll("Shoot");
 				return;
 			}
@@ -2923,7 +2935,7 @@ public class Pathes
 	{
 		public static bool Prefix(ContainerInteraction __instance)
 		{
-			return PrefixInternal(__instance.m_Container);
+			return ContainerLockSync.CanInteract(__instance.m_Container) && PrefixInternal(__instance.m_Container);
 		}
 
 		private static bool PrefixInternal(Container c)
@@ -7700,7 +7712,8 @@ public class Pathes
 			weatherVolunteerData.CoolingHours = weatherComponent.m_HourCoolingBegins;
 			weatherVolunteerData.WarmingHours = weatherComponent.m_HourWarmingBegins;
 			WeatherSetData currentWeatherSet = GameManager.GetWeatherTransitionComponent().m_CurrentWeatherSet;
-			currentWeatherSet.m_WeatherStages[0].m_PreviousType = currentWeatherStage;
+			if (!DoNext && currentWeatherSet.m_WeatherStages.Length > 0)
+				currentWeatherStage = currentWeatherSet.m_WeatherStages[0].m_PreviousType;
 			weatherVolunteerData.WeatherType = (int)currentWeatherSet.m_CharacterizingType;
 			weatherVolunteerData.SetName = currentWeatherSet.name;
 			weatherVolunteerData.WeatherDuration = currentWeatherSet.m_CurrentSetDuration;

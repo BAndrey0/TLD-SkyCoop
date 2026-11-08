@@ -6,6 +6,7 @@ public static class PendingPickupVisual
  private static readonly Dictionary<int,(GameObject obj,string scene,float until)> pending=new();
  public static void Hide(int key,GameObject obj)
  {if(obj==null||pending.ContainsKey(key))return;pending[key]=(obj,MyMod.level_guid,Time.realtimeSinceStartup+15);obj.SetActive(false);}
+ public static bool IsPending(int key) => pending.ContainsKey(key);
  public static void Confirm(int key)=>pending.Remove(key);
  public static void Tick()
  {

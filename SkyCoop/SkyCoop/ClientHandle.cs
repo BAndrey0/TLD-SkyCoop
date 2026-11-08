@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.15");
+			packet.Write("0.16.16");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1357,12 +1357,12 @@ public class ClientHandle
 
     private static string syncedWeatherScene;
     private static float syncedWeatherUntil;
-    internal static bool HasCurrentWeatherSync => MyMod.InOnline() && syncedWeatherScene == MyMod.level_guid &&
+    internal static bool HasCurrentWeatherSync => !MyMod.iAmHost && MyMod.InOnline() && syncedWeatherScene == MyMod.level_guid &&
         Time.realtimeSinceStartup < syncedWeatherUntil;
 
     public static void DoWeatherSync(float start, int seed, float duration, WeatherStage type, int index,
         System.Collections.Generic.List<float> durations, System.Collections.Generic.List<float> transitions,
-        int tod, float high, float low, int previousStage, string setName)
+        int tod, float high, float low, int previousStage, string setName, int activeStage, float stageElapsed)
     {
         if (MyMod.LoadingScreenIsOn || !WildlifeSpawnAuthorityPolicy.WorldScene(MyMod.level_name) ||
             !float.IsFinite(start) || !float.IsFinite(duration) || duration <= 0) return;
@@ -1383,6 +1383,11 @@ public class ClientHandle
         }
         var current = transition.m_CurrentWeatherSet;
         if (current.name == setName && current.m_CharacterizingType == type) selected = current;
+        if (selected == null)
+        {
+            var candidate = weather.GetWeatherSetByName(setName);
+            if (candidate != null && candidate.m_CharacterizingType == type) selected = candidate;
+        }
         if (selected == null || selected.m_WeatherStages == null || selected.m_WeatherStages.Length == 0)
         {
             syncedWeatherUntil = 0;
@@ -1395,10 +1400,26 @@ public class ClientHandle
             selected.m_WeatherStages[i].m_CurrentTransitionTime = transitions[i];
         }
         var previous = (WeatherStage)previousStage;
-        if (current == selected)
-            current.Activate(Mathf.Clamp01(start), previous);
-        else
-            transition.ActivateWeatherSet(selected, Mathf.Clamp01(start), previous);
+        float progress = Mathf.Clamp01(start);
+        float elapsed = progress * duration;
+        int stage = 0;
+        while (stage + 1 < selected.m_WeatherStages.Length && elapsed >= selected.m_WeatherStages[stage].m_CurrentDuration)
+            elapsed -= selected.m_WeatherStages[stage++].m_CurrentDuration;
+        if (activeStage >= 0 && activeStage < selected.m_WeatherStages.Length && float.IsFinite(stageElapsed))
+        {
+            stage = activeStage;
+            var stageDuration = selected.m_WeatherStages[stage].m_CurrentDuration;
+            elapsed = Mathf.Clamp(stageElapsed, 0f, Mathf.Max(0f, stageDuration - .0001f));
+            float beforeStage = 0f;
+            for (int i = 0; i < stage; i++) beforeStage += selected.m_WeatherStages[i].m_CurrentDuration;
+            progress = Mathf.Clamp01((beforeStage + Mathf.Min(stageDuration, elapsed + .00001f)) / duration);
+        }
+        if (current != selected)
+            transition.ActivateWeatherSet(selected, progress, previous);
+        else if (current.m_CurrentIndex != stage)
+            current.ForceTransitionToStep(stage);
+        if (selected.m_CurrentIndex == stage)
+            selected.m_WeatherStages[stage].m_ElapsedTime = elapsed;
         weather.m_TempHigh = high;
         weather.m_TempLow = low;
         syncedWeatherScene = MyMod.level_guid;
@@ -1420,8 +1441,10 @@ public class ClientHandle
 		int previousStage = _packet.ReadInt();
 		string setName = _packet.ReadString();
 		int region = _packet.ReadInt();
+		int activeStage = _packet.ReadInt();
+		float stageElapsed = _packet.ReadFloat();
 		if (region == MyMod.GetCurrentRegionIfPossible())
-			DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, setName);
+			DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, setName, activeStage, stageElapsed);
 	}
 
 	public static void WEATHERVOLUNTEER(Packet _packet)

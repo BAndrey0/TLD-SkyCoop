@@ -109,7 +109,7 @@ public class Shared
 
 		public bool m_CanUpdateHighTemp;
 
-		public int m_PreviousStage = 10;
+		public int m_PreviousStage = (int)WeatherStage.Undefined;
 
 		public void RecalculateTemperture()
 		{
@@ -693,7 +693,7 @@ public class Shared
 		float num = 0.016f;
 		foreach (RegionWeatherControler regionWeather in RegionWeathers)
 		{
-			if (!regionWeather.m_WaitsForUpdate)
+			if (!regionWeather.m_WaitsForUpdate && (MyMod.DedicatedServerAppMode || regionWeather.m_Region != MyMod.GetCurrentRegionIfPossible()))
 			{
 				regionWeather.AddTime(num * (float)Minutes);
 				regionWeather.MayRecalculate();
@@ -703,19 +703,31 @@ public class Shared
 
 	public static void WeatherUpdateSecond()
 	{
-		float num = 0.016f;
+		int localRegion = MyMod.DedicatedServerAppMode ? -1 : MyMod.GetCurrentRegionIfPossible();
+		var weather = GameManager.m_Weather;
+		var set = GameManager.m_WeatherTransition?.m_CurrentWeatherSet;
+		if (localRegion >= 0 && !MyMod.LoadingScreenIsOn && weather != null && GameManager.GetUniStorm() != null && set != null && set.m_CurrentSetDuration > 0f)
+		{
+			var state = Pathes.GetWeatherVolunteerData();
+			var cached = RegionWeathers.Find(entry => entry.m_Region == localRegion);
+			if (cached == null) RegionWeathers.Add(cached = new RegionWeatherControler(state));
+			else if (cached.m_WeatherSetName != state.SetName || cached.m_Duration != state.WeatherDuration || cached.m_WaitsForUpdate)
+				cached.SetNewSet(state);
+			cached.m_Progress = set.GetProgressFrac();
+			cached.m_Time = cached.m_Duration * cached.m_Progress;
+			cached.m_HighTemp = weather.m_TempHigh;
+			cached.m_LowTemp = weather.m_TempLow;
+			cached.m_PreviousStage = state.PreviousStage;
+			int stage = set.m_CurrentIndex;
+			float elapsed = stage >= 0 && stage < set.m_WeatherStages.Length ? set.m_WeatherStages[stage].m_ElapsedTime : 0f;
+			ServerSend.DEDICATEDWEATHER(localRegion, state.WeatherType, state.SetIndex, cached.m_Progress, cached.m_WeatherSeed, state.WeatherDuration, state.StageDuration, state.StageTransition, 0, cached.m_HighTemp, cached.m_LowTemp, state.PreviousStage, state.SetName, stage, elapsed);
+		}
 		foreach (RegionWeatherControler regionWeather in RegionWeathers)
 		{
-			if (!regionWeather.m_WaitsForUpdate)
-			{
-				regionWeather.AddTime(num / 60f);
-				regionWeather.AddTOD(90, CurrentTimeOfDayStatus);
-				if (regionWeather.m_Region == MyMod.GetCurrentRegionIfPossible())
-				{
-					ClientHandle.DoWeatherSync(regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, (WeatherStage)regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage, regionWeather.m_WeatherSetName);
-				}
-				ServerSend.DEDICATEDWEATHER(regionWeather.m_Region, regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage, regionWeather.m_WeatherSetName);
-			}
+			if (regionWeather.m_Region == localRegion || regionWeather.m_WaitsForUpdate) continue;
+			regionWeather.AddTime(0.016f / 60f);
+			regionWeather.AddTOD(90, CurrentTimeOfDayStatus);
+			ServerSend.DEDICATEDWEATHER(regionWeather.m_Region, regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage, regionWeather.m_WeatherSetName);
 		}
 	}
 
@@ -1440,8 +1452,10 @@ public class Shared
 
 	public static void ClientTryPickupItem(int Hash, int sendTo, string Scene, bool place)
 	{
-		ServerSend.PICKDROPPEDGEAR(sendTo, Hash, toEveryOne: true);
 		DataStr.SlicedJsonDroppedGear slicedJsonDroppedGear = MPSaveManager.RequestSpecificGear(Hash, Scene);
+		if (slicedJsonDroppedGear == null && MPSaveManager.LoadDropVisual(Scene)?.TryGetValue(Hash, out var preview) == true &&
+			preview.m_Extra?.m_Variant == 1 && preview.m_Extra.m_GearName.Contains("bedroll", StringComparison.OrdinalIgnoreCase)) return;
+		ServerSend.PICKDROPPEDGEAR(sendTo, Hash, toEveryOne: true);
 		if (!MyMod.DedicatedServerAppMode)
 		{
 			MyMod.DroppedGearsObjs.TryGetValue(Hash, out var value);
