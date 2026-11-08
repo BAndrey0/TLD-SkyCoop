@@ -5,7 +5,7 @@
     <TargetFramework>netcoreapp6.0</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <!-- MelonLoader-installed co-op game copy; override with -p:GameDir=... -->
-    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\..\player\game</GameDir>
+    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\..\player-0.16.13\game</GameDir>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="MelonLoader">

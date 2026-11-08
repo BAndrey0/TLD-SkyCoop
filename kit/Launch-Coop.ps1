@@ -21,7 +21,7 @@ $sourceRecord=Join-Path $installRoot 'game-source.json'
 $syncScript=Join-Path $installRoot 'Sync-GameContent.ps1'
 if(!$SkipContentSync -and (Test-Path -LiteralPath $sourceRecord) -and (Test-Path -LiteralPath $syncScript)){
  $sourceGame=[string](Get-Content -LiteralPath $sourceRecord -Raw|ConvertFrom-Json).gameDirectory
- if($sourceGame -and (Test-Path -LiteralPath (Join-Path $sourceGame 'GameAssembly.dll'))){& $syncScript -GameDirectory $sourceGame -InstallDirectory $installRoot}
+ if($sourceGame -and (Test-Path -LiteralPath (Join-Path $sourceGame 'GameAssembly.dll'))){& $syncScript -GameDirectory $sourceGame -InstallDirectory $installRoot -UseInstalledContentOnMismatch}
 }
 Write-Host ("Starting co-op copy: "+$game)
 if(!(Get-Process steam -ErrorAction SilentlyContinue)){throw 'Start Steam and sign in first'}

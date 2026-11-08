@@ -3,6 +3,9 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace CoopLauncher;
@@ -32,7 +35,7 @@ internal sealed partial class LauncherForm
 		var heading=new Panel{Dock=DockStyle.Top,Height=56};heading.Controls.Add(TextLabel("Ваше путешествие",20,FontStyle.Bold,ForeColor));
 		checkButton.Text="Проверить обновления";FormatButton(checkButton,false);checkButton.Size=new Size(214,36);checkButton.Dock=DockStyle.Right;heading.Controls.Add(checkButton);area.Controls.Add(heading);
 		var bottom=new Panel{Dock=DockStyle.Bottom,Height=36};var details=new Button{Text="Диагностика",Dock=DockStyle.Left,Width=135};FormatButton(details,false);details.Click+=delegate{diagnostics.Visible=!diagnostics.Visible;};bottom.Controls.Add(details);
-		var channel=TextLabel("Steam · Survival 2.59",9,FontStyle.Regular,Muted);channel.Dock=DockStyle.Right;channel.Width=210;channel.TextAlign=ContentAlignment.MiddleRight;bottom.Controls.Add(channel);area.Controls.Add(bottom);
+		var channel=TextLabel("Steam · Survival",9,FontStyle.Regular,Muted);channel.Dock=DockStyle.Right;channel.Width=210;channel.TextAlign=ContentAlignment.MiddleRight;bottom.Controls.Add(channel);area.Controls.Add(bottom);
 		diagnostics.Dock=DockStyle.Bottom;diagnostics.Height=160;diagnostics.Visible=false;diagnostics.Padding=new Padding(0,8,0,8);
 		log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.BackColor=Color.FromArgb(10,17,24);log.ForeColor=Muted;log.BorderStyle=BorderStyle.None;log.Font=new Font("Consolas",9);log.Dock=DockStyle.Fill;diagnostics.Controls.Add(log);area.Controls.Add(diagnostics);
 		homeView.Dock=DockStyle.Fill;settingsView.Dock=DockStyle.Fill;settingsView.Visible=false;area.Controls.Add(homeView);area.Controls.Add(settingsView);homeView.BringToFront();
@@ -97,12 +100,28 @@ internal sealed partial class LauncherForm
 		catch(Exception ex){Log(ex.Message);MessageBox.Show(this,ex.Message,Text,MessageBoxButtons.OK,MessageBoxIcon.Error);}
 		finally{SetBusy(false,null);}
 	}
-	private async System.Threading.Tasks.Task SyncInstalledContent()
+	private async Task SyncInstalledContent(bool useInstalledOnMismatch = false)
 	{
 		string source=state.gameDirectory;
 		if(string.IsNullOrEmpty(source)||!File.Exists(Path.Combine(source,"GameAssembly.dll")))source=FindSteamGame();
 		if(source==null){Log("Steam-оригинал не найден: DLC не синхронизированы. Укажите путь в «Установка и DLC».");return;}
 		state.gameDirectory=source;SaveState();
+		if (useInstalledOnMismatch)
+		{
+			string installedAssembly = Path.Combine(state.installDirectory, "game", "GameAssembly.dll");
+			bool compatible = await Task.Run(() =>
+			{
+				using var sha = SHA256.Create();
+				using var original = File.OpenRead(Path.Combine(source, "GameAssembly.dll"));
+				using var installed = File.OpenRead(installedAssembly);
+				return sha.ComputeHash(original).SequenceEqual(sha.ComputeHash(installed));
+			});
+			if (!compatible)
+			{
+				Log("Версии Steam и кооперативной копии различаются. Запускаю установленную копию с её дополнениями.");
+				return;
+			}
+		}
 		string script=Path.Combine(state.installDirectory,"Sync-GameContent.ps1");
 		if(!File.Exists(script))script=Path.Combine(KitDir,"Sync-GameContent.ps1");
 		if(File.Exists(script))await RunScript(script,"-GameDirectory \""+source+"\" -InstallDirectory \""+state.installDirectory+"\"");

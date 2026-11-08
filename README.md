@@ -1,12 +1,17 @@
-# TLD-SkyCoop — кооператив для The Long Dark 2.59
+# TLD-SkyCoop — кооператив для The Long Dark 2.60
 
-Кооперативное **Выживание** для The Long Dark (Steam, Survival 2.59, build 26312993) на основе
+Кооперативное **Выживание** для The Long Dark (Steam, Survival 2.60, build 26450964) на основе
 [Sky Co-op](https://github.com/Filigrani/SkyCoop) от Filigrani и адаптации
 [SkyCoop-Upadated](https://github.com/DoperDodge/SkyCoop-Upadated) под Unity 6 / MelonLoader 0.7.3.
 
 Сюжетный режим не поддерживается. Мод экспериментальный: перед долгой игрой делайте копию `player\saves`.
 
-Версии 0.15.6–0.16.12 предназначены для Survival 2.59 (Steam build 26312993); старые выпуски 0.15.5 и ниже — для 2.55. Все участники сессии должны обновиться вместе. Лаунчер 1.1.0 создаёт новую копию игры при смене её версии и копирует сохранения, сохраняя прежнюю установку.
+Версия 0.16.13 предназначена для Survival 2.60 (Steam build 26450964). Версии 0.15.6–0.16.12 предназначены для Survival 2.59 (Steam build 26312993); старые выпуски 0.15.5 и ниже — для 2.55. Все участники сессии должны обновиться вместе. Лаунчер создаёт новую копию игры при смене её версии и копирует сохранения, сохраняя прежнюю установку.
+
+## Выпуск 0.16.13
+
+- Совместимость с Survival 2.60, Steam build 26450964.
+- Лаунчер и скрипт запуска используют дополнения из установленной копии, когда версия Steam отличается.
 
 ## Выпуск 0.16.12
 
@@ -138,7 +143,7 @@ Tales from the Far Territory должен быть установлен у ка�
 
 Вручную:
 
-1. У каждого игрока своя Steam-копия The Long Dark **версии 2.59** (build 26312993) и запущенный Steam.
+1. У каждого игрока своя Steam-копия The Long Dark **версии 2.60** (build 26450964) и запущенный Steam.
 2. Скачать архив `TLD-SkyCoop-<версия>.zip` со страницы [Releases](../../releases) и распаковать в папку
    с латинским путём, например `D:\TLD-Coop` (получится `D:\TLD-Coop\friend-kit`).
 3. Запустить `friend-kit\Install.cmd` и указать папку игры Steam, если её не нашло само.
@@ -185,17 +190,17 @@ F1 открывает консоль, если это разрешает нас�
 - установленная через `Install.cmd` копия игры, хотя бы раз запущенная: MelonLoader генерирует в
   `player\game\MelonLoader\Il2CppAssemblies` сборки игры, на которые ссылается проект. В репозитории их нет.
 
-По умолчанию проекты ищут игру в `..\..\player-2.59\game` относительно себя, то есть репозиторий удобно клонировать
+По умолчанию проекты ищут игру в `..\..\player-0.16.13\game` относительно себя, то есть репозиторий удобно клонировать
 рядом с `player`: `D:\TLD-Coop\TLD-SkyCoop`. Иначе укажите путь явно:
 
 ```
-dotnet build SkyCoop\SkyCoop.csproj -c Release -p:GameDir=D:\TLD-Coop\player\game
+dotnet build SkyCoop\SkyCoop.csproj -c Release -p:GameDir=D:\TLD-Coop\player-0.16.13\game
 ```
 
 Собрать архив для игроков (DLL, manifest с хешами, скрипты, лицензии):
 
 ```
-powershell -ExecutionPolicy Bypass -File tools\package.ps1 -GameDir D:\TLD-Coop\player\game
+powershell -ExecutionPolicy Bypass -File tools\package.ps1 -GameDir D:\TLD-Coop\player-0.16.13\game
 ```
 
 Результат — `out\TLD-SkyCoop-<версия>.zip`. При изменении сетевого протокола поднимайте версию (строки `0.14.x`

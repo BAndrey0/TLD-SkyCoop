@@ -1,11 +1,14 @@
-param([Parameter(Mandatory=$true)][string]$GameDirectory,[Parameter(Mandatory=$true)][string]$InstallDirectory,[switch]$CheckOnly)
+param([Parameter(Mandatory=$true)][string]$GameDirectory,[Parameter(Mandatory=$true)][string]$InstallDirectory,[switch]$CheckOnly,[switch]$UseInstalledContentOnMismatch)
 $ErrorActionPreference='Stop'
 $source=[IO.Path]::GetFullPath($GameDirectory).TrimEnd('\')
 $install=[IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
 $target=Join-Path $install 'game'
 if($source -eq $target){throw 'Select the original Steam game, not the co-op copy.'}
 foreach($root in @($source,$target)){if(!(Test-Path -LiteralPath (Join-Path $root 'GameAssembly.dll'))){throw "Game not found: $root"}}
-if((Get-FileHash -LiteralPath (Join-Path $source 'GameAssembly.dll')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $target 'GameAssembly.dll')).Hash){throw 'Steam game and co-op copy have different versions. Update the mod/game before syncing DLC.'}
+if((Get-FileHash -LiteralPath (Join-Path $source 'GameAssembly.dll')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $target 'GameAssembly.dll')).Hash){
+ if($UseInstalledContentOnMismatch){Write-Host 'Steam and the co-op copy have different versions. Using the DLC already installed in the co-op copy.';return}
+ throw 'Steam game and co-op copy have different versions. Update the mod/game before syncing DLC.'
+}
 foreach($p in @(Get-Process tld -ErrorAction SilentlyContinue)){throw 'Close The Long Dark before syncing DLC.'}
 $content=Join-Path $source 'tld_dlc'
 $changed=@()

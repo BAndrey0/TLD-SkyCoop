@@ -1,5 +1,5 @@
 param(
- [string]$GameDir=(Join-Path $PSScriptRoot '..\..\player\game'),
+ [string]$GameDir=(Join-Path $PSScriptRoot '..\..\player-0.16.13\game'),
  [string]$Dotnet='dotnet'
 )
 $ErrorActionPreference='Stop'

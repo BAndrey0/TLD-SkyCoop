@@ -683,7 +683,7 @@ internal sealed partial class LauncherForm : Form
 		bool launched = false;
 		try
 		{
-			await SyncInstalledContent();
+			await SyncInstalledContent(useInstalledOnMismatch: true);
 			await RunScript(Path.Combine(state.installDirectory, "Launch-Coop.ps1"), "-SkipContentSync");
 			launched = true;
 			Log("Игра запущена.");

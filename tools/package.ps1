@@ -3,7 +3,7 @@
 #   out\TLD-SkyCoop-<version>.zip
 # Requires a MelonLoader-installed co-op game copy (for the generated Il2Cpp assemblies), see README.md.
 param(
-	[string]$GameDir = (Join-Path $PSScriptRoot '..\..\player-2.59\game'),
+	[string]$GameDir = (Join-Path $PSScriptRoot '..\..\player-0.16.13\game'),
 	[string]$Dotnet = 'dotnet',
 	[switch]$NoRestore
 )
@@ -11,8 +11,8 @@ $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $GameDir = [IO.Path]::GetFullPath($GameDir)
 $assemblyHash = (Get-FileHash -LiteralPath (Join-Path $GameDir 'GameAssembly.dll') -Algorithm SHA256).Hash
-if ($assemblyHash -ne 'DDEDD8FCB4A06A440EA6C9D07CEDDEBD47BC855E2873D553461B1D9A47EEDFB8') {
-	throw 'This source targets Survival 2.59 / Steam build 26312993. Select the matching game copy.'
+if ($assemblyHash -ne '92D936F9D8262CF3FD1D6D96CB93C09BFCA9B1F58F39E9930AF7559D3F896F31') {
+	throw 'This source targets Survival 2.60 / Steam build 26450964. Select the matching game copy.'
 }
 if (!(Test-Path -LiteralPath (Join-Path $GameDir 'MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll'))) {
 	throw "No MelonLoader Il2Cpp assemblies in $GameDir. Install the kit once and start the game to generate them, or pass -GameDir."
@@ -52,7 +52,7 @@ $manifest = [ordered]@{
 	files = @($files)
 	source = 'https://github.com/BAndrey0/TLD-SkyCoop'
 	sourceCommit = "$commit"
-	targetGame = "Steam 26312993 / Survival $gameVersion"
+	targetGame = "Steam 26450964 / Survival $gameVersion"
 	localRevision = "survival-$gameVersion-$version"
 	modVersion = $version
 }
