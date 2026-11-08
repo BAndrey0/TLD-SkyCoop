@@ -121,6 +121,8 @@ public class Comps
 
 		public bool m_ShouldSendDrop;
 		internal bool LitAtLaunch;
+		internal float FlareElapsedAtLaunch = -1f;
+		internal int FlareLaunchMinute;
 
 		private bool m_SendDrop;
 
@@ -171,6 +173,8 @@ public class Comps
 					Destroy(this);
 					return;
 				}
+				if (FlareElapsedAtLaunch >= 0f)
+					ThrownFlareSync.PreserveThrowBurn(m_Gear, FlareElapsedAtLaunch + Math.Max(0, MyMod.MinutesFromStartServer - FlareLaunchMinute));
 				MyMod.SendDropItem(m_Gear, 0, 0, samepose: true, settledThrow: true);
 			}
 			else
@@ -1626,7 +1630,7 @@ public class Comps
 
 		public void UpdateVisualItems()
 		{
-			if (m_HasRifle && m_HoldingItem != "GEAR_Rifle")
+			if (m_HasRifle && !MyMod.IsHeldRifle(m_HoldingItem))
 			{
 				rifle.SetActive(value: true);
 			}
@@ -1634,7 +1638,7 @@ public class Comps
 			{
 				rifle.SetActive(value: false);
 			}
-			if (m_HasRevolver && m_HoldingItem != "GEAR_Revolver")
+			if (m_HasRevolver && !MyMod.IsHeldRevolver(m_HoldingItem))
 			{
 				revolver.SetActive(value: true);
 			}
@@ -1821,11 +1825,11 @@ public class Comps
 				{
 					hand_r.transform.GetChild(2).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_Rifle")
+				if (MyMod.IsHeldRifle(m_HoldingItem))
 				{
 					hand_r.transform.GetChild(3).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_Revolver")
+				if (MyMod.IsHeldRevolver(m_HoldingItem))
 				{
 					hand_r.transform.GetChild(4).gameObject.SetActive(value: true);
 				}
@@ -1845,7 +1849,7 @@ public class Comps
 				{
 					hand_r.transform.GetChild(8).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_Bow")
+				if (m_HoldingItem == "GEAR_Bow" || m_HoldingItem == "GEAR_SportBow")
 				{
 					hand_l.transform.GetChild(3).gameObject.SetActive(value: true);
 				}
@@ -2066,6 +2070,7 @@ public class Comps
 				m_BlueFlares = playerEquipmentData.m_BlueFlares;
 				UpdateVisualItems();
 			}
+			ThrownFlareSync.UpdateHeld(this);
 			Vector3 position = MotionSync.Position(m_ID, multiPlayerClientData.m_Position);
 			Quaternion rotation = multiPlayerClientData.m_Rotation;
 			if (!multiPlayerClientData.m_Female || NativeAppearance.HasCostume(m_Player))
@@ -2519,7 +2524,7 @@ public class Comps
 				text2 = MyMod.MyLightSourceName;
 			}
 			int tagHash = m_Animer.GetCurrentAnimatorStateInfo(0).tagHash;
-			int num = Animator.StringToHash(text);
+			int num = Animator.StringToHash(text == BedRest.Animation ? "Idle" : text);
 			m_Animer.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 			if (text == "Fight")
 			{
@@ -2619,10 +2624,8 @@ public class Comps
 				{
 					m_Animer.Play("Map", 0);
 				}
-				if (text == "Sleep")
-				{
-					m_Animer.Play("Sleep", 0);
-				}
+				if (text == "Sleep") m_Animer.Play("Sleep", 0);
+				if (text == BedRest.Animation) m_Animer.Play("Idle", 0, .2f);
 				if (text == "RopeIdle")
 				{
 					string text4 = m_Animer.GetCurrentAnimatorClipInfo(0)[0].clip.name;

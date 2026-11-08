@@ -26,6 +26,7 @@ public static class SelfTest
 	private static float previewSince;
 	private static bool rendered;
 	private static Camera probeCamera;
+	private static string RestRender => Environment.GetEnvironmentVariable("SKYCOOP_REST_RENDER");
 	private static void BuildModelFixture()
 	{
 		bool alignment=Environment.GetEnvironmentVariable("SKYCOOP_MODEL_ALIGNMENT_TEST")=="1";
@@ -62,6 +63,63 @@ public static class SelfTest
 		}
 	}
 
+	private static void RenderRestPose(string path)
+	{
+		var prefab = MyMod.BundleAsset<GameObject>("multiplayerPlayer");
+		var center = new Vector3(0f, 1f, 4f);
+		var avatar = UnityEngine.Object.Instantiate(prefab, center, Quaternion.identity);
+		avatar.SetActive(true);
+		foreach (var bone in avatar.GetComponentsInChildren<Transform>(true)) bone.gameObject.layer = 30;
+		BedRest.FreezeRestAnimation(avatar);
+		var rig = new BedRest.RestRig(avatar.transform);
+		rig.Align(center, Quaternion.identity);
+		var camera = new GameObject("Rest probe camera").AddComponent<Camera>();
+		camera.enabled = false;
+		camera.fieldOfView = 60f;
+		camera.aspect = 16f / 9f;
+		camera.nearClipPlane = .05f;
+		camera.cullingMask = 1 << 30;
+		camera.clearFlags = CameraClearFlags.SolidColor;
+		camera.backgroundColor = new Color(.22f, .23f, .27f);
+		var light = new GameObject("Rest probe light").AddComponent<Light>();
+		light.type = LightType.Directional;
+		light.intensity = 2f;
+		light.cullingMask = 1 << 30;
+		light.transform.rotation = Quaternion.Euler(45, 30, 0);
+		var bed = GameObject.CreatePrimitive(PrimitiveType.Cube);
+		bed.layer = 30;
+		bed.transform.position = center + new Vector3(0f, -.09f, .10f);
+		bed.transform.localScale = new Vector3(.8f, .12f, 2.1f);
+		var rt = RenderTexture.GetTemporary(960, 540, 24, RenderTextureFormat.ARGB32);
+		var saved = RenderTexture.active;
+		var pixels = new Texture2D(960, 540, TextureFormat.RGB24, false);
+		void Capture(string suffix, Vector3 position, Quaternion rotation)
+		{
+			camera.transform.SetPositionAndRotation(position, rotation);
+			camera.targetTexture = rt;
+			camera.Render();
+			RenderTexture.active = rt;
+			pixels.ReadPixels(new Rect(0, 0, 960, 540), 0, 0);
+			pixels.Apply();
+			System.IO.File.WriteAllBytes(path + suffix + ".jpg", pixels.EncodeToJPG(88));
+		}
+		try
+		{
+			var view = BedRest.FirstPerson(rig, center, Quaternion.identity);
+			Capture("-first", view.Position, view.Rotation);
+			var side = center + new Vector3(2.3f, 1.1f, .25f);
+			Capture("-side", side, Quaternion.LookRotation(center - side));
+			MelonLogger.Msg("[Rest probe] PASS first-person and observer renders, head=" + (rig.Head != null) + " root=" + rig.Root.position + " headAt=" + rig.Head?.position + " eye=" + view.Position);
+		}
+		finally
+		{
+			camera.targetTexture = null;
+			RenderTexture.active = saved;
+			RenderTexture.ReleaseTemporary(rt);
+			UnityEngine.Object.Destroy(pixels);
+		}
+	}
+
 	internal static void ProbeInteractions()
 	{
 		if (Environment.GetEnvironmentVariable("SKYCOOP_INTERACTION_PROBE") == "1")
@@ -93,6 +151,7 @@ public static class SelfTest
 					if (SleepRendezvousFix.SelectOffer(id => id == 1 ? -2 : 0) != -2)
 						throw new InvalidOperationException("Group wait cancellation failed");
 					MelonLogger.Msg("[Interaction probe] PASS native shared-drop interface, hover, target and first-voter wait duration");
+					if (!string.IsNullOrEmpty(RestRender)) RenderRestPose(RestRender);
 				}
 				catch (Exception ex) { MelonLogger.Error("[Interaction probe] FAIL " + ex); }
 				finally

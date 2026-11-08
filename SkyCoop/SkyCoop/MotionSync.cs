@@ -33,8 +33,8 @@ public static class MotionSync
   if(rest!=null&&rest.IsSleeping()&&rest.m_Bed!=null)
   {if(rest.m_Bed.m_BodyPlacementTransform!=null)position=rest.m_Bed.m_BodyPlacementTransform.position;rotation=MyMod.GetBedRotation(rest.m_Bed);}
   var bedPose = BedRest.BodyPose;
-  if (bedPose != null) { position = bedPose.position; rotation = Quaternion.Inverse(bedPose.rotation); }
-  var state=new State{sequence=unchecked(++sequence),level=MyMod.levelid,scene=MyMod.level_guid,animation=bedPose != null ? "Sleep" : MyMod.MyAnimState,position=position,rotation=rotation};
+  if (bedPose != null) { position = bedPose.position; rotation = BedRest.SurfaceRotation(bedPose); }
+  var state=new State{sequence=unchecked(++sequence),level=MyMod.levelid,scene=MyMod.level_guid,animation=bedPose != null ? BedRest.Animation : MyMod.MyAnimState,position=position,rotation=rotation};
   if(MyMod.iAmHost)Broadcast(0,state);else{using var p=new Packet(ClientPacket);Write(p,state);MyMod.SendUDPData(p);}
  }
  private static void Write(Packet p,State s){p.Write(s.sequence);p.Write(s.level);p.Write(s.scene);p.Write(s.animation);p.Write(s.position);p.Write(s.rotation);}

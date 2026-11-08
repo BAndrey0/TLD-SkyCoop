@@ -91,6 +91,8 @@ public class DataStr
 
 		public int m_GoalTime;
 
+		public float m_FlareRemainingMinutes = -1f;
+
 		public string m_Dropper = "";
 
 		public int m_Variant;

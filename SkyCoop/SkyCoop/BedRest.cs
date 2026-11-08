@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using HarmonyLib;
 using Il2Cpp;
 using UnityEngine;
 
@@ -12,12 +15,22 @@ internal static class BedRest
     private static Quaternion cameraRotation;
     private static string scene;
     private static GameObject body;
-    private static Transform head;
-    private static Transform hips;
+    private static RestRig localRig;
+    private static readonly Dictionary<int, RestRig> RemoteRigs = new();
     private static bool restClicked;
 
     internal static bool Active => player != null && bed != null;
-    internal static Transform BodyPose => Active ? bed.m_BodyPlacementTransform : null;
+    internal const string Animation = "BedRest";
+    internal const string Status = "Отдых · Сила восстанавливается\nEsc / пробел — встать";
+    internal static void Request() => restClicked = true;
+    internal static Transform BodyPose => Active ? bed.m_BodyPlacementTransform ?? bed.transform : null;
+
+    internal static Quaternion SurfaceRotation(Transform pose)
+    {
+        var forward = Vector3.ProjectOnPlane(pose.forward, Vector3.up);
+        if (forward.sqrMagnitude < .01f) forward = Vector3.ProjectOnPlane(pose.up, Vector3.up);
+        return Quaternion.LookRotation(forward.sqrMagnitude >= .01f ? forward : Vector3.forward, Vector3.up);
+    }
 
     internal static bool IsOccupied(Bed target)
     {
@@ -28,19 +41,14 @@ internal static class BedRest
         if (target.m_BodyPlacementTransform == null) return false;
         Vector3 position = target.m_BodyPlacementTransform.position;
         foreach (var remote in MyMod.playersData)
-            if (remote != null && remote.m_LevelGuid == MyMod.level_guid && remote.m_AnimState == "Sleep" &&
+            if (remote != null && remote.m_LevelGuid == MyMod.level_guid && (remote.m_AnimState == "Sleep" || remote.m_AnimState == Animation) &&
                 (remote.m_Position - position).sqrMagnitude < 2.25f) return true;
         return false;
     }
 
-    private static Panel_Rest AvailablePanel()
-    {
-        if (!CoopFatigue.ShowsStrengthCost || MyMod.LoadingScreenIsOn || MyMod.IsDead ||
-            MyMod.SaveExitPending || SleepRendezvousFix.Waiting || CheatConsole.IsOpen || ItemSpawner.IsOpen) return null;
-        var panel = GameCompat.Panel<Panel_Rest>();
-        return panel != null && panel.isActiveAndEnabled && panel.m_Bed != null &&
-            panel.m_Bed.m_BodyPlacementTransform != null ? panel : null;
-    }
+    internal static bool CanBegin(Panel_Rest panel) => panel != null && panel.isActiveAndEnabled &&
+        panel.m_Bed != null && CoopFatigue.ShowsStrengthCost && !MyMod.LoadingScreenIsOn && !MyMod.IsDead &&
+        !MyMod.SaveExitPending && !SleepRendezvousFix.Waiting && !CheatConsole.IsOpen && !ItemSpawner.IsOpen;
 
     internal static void Tick()
     {
@@ -56,8 +64,8 @@ internal static class BedRest
         bool clicked = restClicked;
         restClicked = false;
         if (!clicked && !KeyboardUtilities.InputManager.GetKeyDown(KeyCode.R)) return;
-        var panel = AvailablePanel();
-        if (panel == null) return;
+        var panel = GameCompat.Panel<Panel_Rest>();
+        if (!CanBegin(panel)) return;
         var target = panel.m_Bed;
         if (IsOccupied(target))
         {
@@ -65,7 +73,7 @@ internal static class BedRest
             return;
         }
         var manager = GameManager.GetPlayerManagerComponent();
-        var view = GameManager.GetVpFPSCamera()?.transform;
+        var view = GameManager.GetVpFPSCamera()?.GetCameraComponent()?.transform;
         if (manager == null || view == null) return;
         panel.Enable(false);
         camera = view;
@@ -77,22 +85,24 @@ internal static class BedRest
         player.SetControlMode(PlayerControlMode.Locked);
         var prefab = MyMod.BundleAsset<GameObject>("multiplayerPlayer");
         if (prefab == null) return;
-        var pose = target.m_BodyPlacementTransform;
-        body = UnityEngine.Object.Instantiate(prefab, pose.position, pose.rotation);
-        foreach (var bone in body.GetComponentsInChildren<Transform>(true))
-        {
-            if (bone.name == "Head_jnt" || bone.name == "Head") head = bone;
-            else if (bone.name == "Hips_jnt" || bone.name == "Hips") hips = bone;
-        }
+        var pose = BodyPose;
+        body = UnityEngine.Object.Instantiate(prefab, pose.position, SurfaceRotation(pose));
         foreach (var collider in body.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
         foreach (var source in body.GetComponentsInChildren<AudioSource>(true)) source.enabled = false;
-        var animator = body.GetComponent<Animator>();
-        if (animator != null)
-        {
-            animator.applyRootMotion = false;
-            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-            animator.Play("Sleep", 0);
-        }
+        body.SetActive(true);
+        FreezeRestAnimation(body);
+        localRig = new RestRig(body.transform);
+    }
+
+    internal static void FreezeRestAnimation(GameObject avatar)
+    {
+        var animator = avatar.GetComponent<Animator>();
+        if (animator == null) return;
+        animator.applyRootMotion = false;
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        animator.Play("Idle", 0, .2f);
+        animator.Update(0f);
+        animator.enabled = false;
     }
 
     private static void End()
@@ -107,8 +117,7 @@ internal static class BedRest
             player.ReturnToNormalControlMode(PlayerControlMode.Locked);
         if (body != null) UnityEngine.Object.Destroy(body);
         body = null;
-        head = null;
-        hips = null;
+        localRig = null;
         if (bed != null && bed.GetComponent<Comps.FakeBedDummy>() != null) UnityEngine.Object.Destroy(bed.gameObject);
         player = null;
         camera = null;
@@ -116,35 +125,120 @@ internal static class BedRest
         scene = null;
     }
 
-    internal static void LateUpdate()
+    [HarmonyPatch(typeof(vp_FPSCamera), nameof(vp_FPSCamera.LateUpdate))]
+    private static class RestCamera
+    {
+        private static void Postfix(vp_FPSCamera __instance)
+        {
+            if (camera != null && __instance.GetCameraComponent()?.transform == camera) UpdateCamera();
+        }
+    }
+
+    private static void UpdateCamera()
     {
         var pose = BodyPose;
         if (camera == null || pose == null) return;
-        var forward = Vector3.ProjectOnPlane(pose.forward, Vector3.up);
-        if (forward.sqrMagnitude < .01f) forward = Vector3.forward;
-        var eyes = pose.position + Vector3.up * .34f - forward * .22f;
-        if (head != null && hips != null)
-        {
-            var towardFeet = Vector3.ProjectOnPlane(hips.position - head.position, Vector3.up);
-            if (towardFeet.sqrMagnitude > .04f)
-            {
-                forward = towardFeet.normalized;
-                eyes = head.position + Vector3.up * .17f + forward * .06f;
-            }
-        }
-        camera.SetPositionAndRotation(eyes, Quaternion.LookRotation(forward - Vector3.up * .14f, Vector3.up));
+        Quaternion rotation = SurfaceRotation(pose);
+        localRig?.Align(pose.position, rotation);
+        var view = FirstPerson(localRig, pose.position, rotation);
+        camera.SetPositionAndRotation(view.Position, view.Rotation);
     }
 
-    internal static void Draw()
+    internal static (Vector3 Position, Quaternion Rotation) FirstPerson(RestRig rig, Vector3 position, Quaternion rotation)
     {
-        var box = new Rect((Screen.width - 320f) * .5f, Screen.height * .72f, 320f, 48f);
-        if (Active)
+        Vector3 forward = rotation * Vector3.forward;
+        var eyes = position + Vector3.up * .57f - forward * 1.02f;
+        if (rig?.Head != null)
         {
-            GUI.Box(box, "Личный отдых · Сила восстанавливается\nEsc / пробел — встать");
+            var headOffset = rig.Head.position - position;
+            float along = Vector3.Dot(headOffset, forward);
+            if (along >= -1f && along <= -.5f && Mathf.Abs(Vector3.Dot(headOffset, rotation * Vector3.right)) < .2f)
+                eyes = rig.Head.position + Vector3.up * .30f - forward * .03f;
         }
-        else if (AvailablePanel() != null && GUI.Button(box, "Лечь отдохнуть [R]\nВосстановление Силы в реальном времени"))
+        return (eyes, Quaternion.LookRotation(forward - Vector3.up * .12f, Vector3.up));
+    }
+
+    internal static void LateUpdate()
+    {
+        UpdateCamera();
+        if (!MyMod.InOnline() || MyMod.LoadingScreenIsOn) { RemoteRigs.Clear(); return; }
+        for (int i = 0; i < MyMod.playersData.Count && i < MyMod.players.Count; i++)
         {
-            restClicked = true;
+            var state = MyMod.playersData[i];
+            var actor = MyMod.players[i];
+            if (state == null || state.m_LevelGuid != MyMod.level_guid || state.m_AnimState != Animation ||
+                actor == null || !actor.activeInHierarchy || (!MyMod.iAmHost && i == GameServer.ClientUser.myId))
+            { RemoteRigs.Remove(i); continue; }
+            if (!RemoteRigs.TryGetValue(i, out var rig) || rig.Root != actor.transform)
+                RemoteRigs[i] = rig = new RestRig(actor.transform);
+            rig.Align(state.m_Position, state.m_Rotation);
+        }
+    }
+
+    internal sealed class RestRig
+    {
+        internal readonly Transform Root;
+        internal readonly Transform Head;
+        private readonly Transform hips;
+        private readonly Transform[] upperArms = new Transform[2];
+        private readonly Transform[] forearms = new Transform[2];
+        private readonly Transform[] hands = new Transform[2];
+        private readonly Transform[] thighs = new Transform[2];
+        private readonly Transform[] shins = new Transform[2];
+        private readonly Transform[] feetBones = new Transform[2];
+
+        internal RestRig(Transform root)
+        {
+            Root = root;
+            var bones = new Dictionary<string, Transform>(StringComparer.Ordinal);
+            foreach (var skin in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                foreach (var bone in skin.bones)
+                    if (bone != null) bones.TryAdd(bone.name, bone);
+            Transform Bone(string name) => bones.TryGetValue(NativeCostumeRig.Map(name) ?? name, out var bone) ? bone : null;
+            Head = Bone("Head_jnt");
+            hips = Bone("Hips_jnt");
+            for (int i = 0; i < 2; i++)
+            {
+                string side = i == 0 ? "Left" : "Right";
+                upperArms[i] = Bone(side + "UpArm_jnt");
+                forearms[i] = Bone(side + "Elbow_jnt");
+                hands[i] = Bone(side + "Hand_jnt");
+                thighs[i] = Bone(side + "Hip_jnt");
+                shins[i] = Bone(side + "Knee_jnt");
+                feetBones[i] = Bone(side + "Foot_jnt");
+            }
+        }
+
+        internal void Align(Vector3 position, Quaternion rotation)
+        {
+            if (Root == null) return;
+            var feet = rotation * Vector3.forward;
+            Root.SetPositionAndRotation(position + feet * .83f + Vector3.up * .22f,
+                Quaternion.LookRotation(Vector3.up, -feet));
+            if (hips == null) return;
+            var across = rotation * Vector3.right;
+            for (int side = 0; side < 2; side++)
+            {
+                Vector3 outward = (side == 0 ? -1f : 1f) * across;
+                if (upperArms[side] != null && forearms[side] != null && hands[side] != null)
+                {
+                    Aim(upperArms[side], forearms[side], hips.position - feet * .10f + outward * .27f);
+                    Aim(forearms[side], hands[side], hips.position - feet * .12f + outward * .08f + Vector3.up * .17f);
+                }
+                if (thighs[side] != null && shins[side] != null && feetBones[side] != null)
+                {
+                    Aim(thighs[side], shins[side], hips.position + feet * .42f + outward * .12f + Vector3.up * .05f);
+                    Aim(shins[side], feetBones[side], hips.position + feet * .85f + outward * .13f);
+                }
+            }
+        }
+
+        private static void Aim(Transform joint, Transform next, Vector3 target)
+        {
+            Vector3 from = next.position - joint.position;
+            Vector3 to = target - joint.position;
+            if (from.sqrMagnitude > .001f && to.sqrMagnitude > .001f)
+                joint.rotation = Quaternion.FromToRotation(from, to) * joint.rotation;
         }
     }
 }

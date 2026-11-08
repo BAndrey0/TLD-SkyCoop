@@ -1097,11 +1097,11 @@ public class Pathes
 			}
 			if (__instance != null && __instance.gameObject != null && __instance.ProjectilePrefab != null)
 			{
-				if (__instance.gameObject.name == "Rifle" && __instance.ProjectilePrefab.name == "PistolBullet")
+				if (MyMod.CloneTrimer(__instance.ProjectilePrefab.name) == "PistolBullet")
 				{
 					MyMod.PistolBulletPrefab = __instance.ProjectilePrefab;
 				}
-				if (__instance.gameObject.name == "Revolver" && __instance.ProjectilePrefab.name == "RevolverBullet")
+				if (MyMod.CloneTrimer(__instance.ProjectilePrefab.name) == "RevolverBullet")
 				{
 					MyMod.RevolverBulletPrefab = __instance.ProjectilePrefab;
 				}
@@ -1151,7 +1151,7 @@ public class Pathes
 					MelonLogger.Msg("[vp_FPSShooter] Bullet projectile spawn " + __instance.ProjectilePrefab.name);
 				}
 				DataStr.ShootSync shootSync = new DataStr.ShootSync();
-				shootSync.m_projectilename = __instance.ProjectilePrefab.name;
+				shootSync.m_projectilename = MyMod.CloneTrimer(__instance.ProjectilePrefab.name);
 				shootSync.m_position = position;
 				shootSync.m_rotation = rotation;
 				shootSync.m_sceneguid = MyMod.level_guid;
@@ -2275,7 +2275,7 @@ public class Pathes
 	{
 		private static void Postfix(GearItem gi, GearItem __result)
 		{
-			if (__result != gi) TrackThrownGear(__result, ThrownGearSync.IsLit(gi));
+			if (__result != gi) TrackThrownGear(__result, ThrownGearSync.IsLit(gi), ThrownFlareSync.BurningElapsed(gi));
 		}
 	}
 
@@ -2289,7 +2289,7 @@ public class Pathes
 		}
 	}
 
-	private static void TrackThrownGear(GearItem gear, bool lit = false)
+	private static void TrackThrownGear(GearItem gear, bool lit = false, float elapsed = -1f)
 	{
 		if (!MyMod.InOnline() || !ThrownGearSync.Supports(gear) ||
 			gear.GetComponent<Comps.DestoryStoneOnStop>() != null) return;
@@ -2301,6 +2301,9 @@ public class Pathes
 		tracker.m_Gear = gear;
 		tracker.m_ShouldSendDrop = true;
 		tracker.LitAtLaunch = lit || ThrownGearSync.IsLit(gear);
+		tracker.FlareElapsedAtLaunch = System.Math.Max(elapsed, ThrownFlareSync.BurningElapsed(gear));
+		tracker.FlareLaunchMinute = MyMod.MinutesFromStartServer;
+		ThrownFlareSync.PreserveThrowBurn(gear, tracker.FlareElapsedAtLaunch);
 	}
 
 	[HarmonyPatch(typeof(PlayerManager), "ReleaseThrownObject")]
@@ -2308,11 +2311,11 @@ public class Pathes
 	{
 		internal static int TrackedThrowDepth;
 
-		private static void Finalizer((GearItem Gear, bool Tracked, bool Lit) __state)
+		private static void Finalizer((GearItem Gear, bool Tracked, bool Lit, float Elapsed) __state)
 		{
 			if (__state.Tracked) TrackedThrowDepth--;
 		}
-		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Tracked, bool Lit) __state)
+		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Tracked, bool Lit, float Elapsed) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2321,11 +2324,11 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
 			var gear = __instance.m_ThrownItem;
-			__state = (gear, ThrownGearSync.Supports(gear), ThrownGearSync.IsLit(gear));
+			__state = (gear, ThrownGearSync.Supports(gear), ThrownGearSync.IsLit(gear), ThrownFlareSync.BurningElapsed(gear));
 			if (__state.Tracked) TrackedThrowDepth++;
 		}
 
-		public static void Postfix((GearItem Gear, bool Tracked, bool Lit) __state)
+		public static void Postfix((GearItem Gear, bool Tracked, bool Lit, float Elapsed) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2336,7 +2339,7 @@ public class Pathes
 			if (__state.Tracked)
 			{
 				if (__state.Gear != null && __state.Gear.m_StoneItem == null && !__state.Gear.m_InPlayerInventory)
-					TrackThrownGear(__state.Gear, __state.Lit);
+					TrackThrownGear(__state.Gear, __state.Lit, __state.Elapsed);
 				MyMod.PushActionToMyDoll("Shoot");
 				return;
 			}
@@ -3605,6 +3608,12 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
 			if (hit.transform == null) return;
+			if (ScenePlacementSync.IsCookwareReplica(hit.transform.gameObject))
+			{
+				gi = null;
+				interactiveObj = hit.transform.gameObject;
+				return;
+			}
 			var dropped = DroppedGearInteraction.Find(hit.transform.gameObject);
 			if (dropped != null)
 			{
@@ -3668,9 +3677,10 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "InteractiveObjectsProcessInteraction")]
 	internal class PlayerManager_InteractiveObjectsProcessInteraction
 	{
-		internal static bool Prefix(PlayerManager __instance)
+		internal static bool Prefix(PlayerManager __instance, ref bool __result)
 		{
 			var target = __instance.GetInteractiveObjectUnderCrosshair();
+			if (ScenePlacementSync.OpenCookingActions(target)) { __result = true; return false; }
 			var corpse = target != null ? target.GetComponentInParent<Comps.AnimalCorpseObject>() : null;
 			if (MyMod.InOnline() && MyMod.CanPickUpSmallGame(corpse))
 			{

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Il2Cpp;
-using Il2CppSystem.Collections.Generic;
 using MelonLoader;
 using UnityEngine;
 
@@ -19,12 +18,27 @@ public static class SleepRendezvousFix
 	private static int offeredHours;
 	private static string offerText;
 	private static float lastOffer;
+	private static readonly Dictionary<int, float> VoteExpires = new();
+	private static UILabel restNotice;
+	private static GameObject localRestButton;
+	private static Vector3 restRowCenter;
+	private static Vector3 restRowScale;
+	private static EventDelegate.Callback localRestCallback;
+	private static Il2CppSystem.Collections.Generic.List<EventDelegate> localRestActions;
 	private static readonly System.Collections.Generic.List<int> VoteOrder = new();
 
 	internal static void RecordVote(int id, int hours)
 	{
-		if (hours == 0) VoteOrder.Remove(id);
-		else if (!VoteOrder.Contains(id)) VoteOrder.Add(id);
+		if (hours == 0)
+		{
+			VoteOrder.Remove(id);
+			VoteExpires.Remove(id);
+		}
+		else
+		{
+			if (!VoteOrder.Contains(id)) VoteOrder.Add(id);
+			if (id > 0) VoteExpires[id] = Time.realtimeSinceStartup + 4f;
+		}
 	}
 
 	internal static int SelectOffer(Func<int, int> currentVote)
@@ -35,7 +49,8 @@ public static class SleepRendezvousFix
 
 	internal static int ProposalOwner => VoteOrder.Count > 0 ? VoteOrder[0] : -1;
 
-	internal static void ClearVotes() => VoteOrder.Clear();
+	internal static void ClearVotes() { VoteOrder.Clear(); VoteExpires.Clear(); }
+	internal static bool VoteIsCurrent(int id) => VoteExpires.TryGetValue(id, out float expires) && Time.realtimeSinceStartup < expires;
 
 	private static bool waiting;
 
@@ -49,7 +64,8 @@ public static class SleepRendezvousFix
 	{
 		get
 		{
-			if (waiting && MyMod.WaitForSleepLable != null)
+			if (waiting && requestedHours != 0 && MyMod.WaitForSleepLable != null &&
+				GameCompat.Panel<Panel_Rest>()?.isActiveAndEnabled == true)
 			{
 				return MyMod.WaitForSleepLable.activeSelf;
 			}
@@ -193,6 +209,7 @@ public static class SleepRendezvousFix
 		foreach (var label in new_button.GetComponentsInChildren<UILabel>(true))
 			label.text = panel.m_ShowPassTime ? "ПОДОЖДАТЬ ВСЕМ ВМЕСТЕ" : "СПАТЬ ВСЕМ ВМЕСТЕ";
 		new_button.SetActive(flag);
+		BindLocalRest(panel, new_button, flag);
 		if (component != null)
 		{
 			component.enabled = true;
@@ -204,6 +221,52 @@ public static class SleepRendezvousFix
 		foreach (Collider componentsInChild in new_button.GetComponentsInChildren<Collider>(includeInactive: true))
 		{
 			componentsInChild.enabled = flag && !MyMod.SaveExitPending;
+		}
+	}
+
+	private static void BindLocalRest(Panel_Rest panel, GameObject groupButton, bool groupVisible)
+	{
+		if (localRestButton == null || localRestButton.transform.parent != panel.transform)
+		{
+			if (localRestButton != null) UnityEngine.Object.Destroy(localRestButton);
+			restRowCenter = groupButton.transform.localPosition;
+			restRowScale = groupButton.transform.localScale;
+			localRestButton = UnityEngine.Object.Instantiate(groupButton, panel.transform, false);
+			localRestButton.name = "TLD Coop local rest";
+			var localSpawner = localRestButton.GetComponent<GenericButtonMouseSpawner>();
+			if (localSpawner != null && localSpawner.m_SpawnedObject != null &&
+				!localSpawner.m_SpawnedObject.transform.IsChildOf(localRestButton.transform))
+			{
+				localSpawner.m_SpawnedObject = null;
+				localSpawner.InstantiateObjectIfNoneExists();
+			}
+		}
+		bool show = groupVisible && BedRest.CanBegin(panel);
+		localRestButton.SetActive(show);
+		var widget = groupButton.GetComponentInChildren<BoxCollider>(true);
+		float width = widget != null ? Mathf.Abs(panel.transform.InverseTransformVector(widget.transform.TransformVector(Vector3.right * widget.size.x)).x) : 0f;
+		if (groupButton.transform.localScale.x != restRowScale.x) width /= .82f;
+		float offset = width > 0f ? width * .45f : .32f;
+		groupButton.transform.localPosition = restRowCenter - Vector3.right * (show ? offset : 0f);
+		groupButton.transform.localScale = show ? Vector3.Scale(restRowScale, new Vector3(.82f, 1f, 1f)) : restRowScale;
+		if (!show) return;
+		localRestButton.transform.localPosition = restRowCenter + Vector3.right * offset;
+		localRestButton.transform.localScale = groupButton.transform.localScale;
+		if (localRestActions == null)
+		{
+			localRestCallback = (Action)BedRest.Request;
+			localRestActions = new Il2CppSystem.Collections.Generic.List<EventDelegate>();
+			EventDelegate.Add(localRestActions, localRestCallback);
+		}
+		var spawner = localRestButton.GetComponent<GenericButtonMouseSpawner>();
+		if (spawner != null) spawner.onClick = localRestActions;
+		foreach (var button in GatherButtons(localRestButton, spawner, panel.m_SleepButton))
+		{ button.onClick = localRestActions; button.isEnabled = true; }
+		foreach (var label in localRestButton.GetComponentsInChildren<UILabel>(true))
+		{
+			var localizer = label.GetComponent<UILocalize>();
+			if (localizer != null) localizer.enabled = false;
+			label.text = "ЛЕЧЬ ОТДОХНУТЬ";
 		}
 	}
 
@@ -387,11 +450,29 @@ public static class SleepRendezvousFix
 		}
 	}
 
-	internal static void Draw()
+	internal static void TickNotice()
 	{
-		if (string.IsNullOrEmpty(offerText) || !MyMod.InOnline() || MyMod.LoadingScreenIsOn || MyMod.IsDead ||
-			Waiting || Time.realtimeSinceStartup - lastOffer > 10f) return;
-		GUI.Box(new Rect((Screen.width - 480f) * .5f, 30f, 480f, 36f), offerText);
+		if (waiting && !Waiting) CancelWaiting(explain: false);
+		string message = null;
+		if (MyMod.InOnline() && !MyMod.LoadingScreenIsOn && !MyMod.IsDead && !Waiting &&
+			!InterfaceManager.IsOverlayActiveImmediate())
+		{
+			message = Time.realtimeSinceStartup - lastOffer <= 4f ? offerText : null;
+			if (BedRest.Active) message = string.IsNullOrEmpty(message) ? BedRest.Status : message + "\n" + BedRest.Status;
+		}
+		if (restNotice == null && !string.IsNullOrEmpty(message))
+		{
+			var source = GameCompat.Panel<Panel_HUD>()?.m_Label_Message;
+			if (source == null || source.transform.parent == null) return;
+			restNotice = UnityEngine.Object.Instantiate(source, source.transform.parent, false);
+			restNotice.name = "TLD Coop rest notice";
+			restNotice.transform.localPosition = source.transform.localPosition + Vector3.down * (Mathf.Max(28, source.fontSize) * 1.5f);
+			var localizer = restNotice.GetComponent<UILocalize>();
+			if (localizer != null) localizer.enabled = false;
+		}
+		if (restNotice == null) return;
+		if (!string.IsNullOrEmpty(message)) { restNotice.text = message; restNotice.alpha = 1f; }
+		restNotice.gameObject.SetActive(!string.IsNullOrEmpty(message));
 	}
 
 	public static void ProcessReadiness(int sleepers, int required, bool everyoneReady, int commonHours, string proposer)
@@ -474,6 +555,10 @@ public static class SleepRendezvousFix
 		requestedHours = 0;
 		lastClickFrame = -1;
 		offeredHours = 0;
+		offerText = null;
+		lastOffer = 0f;
+		ClearVotes();
+		if (restNotice != null) restNotice.gameObject.SetActive(false);
 		boundRoot = null;
 		childSignature = 0;
 		clickActions = null;

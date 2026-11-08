@@ -35,8 +35,9 @@ internal static class ScenePlacementSync
     }
     private static FurniturePlacement placingFurniture;
     private sealed record Pot(string Gear, Pose Pose, Pose Slot, string Meshes, string Food, string Mode, int Minutes, bool CanTake, int Liquid);
+    private sealed record GearTransfer(Guid Id, int Requester, string Gear, string Json);
     private sealed record WaterTransfer(Guid Id, int Requester, float Liters, bool Potable);
-    private static readonly Dictionary<Guid, float> ReceivedWater = new();
+    private static readonly Dictionary<Guid, float> ReceivedOutputs = new();
     private sealed record RemotePot(Pot State, GameObject Visual, float Expires);
     private static readonly Dictionary<string, Dictionary<string, Move>> Saved = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Move> Pending = new(StringComparer.Ordinal);
@@ -480,7 +481,8 @@ internal static class ScenePlacementSync
             }
             int id = point.GetInstanceID();
             CookingPoints[id] = point;
-            potsByPoint[id] = pot;
+            if (!potsByPoint.TryGetValue(id, out var previous) || (!previous.IsCookingSomething() && pot.IsCookingSomething()))
+                potsByPoint[id] = pot;
         }
 
         LocalCooking.Clear();
@@ -494,7 +496,8 @@ internal static class ScenePlacementSync
             }
             var gear = point.GetPlacedGear();
             potsByPoint.TryGetValue(entry.Key, out var attachedPot);
-            var pot = attachedPot != null ? attachedPot : gear?.m_CookingPotItem;
+            var pot = gear?.m_CookingPotItem;
+            if (attachedPot != null && (pot == null || (!pot.IsCookingSomething() && attachedPot.IsCookingSomething()))) pot = attachedPot;
             if (pot != null && pot.m_GearItem != null) gear = pot.m_GearItem;
             if (gear == null || gear.m_InPlayerInventory) continue;
             string name = gear.GetGearName();
@@ -591,22 +594,39 @@ internal static class ScenePlacementSync
         return null;
     }
 
-    internal static string CookingHover(GameObject target)
+    private static KeyValuePair<(int Owner, int Key), RemotePot>? FindRemoteCookware(GameObject target)
     {
-        var slot = target != null ? target.GetComponentInParent<CookingSlot>() : null;
-        if (slot == null || FindRemotePot(slot.m_GearPlacePoint) is not { } entry) return null;
+        if (target == null || !InWorld) return null;
+        foreach (var pair in RemotePots)
+            if (pair.Value.Visual == target) return pair;
+        var slot = target.GetComponentInParent<CookingSlot>();
+        return FindRemotePot(slot?.m_GearPlacePoint ?? target.GetComponentInParent<GearPlacePoint>());
+    }
+
+    internal static bool IsCookwareReplica(GameObject target)
+    {
+        if (target == null) return false;
+        foreach (var pot in RemotePots.Values)
+            if (pot.Visual == target) return true;
+        return false;
+    }
+
+    internal static string CookingHover(GameObject target) => FindRemoteCookware(target) is { } entry ? CookingLabel(entry) : null;
+
+    private static string CookingLabel(KeyValuePair<(int Owner, int Key), RemotePot> entry)
+    {
         var state = entry.Value.State;
         string contents = state.Liquid == 2 ? "Тает снег" : state.Liquid == 1 ? state.Mode == "Ready" ? "Питьевая вода" : state.Mode == "Ruined" ? "Вода выкипела" : "Кипятится вода" :
             state.Food.Length > 0 ? GameCompat.GetGearDisplayName(state.Food) : "Пустая посуда";
-        string label = GameCompat.GetGearDisplayName(IsCookingDummyName(state.Gear) && state.Food.Length > 0 ? state.Food : state.Gear);
+        string vessel = GameCompat.GetGearDisplayName(state.Gear);
+        string label = IsCookingDummyName(state.Gear) ? contents : contents + " · " + vessel;
         int owner = entry.Key.Owner;
         if (owner >= 0 && owner < MyMod.playersData.Count && !string.IsNullOrEmpty(MyMod.playersData[owner]?.m_Name))
             label += " · " + MyMod.playersData[owner].m_Name;
-        if (contents.Length > 0) label += "\n" + contents;
         if (contents.Length > 0 && state.Mode == "Ready") label += " · готово";
         else if (contents.Length > 0 && state.Mode == "Ruined") label += " · испорчено";
         else if (state.Minutes > 0 && contents.Length > 0) label += " · " + state.Minutes + " мин";
-        if (state.CanTake) label += state.Mode == "Cooking" && (state.Liquid != 0 || state.Food.Length > 0) ? "\nПрервать готовку" : "\nСнять с огня";
+
         return label;
     }
 
@@ -630,17 +650,36 @@ internal static class ScenePlacementSync
         {
             if (__instance.m_GearPlacePoint?.GetPlacedGear() != null ||
                 FindRemotePot(__instance.m_GearPlacePoint) is not { } entry) return true;
-            __result = true;
-            if (!entry.Value.State.CanTake)
-                HUDMessage.AddMessage("Содержимое пока нельзя снять с огня");
-            else
-            {
-                int action = TakeAction(entry.Value.State);
-                if (MyMod.iAmHost) RequestCookwareRelease(0, entry.Key.Owner, entry.Key.Key, MyMod.level_guid, action);
-                else SendToHost(4, MyMod.level_guid, $"{entry.Key.Owner}:{action}", entry.Key.Key);
-            }
+            __result = OpenCookingActions(__instance.gameObject);
             return false;
         }
+    }
+
+    internal static bool OpenCookingActions(GameObject target)
+    {
+        if (FindRemoteCookware(target) is not { } entry) return false;
+        var state = entry.Value.State;
+        var panel = GameCompat.Panel<Panel_ActionPicker>();
+        if (panel == null || !state.CanTake)
+        {
+            HUDMessage.AddMessage(CookingLabel(entry));
+            return true;
+        }
+        int action = TakeAction(state);
+        string area = MyMod.level_guid;
+        var (owner, key) = entry.Key;
+        string actionLabel = action == 1 ? "Забрать посуду" : state.Mode == "Cooking" ? "Прервать готовку" : action == 3 ? "Забрать воду" : "Забрать еду";
+        panel.Enable(true);
+        panel.m_ActionPickerItemDataList.Clear();
+        panel.m_ActionPickerItemDataList.Add(new ActionPickerItemData("ico_climb", actionLabel, (Action)(() =>
+        {
+            if (area != MyMod.level_guid) return;
+            if (MyMod.iAmHost) RequestCookwareRelease(0, owner, key, area, action);
+            else SendToHost(4, area, $"{owner}:{action}", key);
+        })));
+        panel.m_ObjectInteractedWith = target;
+        panel.EnableWithCurrentList();
+        return true;
     }
 
     private static int TakeAction(Pot state) => state.Liquid == 2 ? 4 : state.Liquid == 1 ? 3 : state.Food.Length > 0 ? 2 : 1;
@@ -706,7 +745,7 @@ internal static class ScenePlacementSync
                 if (point.GetPlacedGear() == source) point.ResetPlacedGear();
                 UnityEngine.Object.Destroy(source.gameObject);
             }
-            DropCookingOutput(output, point, requester);
+            TransferCookingOutput(output, point, requester);
         }
         else
         {
@@ -719,7 +758,56 @@ internal static class ScenePlacementSync
             LocalCooking.Remove(key);
             PublishedPots.Remove(key);
             PublishPot(key, null);
-            DropCookingOutput(gear, point, requester);
+            TransferCookingOutput(gear, point, requester);
+        }
+    }
+
+    private static void TransferCookingOutput(GearItem gear, GearPlacePoint point, int requester)
+    {
+        if (requester >= 0)
+        {
+            string json = gear.SerializeToString();
+            var transfer = new GearTransfer(Guid.NewGuid(), requester, gear.GetGearName(), json);
+            string data = JsonSerializer.Serialize(transfer);
+            if (!string.IsNullOrEmpty(json) && data.Length <= 10000)
+            {
+                if (MyMod.iAmHost) DeliverGear(MyMod.level_guid, transfer, data);
+                else SendToHost(9, MyMod.level_guid, data);
+                UnityEngine.Object.Destroy(gear.gameObject);
+                return;
+            }
+        }
+        DropCookingOutput(gear, point, requester);
+    }
+
+    private static bool AcceptOutput(Guid id)
+    {
+        if (id == Guid.Empty) return false;
+        float now = Time.realtimeSinceStartup;
+        foreach (var entry in ReceivedOutputs.ToArray())
+            if (entry.Value <= now) ReceivedOutputs.Remove(entry.Key);
+        return ReceivedOutputs.TryAdd(id, now + 30f);
+    }
+
+    private static void DeliverGear(string area, GearTransfer transfer, string data)
+    {
+        if (transfer == null || !IsCookingGearName(transfer.Gear) || IsCookingDummyName(transfer.Gear) || string.IsNullOrEmpty(transfer.Json)) return;
+        if (transfer.Requester == (MyMod.iAmHost ? 0 : ClientUser.myId))
+        {
+            var player = GameManager.GetPlayerManagerComponent();
+            var prefab = MyMod.GetGearItemObject(transfer.Gear);
+            if (player == null || prefab == null || MyMod.level_guid != area || !AcceptOutput(transfer.Id)) return;
+            var gear = UnityEngine.Object.Instantiate(prefab, player.transform.position, Quaternion.identity).GetComponent<GearItem>();
+            gear.DeserializeFromJson(transfer.Json);
+            gear.m_LastUpdatedTODHours = 0f;
+            gear.ManualStart();
+            if (!player.ProcessPickupItemInteractionCompat(gear)) MyMod.SendDropItem(gear, cookingOutput: true);
+        }
+        else if (MyMod.iAmHost && transfer.Requester > 0 && transfer.Requester < MyMod.playersData.Count &&
+            MyMod.playersData[transfer.Requester]?.m_LevelGuid == area)
+        {
+            using var packet = MakeServerPacket(9, area, data, 0, 0);
+            ServerSend.SendUDPData(transfer.Requester, packet);
         }
     }
 
@@ -746,11 +834,7 @@ internal static class ScenePlacementSync
         if (transfer.Requester == (MyMod.iAmHost ? 0 : ClientUser.myId))
         {
             var inventory = GameManager.GetInventoryComponent();
-            if (MyMod.level_guid != area || inventory == null || transfer.Id == Guid.Empty) return;
-            float now = Time.realtimeSinceStartup;
-            foreach (var entry in ReceivedWater.ToArray())
-                if (entry.Value <= now) ReceivedWater.Remove(entry.Key);
-            if (!ReceivedWater.TryAdd(transfer.Id, now + 30f)) return;
+            if (MyMod.level_guid != area || inventory == null || !AcceptOutput(transfer.Id)) return;
             inventory.AddToWaterSupply(GameCompat.Liters(transfer.Liters),
                 transfer.Potable ? LiquidQuality.Potable : LiquidQuality.NonPotable);
             HUDMessage.AddMessage(transfer.Potable ? "Питьевая вода добавлена в инвентарь" : "Непитьевая вода добавлена в инвентарь");
@@ -806,6 +890,8 @@ internal static class ScenePlacementSync
         var prefab = MyMod.GetGearItemObject(useFood ? pot.Food : pot.Gear);
         if (prefab == null) return null;
         var root = new GameObject("TLD Coop cooking slot");
+        root.layer = prefab.layer;
+        root.AddComponent<BoxCollider>().size = new Vector3(.22f, .20f, .22f);
         var cooking = prefab.GetComponent<CookingPotItem>();
         var visible = new HashSet<string>();
         for (int i = 0; i < pot.Meshes.Length; i += 8) visible.Add(pot.Meshes.Substring(i, 8));
@@ -904,7 +990,7 @@ internal static class ScenePlacementSync
         string data = packet.ReadString();
         if (from <= 0 || from >= MyMod.playersData.Count || MyMod.playersData[from]?.m_LevelGuid != area ||
             !WildlifeSpawnAuthorityPolicy.WorldScene(area) || area.Length > 160 ||
-            area.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0 || data.Length > 1100) return;
+            area.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0 || data.Length > (kind == 9 ? 10000 : 1100)) return;
         try
         {
             if (kind == 0)
@@ -928,6 +1014,7 @@ internal static class ScenePlacementSync
                     RequestCookwareRelease(from, owner, key, area, action);
             }
             else if (kind == 8) DeliverWater(area, JsonSerializer.Deserialize<WaterTransfer>(data));
+            else if (kind == 9) DeliverGear(area, JsonSerializer.Deserialize<GearTransfer>(data), data);
             else if (kind == 7)
             {
                 var state = ContainerLockSync.Accept(area, JsonSerializer.Deserialize<ContainerLockSync.State>(data));
@@ -949,13 +1036,14 @@ internal static class ScenePlacementSync
         int owner = packet.ReadInt();
         int key = packet.ReadInt();
         string data = packet.ReadString();
-        if (!InWorld || area != MyMod.level_guid || data.Length > 1100) return;
+        if (!InWorld || area != MyMod.level_guid || data.Length > (kind == 9 ? 10000 : 1100)) return;
         try
         {
             if (kind == 1) ReceiveMove(area, JsonSerializer.Deserialize<Move>(data));
             else if (kind == 2) ReceivePot(area, owner, key, JsonSerializer.Deserialize<Pot>(data));
             else if (kind == 4 && int.TryParse(data, out int action) && action >= 1 && action <= 4) ReleaseCookware(key, action, owner);
             else if (kind == 8) DeliverWater(area, JsonSerializer.Deserialize<WaterTransfer>(data));
+            else if (kind == 9) DeliverGear(area, JsonSerializer.Deserialize<GearTransfer>(data), data);
             else if (kind == 6) RejectCooking(key);
             else if (kind == 7) ContainerLockSync.Receive(JsonSerializer.Deserialize<ContainerLockSync.State>(data));
             else if (kind == 5 && owner != ClientUser.myId) ThrownGearSync.Receive(area, owner, key, data);

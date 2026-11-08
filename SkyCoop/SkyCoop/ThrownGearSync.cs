@@ -81,26 +81,20 @@ internal static class ThrownGearSync
         }
         if (current.Visual == null)
         {
-            current.Visual = CreateVisual(state.Gear, state.Lit);
+            current.Visual = CreateVisual(state);
             if (current.Visual != null) current.Visual.transform.SetPositionAndRotation(state.Position, state.Rotation);
         }
         return true;
     }
 
-    private static GameObject CreateVisual(string gearName, bool lit)
+    private static GameObject CreateVisual(Flight state)
     {
-        var prefab = MyMod.GetGearItemObject(gearName);
+        var prefab = MyMod.GetGearItemObject(state.Gear);
+        bool lit = state.Lit;
         if (prefab == null || prefab.GetComponent<GearItem>() == null) return null;
-        var root = new GameObject("TLD Coop thrown gear");
         var flare = prefab.GetComponent<FlareItem>();
-        if (lit && flare != null && flare.m_FXGameObject != null && flare.m_FXGameObject != prefab)
-        {
-            var effects = UnityEngine.Object.Instantiate(flare.m_FXGameObject, root.transform, false);
-            effects.transform.localPosition = prefab.transform.InverseTransformPoint(flare.m_FXGameObject.transform.position);
-            effects.SetActive(true);
-            foreach (var particles in effects.GetComponentsInChildren<ParticleSystem>(true))
-                if (particles.gameObject.activeInHierarchy) particles.Play();
-        }
+        if (lit && flare != null) return ThrownFlareSync.CreateFlightReplica(prefab, state.Position, state.Rotation);
+        var root = new GameObject("TLD Coop thrown gear");
         var source = !lit ? null : flare != null ? flare.m_LightOutdoor ?? flare.m_LightIndoor : prefab.GetComponentInChildren<Light>(true);
         if (source != null)
         {

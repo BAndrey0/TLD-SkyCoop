@@ -11,12 +11,15 @@ namespace SkyCoop;
 internal sealed class ContainerContentRestore : IDisposable
 {
  private static readonly HashSet<IntPtr> restoring = new();
+ private static readonly HashSet<IntPtr> restoringLocks = new();
+ private IntPtr protectedLock;
  internal static bool IsRestoring(ObjectAnim anim)=>anim!=null&&restoring.Contains(anim.Pointer);
  private readonly List<(Transform target,Vector3 position,Quaternion rotation,Vector3 scale)> poses=new();
  private readonly List<IntPtr> owned=new();
  public ContainerContentRestore(Container box)
  {
   Capture(box.transform);
+  if(box.m_Lock!=null && restoringLocks.Add(box.m_Lock.Pointer)) protectedLock=box.m_Lock.Pointer;
   if(box.m_ObjectAnims!=null)foreach(var anim in box.m_ObjectAnims)Protect(anim);
   foreach(var door in box.GetComponentsInChildren<OpenClose>(true))Protect(door.m_ObjectAnim);
  }
@@ -36,6 +39,12 @@ internal sealed class ContainerContentRestore : IDisposable
  {
   foreach(var p in poses)if(p.target!=null){p.target.localPosition=p.position;p.target.localRotation=p.rotation;p.target.localScale=p.scale;}
   foreach(var ptr in owned)restoring.Remove(ptr);
+  if(protectedLock!=IntPtr.Zero)restoringLocks.Remove(protectedLock);
+ }
+ [HarmonyPatch(typeof(Lock),nameof(Lock.Deserialize))]
+ private static class KeepSharedLock
+ {
+  private static bool Prefix(Lock __instance)=>!restoringLocks.Contains(__instance.Pointer);
  }
  [HarmonyPatch(typeof(ObjectAnim),"Initialize")]
  private static class KeepTweenOrigin

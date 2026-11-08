@@ -69,7 +69,8 @@ internal static class DroppedGearInteraction
     {
         private static void Postfix(PlayerManager __instance, ref HoverTextState __result)
         {
-            if (Find(__instance.GetInteractiveObjectUnderCrosshair()) != null)
+            var target = __instance.GetInteractiveObjectUnderCrosshair();
+            if (Find(target) != null || ScenePlacementSync.CookingHover(target) != null)
                 __result = HoverTextState.CanInteract;
         }
     }

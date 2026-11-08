@@ -450,6 +450,7 @@ public class Packet : IDisposable
 		Write(obj.m_GearName);
 		Write(obj.m_PhotoGUID);
 		WriteUnicodeString(obj.m_ExpeditionNote);
+		Write(obj.m_FlareRemainingMinutes);
 	}
 
 	public void Write(DataStr.AffictionSync obj)
@@ -1099,7 +1100,8 @@ public class Packet : IDisposable
 			m_Variant = ReadInt(),
 			m_GearName = ReadString(),
 			m_PhotoGUID = ReadString(),
-			m_ExpeditionNote = ReadUnicodeString()
+			m_ExpeditionNote = ReadUnicodeString(),
+			m_FlareRemainingMinutes = ReadFloat()
 		};
 	}
 

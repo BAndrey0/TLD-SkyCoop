@@ -55,6 +55,12 @@ public static class ContainerDoorGuard
 		{
 			container = door.GetComponentInChildren<Container>();
 		}
+		if (container == null) container = ContainerLockSync.ContainerForAnimation(door.m_ObjectAnim);
+		if (container == null && door.m_ObjectAnim?.m_Target != null)
+		{
+			var target = door.m_ObjectAnim.m_Target;
+			container = target.GetComponentInParent<Container>() ?? target.GetComponentInChildren<Container>();
+		}
 		return container;
 	}
 

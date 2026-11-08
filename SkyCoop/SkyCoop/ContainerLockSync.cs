@@ -10,6 +10,7 @@ namespace SkyCoop;
 internal static class ContainerLockSync
 {
     internal sealed record State(string Id, LockState Value, bool WasLocked, bool Opened);
+    private static readonly Dictionary<int, Container> LockAnimations = new();
     private static readonly Dictionary<string, Lock> Local = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, State> Confirmed = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, State> Pending = new(StringComparer.Ordinal);
@@ -41,6 +42,7 @@ internal static class ContainerLockSync
         scene = area;
         nextCheck = 0f;
         Local.Clear();
+        LockAnimations.Clear();
         Pending.Clear();
         Confirmed.Clear();
         if (area == null) return;
@@ -51,11 +53,17 @@ internal static class ContainerLockSync
             string id = Id(container);
             if (id.Length == 0) continue;
             Local[id] = item;
+            if (container.m_ObjectAnims != null)
+                foreach (var animation in container.m_ObjectAnims)
+                    if (animation != null) LockAnimations[animation.GetInstanceID()] = container;
             if (!item.m_LockStateRolled) item.RollLockedState();
             if (MyMod.iAmHost) Receive(Accept(area, Snapshot(id, item), fromHost: true, save: false));
         }
         if (MyMod.iAmHost && Local.Count > 0) Save(area, ForScene(area));
     }
+
+    internal static Container ContainerForAnimation(ObjectAnim animation) => animation != null &&
+        LockAnimations.TryGetValue(animation.GetInstanceID(), out var container) ? container : null;
 
     internal static void CheckForUnlocks()
     {

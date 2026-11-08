@@ -1236,7 +1236,7 @@ public class Shared
 		{
 			if (id == 0) return SleepRendezvousFix.Waiting && !MyMod.IsDead ? MyMod.MyCycleSkip : 0;
 			return Server.clients.TryGetValue(id, out var client) && client.IsBusy() && !client.RCON &&
-				!ClientIsLoading(id) && MyMod.playersData[id] is { } player && player.m_AnimState != "Knock"
+				!ClientIsLoading(id) && SleepRendezvousFix.VoteIsCurrent(id) && MyMod.playersData[id] is { } player && player.m_AnimState != "Knock"
 				? player.m_SleepHours : 0;
 		}
 		int num5 = SleepRendezvousFix.SelectOffer(CurrentVote);

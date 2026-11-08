@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.16";
+		public const string Version = "0.16.17";
 
 		public const string DownloadLink = null;
 
@@ -1153,7 +1153,6 @@ public class MyMod : MelonMod
 		{
 			flag = true;
 		}
-		ThrownFlareSync.ApplyPickupBurn(component, extra);
 		MelonLogger.Msg(System.ConsoleColor.Cyan, "UseLastVisualDropPos " + flag);
 		if (!string.IsNullOrEmpty(jData.m_Extra.m_PhotoGUID))
 		{
@@ -1216,6 +1215,7 @@ public class MyMod : MelonMod
 			component.m_LastUpdatedTODHours = 0f;
 			component.ManualStart();
 			component.ManualUpdate();
+			ThrownFlareSync.ApplyPickupBurn(component, extra);
 			if (component.GetGearName() == "GEAR_SCNote" && string.IsNullOrEmpty(extra.m_Dropper))
 			{
 				flag2 = true;
@@ -1227,11 +1227,13 @@ public class MyMod : MelonMod
 			}
 			else
 			{
-				GameManager.GetPlayerManagerComponent().ProcessPickupItemInteraction(component, forceEquip: false, forceEquipImmediate: false, skipAudio: false);
+				if (component.m_Bed != null) AddPickedBedroll(component);
+				else GameManager.GetPlayerManagerComponent().ProcessPickupItemInteractionCompat(component);
 			}
 		}
 		else
 		{
+			ThrownFlareSync.ApplyPickupBurn(component, extra);
 			component.PlayPickUpClip();
 			GameManager.GetPlayerManagerComponent().StartPlaceMesh(gameObject, PlaceMeshFlags.None);
 		}
@@ -4925,15 +4927,27 @@ public class MyMod : MelonMod
 		UnityEngine.Object.Destroy(gameObject, 0.1f);
 	}
 
+	internal static bool IsHeldRifle(string gear) => gear?.StartsWith("GEAR_Rifle", System.StringComparison.OrdinalIgnoreCase) == true;
+	internal static bool IsHeldRevolver(string gear) => gear?.StartsWith("GEAR_Revolver", System.StringComparison.OrdinalIgnoreCase) == true;
+
+	private static GameObject FindBulletPrefab(string name)
+	{
+		foreach (var shooter in Resources.FindObjectsOfTypeAll<vp_FPSShooter>())
+			if (shooter.ProjectilePrefab != null && CloneTrimer(shooter.ProjectilePrefab.name) == name) return shooter.ProjectilePrefab;
+		return null;
+	}
+
 	public static void DoShootSync(DataStr.ShootSync shoot, int from)
 	{
-		if (shoot.m_sceneguid != level_guid)
+		if (shoot.m_sceneguid != level_guid || from < 0 || from >= players.Count || from >= playersData.Count)
 		{
 			return;
 		}
 		if (shoot.m_projectilename == "GEAR_FlareGunAmmoSingle")
 		{
-			FlareGunRoundItem.SpawnAndFire(GetGearItemObject("GEAR_FlareGunAmmoSingle"), shoot.m_position, shoot.m_rotation);
+			var round = GetGearItemObject("GEAR_FlareGunAmmoSingle");
+			PlayRemoteGunshot("", from, shoot.m_position, GetGearItemPrefab("GEAR_FlareGun")?.m_GunItem);
+			if (round != null) FlareGunRoundItem.SpawnAndFire(round, shoot.m_position, shoot.m_rotation);
 			if (shoot.m_lookat)
 			{
 				GameManager.GetPlayerAnimationComponent().LookAt(shoot.m_position);
@@ -5017,10 +5031,11 @@ public class MyMod : MelonMod
 		if (shoot.m_projectilename == "PistolBullet")
 		{
 			gearItem = GetGearItemPrefab("GEAR_Rifle");
-			gameObject4 = UnityEngine.Object.Instantiate(PistolBulletPrefab, shoot.m_position, shoot.m_rotation);
-			gameObject4.AddComponent<Comps.ClientProjectile>();
-			gameObject4.GetComponent<Comps.ClientProjectile>().m_ClientID = from;
-			PlayRemoteGunshot("PLAY_RIFLEFIRE", from);
+			string held = playersData[from]?.m_PlayerEquipmentData?.m_HoldingItem;
+			var gun = IsHeldRifle(held) ? GetGearItemPrefab(held)?.m_GunItem : gearItem?.m_GunItem;
+			PlayRemoteGunshot("Play_RifleFire", from, shoot.m_position, gun);
+			if (PistolBulletPrefab == null) PistolBulletPrefab = FindBulletPrefab("PistolBullet");
+			if (PistolBulletPrefab != null) gameObject4 = UnityEngine.Object.Instantiate(PistolBulletPrefab, shoot.m_position, shoot.m_rotation);
 			DoShootFX(shoot.m_position);
 			if (players[from] != null && players[from].GetComponent<Comps.MultiplayerPlayerAnimator>() != null)
 			{
@@ -5035,16 +5050,18 @@ public class MyMod : MelonMod
 		else if (shoot.m_projectilename == "RevolverBullet")
 		{
 			gearItem = GetGearItemPrefab("GEAR_Revolver");
-			gameObject4 = UnityEngine.Object.Instantiate(RevolverBulletPrefab, shoot.m_position, shoot.m_rotation);
-			gameObject4.AddComponent<Comps.ClientProjectile>();
-			gameObject4.GetComponent<Comps.ClientProjectile>().m_ClientID = from;
-			PlayRemoteGunshot("PLAY_REVOLVERFIRE", from);
+			string held = playersData[from]?.m_PlayerEquipmentData?.m_HoldingItem;
+			var gun = IsHeldRevolver(held) ? GetGearItemPrefab(held)?.m_GunItem : gearItem?.m_GunItem;
+			PlayRemoteGunshot("Play_RevolverFire", from, shoot.m_position, gun);
+			if (RevolverBulletPrefab == null) RevolverBulletPrefab = FindBulletPrefab("RevolverBullet");
+			if (RevolverBulletPrefab != null) gameObject4 = UnityEngine.Object.Instantiate(RevolverBulletPrefab, shoot.m_position, shoot.m_rotation);
 			DoShootFX(shoot.m_position);
 		}
 		if (gearItem == null || gameObject4 == null)
 		{
 			return;
 		}
+		gameObject4.AddComponent<Comps.ClientProjectile>().m_ClientID = from;
 		gameObject4.hideFlags = HideFlags.HideInHierarchy;
 		vp_Bullet component6 = gameObject4.GetComponent<vp_Bullet>();
 		if ((bool)gearItem)
@@ -6101,14 +6118,14 @@ public class MyMod : MelonMod
 	// The game's shot events (Play_RifleFire / Play_RevolverFire) are made for the player's own gun and do not fade
 	// with distance, so a remote shot is posted on a separate emitter whose output volume towards every listener is
 	// set from the distance. GameAudioManager.Play3DSound posts on its own pooled object, which ignored that volume.
-	public static void PlayRemoteGunshot(string sound, int from)
+	public static void PlayRemoteGunshot(string sound, int from, Vector3 position, GunItem gun)
 	{
-		if (playersData.Count <= 0 || playersData[from] == null || playersData[from].m_Levelid != levelid || players[from] == null || playersData[from].m_LevelGuid != level_guid || GameManager.GetPlayerTransform() == null)
+		if (players[from] == null || GameManager.GetPlayerTransform() == null)
 		{
 			return;
 		}
 		GameObject shooter = players[from];
-		float distance = Vector3.Distance(GameManager.GetPlayerTransform().position, shooter.transform.position);
+		float distance = Vector3.Distance(GameManager.GetPlayerTransform().position, position);
 		float volume = GunshotVolume(distance);
 		if (volume <= 0f)
 		{
@@ -6123,6 +6140,7 @@ public class MyMod : MelonMod
 			emitterTransform = created.transform;
 		}
 		GameObject emitter = emitterTransform.gameObject;
+		emitter.transform.position = position;
 		string result = "";
 		try
 		{
@@ -6135,7 +6153,8 @@ public class MyMod : MelonMod
 					result += AkSoundEngine.SetGameObjectOutputBusVolume(emitter, listeners[i].gameObject, volume) + " ";
 				}
 			}
-			uint playing = AkSoundEngine.PostEvent(sound, emitter);
+			uint playing = gun?.m_FireAudio?.Post(emitter) ?? 0;
+			if (playing == 0 && !string.IsNullOrEmpty(sound)) playing = AkSoundEngine.PostEvent(sound, emitter);
 			if (!gunshotVolumeLogged)
 			{
 				gunshotVolumeLogged = true;
@@ -6150,7 +6169,7 @@ public class MyMod : MelonMod
 		{
 			MelonLogger.Warning("[Shoot sync] Remote gunshot: " + ex.Message);
 		}
-		GameAudioManager.Play3DSound(sound, emitter);
+		if (!string.IsNullOrEmpty(sound)) GameAudioManager.Play3DSound(sound, emitter);
 	}
 
 	// Full volume up to 30 m, then falling off like a real shot (roughly inverse distance), silent beyond 800 m.
@@ -7113,6 +7132,12 @@ public class MyMod : MelonMod
 		}
 	}
 
+	private static void AddPickedBedroll(GearItem gear)
+	{
+		if (gear != null && !gear.m_InPlayerInventory && gear.GetComponent<Comps.FakeBedDummy>() == null)
+			GameManager.GetInventoryComponent().AddGear(gear);
+	}
+
 	public static void UseFakeBed(GameObject obj)
 	{
 		string text = CloneTrimer(obj.name).ToLower();
@@ -7130,6 +7155,8 @@ public class MyMod : MelonMod
 			gameObject.GetComponent<GearItem>().m_BeenInPlayerInventory = true;
 			gameObject.GetComponent<GearItem>().m_Bed.SetState(BedRollState.Placed);
 			gameObject.AddComponent<Comps.FakeBedDummy>().m_LinkedFakeObject = obj;
+			foreach (var collider in gameObject.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
+			gameObject.GetComponent<GearItem>().enabled = false;
 			gameObject.GetComponent<GearItem>().m_Bed.PerformInteraction();
 		}
 		else
@@ -7230,7 +7257,6 @@ public class MyMod : MelonMod
 				if (!string.IsNullOrEmpty(slicedJsonDroppedGear.m_Json))
 				{
 					DeserializeDroppedGear(gameObject.GetComponent<GearItem>(), slicedJsonDroppedGear.m_Json, component.m_Extra);
-					ThrownFlareSync.ApplyPickupBurn(gameObject.GetComponent<GearItem>(), obj.GetComponent<Comps.DroppedGearDummy>()?.m_Extra);
 				}
 				if (!string.IsNullOrEmpty(component.m_Extra.m_PhotoGUID))
 				{
@@ -7280,6 +7306,7 @@ public class MyMod : MelonMod
 				gameObject.GetComponent<GearItem>().m_LastUpdatedTODHours = 0f;
 				gameObject.GetComponent<GearItem>().ManualStart();
 				gameObject.GetComponent<GearItem>().ManualUpdate();
+				ThrownFlareSync.ApplyPickupBurn(gameObject.GetComponent<GearItem>(), component.m_Extra);
 				if (gameObject.GetComponent<GearItem>().GetGearName() == "GEAR_SCNote" && string.IsNullOrEmpty(component.m_Extra.m_Dropper))
 				{
 					Pathes.DisplayNote(gameObject.GetComponent<GearItem>());
@@ -7291,7 +7318,9 @@ public class MyMod : MelonMod
 				}
 				else
 				{
-					GameManager.GetPlayerManagerComponent().ProcessPickupItemInteraction(gameObject.GetComponent<GearItem>(), forceEquip: false, forceEquipImmediate: false, skipAudio: false);
+					var item = gameObject.GetComponent<GearItem>();
+					if (item.m_Bed != null) AddPickedBedroll(item);
+					else GameManager.GetPlayerManagerComponent().ProcessPickupItemInteractionCompat(item);
 				}
 				PatchBookReadTime(gameObject.GetComponent<GearItem>());
 				DroppedGearsObjs.Remove(num);
@@ -7733,6 +7762,8 @@ public class MyMod : MelonMod
 		return 7200;
 	}
 
+	private static readonly System.Collections.Generic.Dictionary<int, float> BedrollPublications = new();
+
 	public static void SendDropItem(GearItem gear, int nums = 0, int total = 0, bool samepose = false, int variant = 0, GameObject Around = null, bool settledThrow = false, bool cookingOutput = false)
 	{
 		if (!cookingOutput && (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(gear))) return;
@@ -7741,6 +7772,14 @@ public class MyMod : MelonMod
 			return;
 		}
 		GameObject gameObject = gear.gameObject;
+		if (variant == 1 && gear.m_Bed != null)
+		{
+			float now = Time.realtimeSinceStartup;
+			foreach (var recent in BedrollPublications.ToArray())
+				if (recent.Value <= now) BedrollPublications.Remove(recent.Key);
+			if (!BedrollPublications.TryAdd(gear.GetInstanceID(), now + 2f)) return;
+			if (gear.m_InPlayerInventory) GameManager.GetInventoryComponent().RemoveGear(gameObject);
+		}
 		string text = "";
 		if (!samepose)
 		{
@@ -9116,7 +9155,7 @@ public class MyMod : MelonMod
 		{
 			if (GameManager.GetPlayerManagerComponent().m_ItemInHands != null)
 			{
-				MyLightSourceName = GameManager.GetPlayerManagerComponent().m_ItemInHands.name;
+				MyLightSourceName = GameManager.GetPlayerManagerComponent().m_ItemInHands.GetGearName();
 			}
 			else if (ModdedHandsBook == null)
 			{
@@ -9704,7 +9743,7 @@ public class MyMod : MelonMod
 
 	public static void SyncSleeping()
 	{
-		if (WaitForSleepLable != null && WaitForSleepLable.activeSelf)
+		if (SleepRendezvousFix.Waiting)
 		{
 			IsSleeping = true;
 		}
@@ -11377,6 +11416,7 @@ public class MyMod : MelonMod
 		RadialSpawnSync.Tick();
 		DeathRespawn.Tick();
 		BedRest.Tick();
+		SleepRendezvousFix.TickNotice();
 		CoopFatigue.Tick();
 		SelfTest.Tick();
 		TimerWatchdog.Tick();
@@ -11530,7 +11570,7 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public override void OnLateUpdate() { NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); WorkLighting.SyncSky(); BedRest.LateUpdate(); }
+	public override void OnLateUpdate() { BedRest.LateUpdate(); NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); WorkLighting.SyncSky(); }
 
 	public override void OnGUI()
 	{
@@ -11543,8 +11583,6 @@ public class MyMod : MelonMod
 		SessionPing.Draw();
 		SteamFriendsWindow.Draw();
 		CoopFatigue.Draw();
-		BedRest.Draw();
-		SleepRendezvousFix.Draw();
 		DeathRespawn.Draw();
 	}
 
