@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.14");
+			packet.Write("0.16.15");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1382,7 +1382,7 @@ public class ClientHandle
             }
         }
         var current = transition.m_CurrentWeatherSet;
-        if (selected == null && current.name == setName && current.m_CharacterizingType == type) selected = current;
+        if (current.name == setName && current.m_CharacterizingType == type) selected = current;
         if (selected == null || selected.m_WeatherStages == null || selected.m_WeatherStages.Length == 0)
         {
             syncedWeatherUntil = 0;
@@ -1395,7 +1395,7 @@ public class ClientHandle
             selected.m_WeatherStages[i].m_CurrentTransitionTime = transitions[i];
         }
         var previous = (WeatherStage)previousStage;
-        if (current.name == setName)
+        if (current == selected)
             current.Activate(Mathf.Clamp01(start), previous);
         else
             transition.ActivateWeatherSet(selected, Mathf.Clamp01(start), previous);
@@ -1418,7 +1418,10 @@ public class ClientHandle
 		float high = _packet.ReadFloat();
 		float low = _packet.ReadFloat();
 		int previousStage = _packet.ReadInt();
-		DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, _packet.ReadString());
+		string setName = _packet.ReadString();
+		int region = _packet.ReadInt();
+		if (region == MyMod.GetCurrentRegionIfPossible())
+			DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, setName);
 	}
 
 	public static void WEATHERVOLUNTEER(Packet _packet)

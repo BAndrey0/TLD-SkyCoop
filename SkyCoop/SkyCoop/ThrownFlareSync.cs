@@ -9,17 +9,6 @@ namespace SkyCoop;
 
 public static class ThrownFlareSync
 {
-	private sealed class Pending
-	{
-		public GearItem Gear;
-
-		public string Scene;
-
-		public Vector3 Last;
-
-		public float StableSince;
-	}
-
 	private sealed class Visual
 	{
 		public GameObject Owner;
@@ -31,31 +20,6 @@ public static class ThrownFlareSync
 		public int Deadline;
 	}
 
-	[HarmonyPatch(typeof(PlayerManager), "ReleaseThrownObject")]
-	private static class Released
-	{
-		private static void Prefix(PlayerManager __instance, out GearItem __state)
-		{
-			__state = __instance.m_ThrownItem;
-		}
-
-		private static void Postfix(GearItem __state)
-		{
-			if (MyMod.InOnline() && IsFlare(__state) && __state.m_FlareItem.IsBurning())
-			{
-				int instanceID = __state.GetInstanceID();
-				pending[instanceID] = new Pending
-				{
-					Gear = __state,
-					Scene = MyMod.level_guid,
-					Last = __state.transform.position,
-					StableSince = Time.realtimeSinceStartup
-				};
-				MelonLogger.Msg("[Flare sync] Tracking native thrown burning flare " + instanceID);
-			}
-		}
-	}
-
 	[HarmonyPatch(typeof(MyMod), "OnUpdate")]
 	private static class Update
 	{
@@ -65,11 +29,8 @@ public static class ThrownFlareSync
 		}
 	}
 
-	private static readonly Dictionary<int, Pending> pending = new Dictionary<int, Pending>();
-
 	private static readonly List<Visual> visuals = new List<Visual>();
 
-	public static int PendingCount => pending.Count;
 
 	public static int VisualCount => visuals.Count;
 
@@ -84,32 +45,6 @@ public static class ThrownFlareSync
 
 	private static void Tick()
 	{
-		if (ThrownFlareSync.pending.Count > 0)
-		{
-			foreach (int item in new List<int>(ThrownFlareSync.pending.Keys))
-			{
-				Pending pending = ThrownFlareSync.pending[item];
-				GearItem gear = pending.Gear;
-				if (gear == null || gear.m_InPlayerInventory || !MyMod.InOnline() || pending.Scene != MyMod.level_guid)
-				{
-					ThrownFlareSync.pending.Remove(item);
-					continue;
-				}
-				Vector3 position = gear.transform.position;
-				Rigidbody component = gear.GetComponent<Rigidbody>();
-				if (!((position - pending.Last).sqrMagnitude < 0.0004f) || (!(component == null) && !component.isKinematic && !component.IsSleeping() && !(component.velocity.sqrMagnitude < 0.01f)))
-				{
-					pending.StableSince = Time.realtimeSinceStartup;
-				}
-				pending.Last = position;
-				if (!(Time.realtimeSinceStartup - pending.StableSince < 0.6f))
-				{
-					ThrownFlareSync.pending.Remove(item);
-					MelonLogger.Msg("[Flare sync] Publishing settled native flare " + item);
-					MyMod.SendDropItem(gear, 0, 0, samepose: true);
-				}
-			}
-		}
 		for (int num = visuals.Count - 1; num >= 0; num--)
 		{
 			Visual visual = visuals[num];

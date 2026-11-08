@@ -1940,7 +1940,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.14");
+		packet.Write("0.16.15");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));
@@ -1968,6 +1968,7 @@ internal class ServerSend
 		packet.Write(Low);
 		packet.Write(PreviousStage);
 		packet.Write(setName ?? "");
+		packet.Write(Region);
 		SendUDPDataToAll(packet, Region, IgnoreLoaders: true);
 	}
 

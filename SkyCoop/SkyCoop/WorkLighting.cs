@@ -21,6 +21,14 @@ public static class WorkLighting
   if(Utils.TryParseTOD(MyMod.OveridedTime,out var time))tod.SetNormalizedTime(time,true);
   tod.ForceUpdateTodObjects();tod.SetCameraVignettingIndoors();
  }
+ public static void SyncSky()
+ {
+  if (!MyMod.InOnline() || MyMod.LoadingScreenIsOn || GameManager.m_Rest?.IsSleeping() == true) return;
+  var clock = GameManager.GetTimeOfDayComponent();
+  if (clock != null && clock.IsTimeLapseActive() && Utils.TryParseTOD(MyMod.OveridedTime, out var time))
+      GameManager.GetUniStorm()?.SetNormalizedTime(time, false);
+ }
+
  public static void Tick()
  {
   if(owner==null)return;

@@ -33,7 +33,7 @@ public class Pathes
 
 		public static bool Prefix(GearItem __instance, int numUnits)
 		{
-			if (PlayerManager_Throw.StoneReleaseDepth > 0 && __instance.m_StoneItem != null) return true;
+			if (PlayerManager_Throw.TrackedThrowDepth > 0 && ThrownGearSync.Supports(__instance)) return true;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -64,9 +64,9 @@ public class Pathes
 
 		public static void Postfix(GearItem __instance, int numUnits, GearItem __result)
 		{
-			if (PlayerManager_Throw.StoneReleaseDepth > 0 && __instance.m_StoneItem != null)
+			if (PlayerManager_Throw.TrackedThrowDepth > 0 && ThrownGearSync.Supports(__instance))
 			{
-				TrackThrownStone(__result);
+				TrackThrownGear(__result);
 				return;
 			}
 			if (ScenePlacementSync.NativeCooking || ScenePlacementSync.IsCookingDummy(__instance)) return;
@@ -2264,7 +2264,7 @@ public class Pathes
 	{
 		private static void Postfix(GearItem gi, GearItem __result)
 		{
-			if (__result != gi) TrackThrownStone(__result);
+			if (__result != gi) TrackThrownGear(__result);
 		}
 	}
 
@@ -2273,14 +2273,14 @@ public class Pathes
 	{
 		private static void Postfix(StoneItem __instance, bool thrown)
 		{
-			if (thrown && PlayerManager_Throw.StoneReleaseDepth > 0)
-				TrackThrownStone(__instance.GetComponent<GearItem>());
+			if (thrown && PlayerManager_Throw.TrackedThrowDepth > 0)
+				TrackThrownGear(__instance.GetComponent<GearItem>());
 		}
 	}
 
-	private static void TrackThrownStone(GearItem gear)
+	private static void TrackThrownGear(GearItem gear)
 	{
-		if (!MyMod.InOnline() || gear == null || gear.m_StoneItem == null ||
+		if (!MyMod.InOnline() || !ThrownGearSync.Supports(gear) ||
 			gear.GetComponent<Comps.DestoryStoneOnStop>() != null) return;
 		var body = gear.GetComponent<Rigidbody>();
 		if (body == null) return;
@@ -2294,13 +2294,13 @@ public class Pathes
 	[HarmonyPatch(typeof(PlayerManager), "ReleaseThrownObject")]
 	public class PlayerManager_Throw
 	{
-		internal static int StoneReleaseDepth;
+		internal static int TrackedThrowDepth;
 
-		private static void Finalizer((GearItem Gear, bool Stone) __state)
+		private static void Finalizer((GearItem Gear, bool Tracked) __state)
 		{
-			if (__state.Stone) StoneReleaseDepth--;
+			if (__state.Tracked) TrackedThrowDepth--;
 		}
-		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Stone) __state)
+		public static void Prefix(PlayerManager __instance, out (GearItem Gear, bool Tracked) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2309,11 +2309,11 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
 			var gear = __instance.m_ThrownItem;
-			__state = (gear, gear != null && gear.m_StoneItem != null);
-			if (__state.Stone) StoneReleaseDepth++;
+			__state = (gear, ThrownGearSync.Supports(gear));
+			if (__state.Tracked) TrackedThrowDepth++;
 		}
 
-		public static void Postfix((GearItem Gear, bool Stone) __state)
+		public static void Postfix((GearItem Gear, bool Tracked) __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -2321,8 +2321,10 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (__state.Stone)
+			if (__state.Tracked)
 			{
+				if (__state.Gear != null && __state.Gear.m_StoneItem == null && !__state.Gear.m_InPlayerInventory)
+					TrackThrownGear(__state.Gear);
 				MyMod.PushActionToMyDoll("Shoot");
 				return;
 			}
@@ -6475,61 +6477,6 @@ public class Pathes
 				__instance.m_NotesTextField.SetText("");
 				__instance.Enable(enable: false);
 			}
-		}
-	}
-
-	[HarmonyPatch(typeof(CabinFever), "DisabledForGameMode")]
-	internal static class CabinFever_DisabledForXPMode
-	{
-		private static void Postfix(CabinFever __instance, ref bool __result)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (MyMod.InOnline()) __result = true;
-		}
-	}
-
-	[HarmonyPatch(typeof(IntestinalParasites), "IntestinalParasitesStart")]
-	internal static class IntestinalParasites_IntestinalParasitesStart
-	{
-		private static bool Prefix(IntestinalParasites __instance, bool nofx)
-		{
-			if (!MyMod.InOnline()) return true;
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (GameManager.GetPlayerManagerComponent().PlayerIsDead() || InterfaceManager.IsPanelEnabled<Panel_ChallengeComplete>() || __instance.GetNumDosesRequired() == 0)
-			{
-				return false;
-			}
-			float hp = -5 * __instance.m_NumPiecesEatenThisRiskCycle;
-			float fatigueValue = 8 * __instance.m_NumPiecesEatenThisRiskCycle;
-			float thirstValue = 9 * __instance.m_NumPiecesEatenThisRiskCycle;
-			GameManager.GetConditionComponent().AddHealth(hp, DamageSource.IntestinalParasites);
-			FoodPoisoning foodPoisoningComponent = GameManager.GetFoodPoisoningComponent();
-			foodPoisoningComponent.FoodPoisoningStart("GAMEPLAY_TaintedFood", displayIcon: true);
-			GameManager.GetFatigueComponent().AddFatigue(fatigueValue);
-			GameManager.GetThirstComponent().AddThirst(thirstValue);
-			GameManager.GetHungerComponent().AddReserveCalories(-300f);
-			foodPoisoningComponent.m_DurationHours = foodPoisoningComponent.m_DurationHoursMin * (float)__instance.m_NumPiecesEatenThisRiskCycle;
-			MelonLogger.Msg(System.ConsoleColor.Blue, "Intestinal Parasites risk evolved to food poison, m_NumPiecesEatenThisRiskCycle " + __instance.m_NumPiecesEatenThisRiskCycle + " Damage " + hp);
-			__instance.m_NumPiecesEatenThisRiskCycle = 0;
-			__instance.m_HasParasiteRisk = false;
-			__instance.m_HasParasites = false;
-			StatsManager.IncrementValue(StatID.IntestinalParasites);
-			if (nofx)
-			{
-				return false;
-			}
-			GameManager.GetPlayerVoiceComponent().Play(__instance.m_ParasitesVO, Il2CppVoice.Priority.Critical);
-			return false;
 		}
 	}
 

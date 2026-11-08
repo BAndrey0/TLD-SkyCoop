@@ -280,7 +280,7 @@ public static class CoopFatigue
 				return;
 			}
 			Weight weight = DetectWeight(out var name, out var partial);
-			float rate = (weight == Weight.Heavy) ? 16f : ((weight == Weight.Medium) ? 10f : 6f);
+			float rate = WorkRate(weight);
 			float fatigueMultiplier = (weight == Weight.Heavy) ? 1.5f : ((weight == Weight.Medium) ? 1.25f : 1f);
 			float cost = CoopBalancePolicy.Cost(hours, rate);
 			if (GameManager.GetFatigueComponent() != null && GameManager.GetFatigueComponent().IsExhausted())
@@ -318,6 +318,22 @@ public static class CoopFatigue
 		}
 	}
 
+	private static float WorkRate(Weight weight) => weight == Weight.Heavy ? 16f : weight == Weight.Medium ? 10f : 6f;
+
+	internal static bool ShowsStrengthCost => Active;
+
+	internal static string CostLabel(float hours, bool heavy = false)
+	{
+		float rate = heavy ? WorkRate(Weight.Heavy) : WorkRate(DetectWeight(out _, out _));
+		return $"Сила −{Mathf.CeilToInt(CoopBalancePolicy.Cost(hours, rate))}";
+	}
+
+	internal static string CostLabelForReading(float hours) =>
+		$"Сила −{Mathf.CeilToInt(CoopBalancePolicy.Cost(hours, WorkRate(Weight.Light)))}";
+
+	internal static string CostLabelForRepair(float hours, GearItem item) =>
+		$"Сила −{Mathf.CeilToInt(CoopBalancePolicy.Cost(hours, WorkRate(item?.m_ClothingItem != null ? Weight.Light : Weight.Medium)))}";
+
 	private static Weight DetectWeight(out string name, out bool partial)
 	{
 		partial = false;
@@ -343,7 +359,7 @@ public static class CoopFatigue
 		Panel_BodyHarvest harvest = GameCompat.Panel<Panel_BodyHarvest>();
 		if (harvest != null && harvest.isActiveAndEnabled)
 		{
-			if (harvest.IsQuartering())
+			if (harvest.IsQuartering() || harvest.IsTabQuarterSelected())
 			{
 				name = "quartering";
 				return Weight.Heavy;
@@ -584,7 +600,11 @@ public static class CoopFatigue
 			PlayerManager playerManager = GameManager.GetPlayerManagerComponent();
 			bool resting = playerManager != null && playerManager.PlayerIsCrouched() && speed < .3f;
 			if (!asleep && !MyMod.LoadingScreenIsOn && (playerManager == null || !playerManager.PlayerIsClimbing()))
-				strength = Mathf.Min(MaxStrength, strength + CoopBalancePolicy.RecoveryRate(speed >= .3f, resting, TiredFraction) * dt);
+			{
+				float rate = BedRest.Active ? CoopBalancePolicy.BedRecoveryRate(TiredFraction) :
+					CoopBalancePolicy.RecoveryRate(speed >= .3f, resting, TiredFraction);
+				strength = Mathf.Min(MaxStrength, strength + rate * dt);
+			}
 		}
 		WarnFatigue();
 	}

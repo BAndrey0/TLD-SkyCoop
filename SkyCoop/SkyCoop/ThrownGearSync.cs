@@ -7,9 +7,9 @@ using UnityEngine;
 
 namespace SkyCoop;
 
-internal static class ThrownStoneSync
+internal static class ThrownGearSync
 {
-    private sealed record Flight(float X, float Y, float Z, float Qx, float Qy, float Qz, float Qw, int Sequence, bool End)
+    private sealed record Flight(float X, float Y, float Z, float Qx, float Qy, float Qz, float Qw, int Sequence, bool End, string Gear, bool Lit)
     {
         internal Vector3 Position => new(X, Y, Z);
         internal Quaternion Rotation => new(Qx, Qy, Qz, Qw);
@@ -30,20 +30,27 @@ internal static class ThrownStoneSync
     private static readonly Dictionary<(int Owner, int Key), RemoteFlight> Flights = new();
     private static string scene;
 
-    internal static void Publish(GearItem gear, int sequence, bool end)
+    internal static bool Supports(GearItem gear) => gear != null && gear.m_NoiseMakerItem == null &&
+        gear.GetComponent<Rigidbody>() != null;
+
+    private static int nextKey;
+    internal static int NextKey() => ++nextKey;
+
+    internal static void Publish(GearItem gear, int key, int sequence, bool end)
     {
         if (gear == null || !MyMod.InOnline() || MyMod.LoadingScreenIsOn) return;
         var p = gear.transform.position;
         var q = gear.transform.rotation;
-        var state = new Flight(p.x, p.y, p.z, q.x, q.y, q.z, q.w, sequence, end);
-        ScenePlacementSync.PublishStoneFlight(gear.GetInstanceID(), JsonSerializer.Serialize(state));
+        var state = new Flight(p.x, p.y, p.z, q.x, q.y, q.z, q.w, sequence, end, gear.GetGearName(), gear.m_FlareItem?.IsBurning() == true || gear.m_TorchItem?.IsBurning() == true);
+        ScenePlacementSync.PublishThrownFlight(key, JsonSerializer.Serialize(state));
     }
 
     internal static bool Receive(string area, int owner, int key, string json)
     {
         if (area != MyMod.level_guid || MyMod.LoadingScreenIsOn) return false;
         var state = JsonSerializer.Deserialize<Flight>(json);
-        if (state?.Valid != true) return false;
+        if (state?.Valid != true || string.IsNullOrEmpty(state.Gear) || state.Gear.Length > 64 ||
+            !state.Gear.StartsWith("GEAR_", StringComparison.OrdinalIgnoreCase)) return false;
         if (scene != area) Reset(area);
         var id = (owner, key);
         if (Flights.TryGetValue(id, out var current))
@@ -66,17 +73,27 @@ internal static class ThrownStoneSync
         }
         if (current.Visual == null)
         {
-            current.Visual = CreateVisual();
+            current.Visual = CreateVisual(state.Gear, state.Lit);
             if (current.Visual != null) current.Visual.transform.SetPositionAndRotation(state.Position, state.Rotation);
         }
         return true;
     }
 
-    private static GameObject CreateVisual()
+    private static GameObject CreateVisual(string gearName, bool lit)
     {
-        var prefab = MyMod.GetGearItemObject("GEAR_Stone");
-        if (prefab == null) return null;
-        var root = new GameObject("SkyCoop stone in flight");
+        var prefab = MyMod.GetGearItemObject(gearName);
+        if (prefab == null || prefab.GetComponent<GearItem>() == null) return null;
+        var root = new GameObject("TLD Coop thrown gear");
+        var flare = prefab.GetComponent<FlareItem>();
+        var source = !lit ? null : flare != null ? flare.m_LightOutdoor : prefab.GetComponentInChildren<Light>(true);
+        if (source != null)
+        {
+            var light = root.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = source.color;
+            light.range = source.range;
+            light.intensity = source.intensity;
+        }
         foreach (var renderer in prefab.GetComponentsInChildren<MeshRenderer>(true))
         {
             if (!renderer.enabled || !renderer.gameObject.activeSelf) continue;

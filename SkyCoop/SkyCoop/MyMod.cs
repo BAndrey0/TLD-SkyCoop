@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.14";
+		public const string Version = "0.16.15";
 
 		public const string DownloadLink = null;
 
@@ -1628,7 +1628,6 @@ public class MyMod : MelonMod
 		SetAppBackgroundMode();
 		MelonPreferences_Category coopPreferences = MelonPreferences.CreateCategory("SkyCoop");
 		SurvivorModels.Preference = coopPreferences.CreateEntry("UseNewSurvivorModels", false, "New survivor models (experimental)", "Use the new faceted skinned survivor meshes. Can be toggled in F2 Commands.");
-		ItemDecayPreference = coopPreferences.CreateEntry("EnableItemDecay", false, "Enable item decay", "Co-op forces the decay scale to 0 (no spoilage or wear over time). true keeps the difficulty decay rate for this player.");
 		DedicatedServerAppMode = System.Environment.GetCommandLineArgs().Contains("-dedicated") || Application.isBatchMode;
 		ModsValidation.GetModsHash(Force: true);
 		bool num = System.Environment.GetCommandLineArgs().Contains("-nosteam");
@@ -7722,7 +7721,7 @@ public class MyMod : MelonMod
 		return 7200;
 	}
 
-	public static void SendDropItem(GearItem gear, int nums = 0, int total = 0, bool samepose = false, int variant = 0, GameObject Around = null)
+	public static void SendDropItem(GearItem gear, int nums = 0, int total = 0, bool samepose = false, int variant = 0, GameObject Around = null, bool settledThrow = false)
 	{
 		if (ScenePlacementSync.NativeCooking || ScenePlacementSync.KeepNativeCookingObject(gear)) return;
 		if (!(gear != null) || !(gear.gameObject != null))
@@ -7745,7 +7744,7 @@ public class MyMod : MelonMod
 				gear.StickToGroundAndOrientOnSlope(position + vector * num, NavMeshCheck.IgnoreNavMesh, 0.5f);
 			}
 		}
-		else if (gameObject.GetComponent<Comps.DropFakeOnLeave>() != null)
+		else if (!settledThrow && gameObject.GetComponent<Comps.DropFakeOnLeave>() != null)
 		{
 			Comps.DropFakeOnLeave component = gameObject.GetComponent<Comps.DropFakeOnLeave>();
 			gameObject.transform.position = component.m_OldPossition;
@@ -7782,7 +7781,7 @@ public class MyMod : MelonMod
 		int hashCode = Shared.StableHash(level_guid);
 		int hash = vectorHash + quaternionHash + hashCode;
 		// A second thrown stone may settle at the same pose as an existing drop.
-		if (gear.GetComponent<Comps.DestoryStoneOnStop>()?.m_ShouldSendDrop == true)
+		if (settledThrow)
 			hash = System.Guid.NewGuid().GetHashCode();
 		string text4 = level_guid;
 		if (nums > 0 && gear.m_StackableItem != null)
@@ -9489,7 +9488,7 @@ public class MyMod : MelonMod
 		}
 		else if (!GameManager.GetPlayerManagerComponent().PlayerIsClimbing())
 		{
-			if (GameManager.GetPlayerManagerComponent().PlayerIsSleeping())
+			if (BedRest.Active || GameManager.GetPlayerManagerComponent().PlayerIsSleeping())
 			{
 				MyAnimState = "Sleep";
 			}
@@ -11110,27 +11109,14 @@ public class MyMod : MelonMod
 		}
 	}
 
-	private static MelonPreferences_Entry<bool> ItemDecayPreference;
-
-	private static readonly System.Collections.Generic.Dictionary<System.IntPtr, float> OriginalDecayScales = new System.Collections.Generic.Dictionary<System.IntPtr, float>();
-
 	public static void SetTime()
 	{
-		if (!(GameManager.GetTimeOfDayComponent()?.IsTimeLapseActive()??false) && Utils.TryParseTOD(OveridedTime, out var normalizedTOD))
+		var clock = GameManager.GetTimeOfDayComponent();
+		if (clock != null && !clock.IsTimeLapseActive() &&
+			Utils.TryParseTOD(OveridedTime, out var normalizedTOD))
 		{
-			GameManager.GetTimeOfDayComponent().SetNormalizedTime(normalizedTOD);
-		}
-		if (GameManager.m_ExperienceModeManager != null)
-		{
-			Il2CppTLD.Gameplay.ExperienceMode currentExperienceMode = GameManager.m_ExperienceModeManager.GetCurrentExperienceMode();
-			if (currentExperienceMode != null)
-			{
-				if (currentExperienceMode.m_DecayScale > 0f && !OriginalDecayScales.ContainsKey(currentExperienceMode.Pointer))
-				{
-					OriginalDecayScales[currentExperienceMode.Pointer] = currentExperienceMode.m_DecayScale;
-				}
-				currentExperienceMode.m_DecayScale = (ItemDecayPreference != null && ItemDecayPreference.Value && OriginalDecayScales.TryGetValue(currentExperienceMode.Pointer, out float decayScale)) ? decayScale : 0f;
-			}
+			float drift = Mathf.Abs(Mathf.DeltaAngle(clock.GetNormalizedTime() * 360f, normalizedTOD * 360f));
+			clock.SetNormalizedTime(normalizedTOD, drift > .5f);
 		}
 	}
 
@@ -11378,6 +11364,7 @@ public class MyMod : MelonMod
 		SteamFriendsWindow.Tick();
 		RadialSpawnSync.Tick();
 		DeathRespawn.Tick();
+		BedRest.Tick();
 		CoopFatigue.Tick();
 		SelfTest.Tick();
 		TimerWatchdog.Tick();
@@ -11391,7 +11378,7 @@ public class MyMod : MelonMod
 		DroppedInspectSync.Tick();
 		PendingPickupVisual.Tick();
 		DroppedGearInteraction.Tick();
-		ThrownStoneSync.Tick();
+		ThrownGearSync.Tick();
 		WildlifeSceneHandshake.Tick();
 		WildlifeSpawnerAudit.Tick();
 		AnimalTracksSync.Tick();
@@ -11531,7 +11518,7 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public override void OnLateUpdate() { NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); }
+	public override void OnLateUpdate() { NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); WorkLighting.SyncSky(); BedRest.LateUpdate(); }
 
 	public override void OnGUI()
 	{
@@ -11544,6 +11531,7 @@ public class MyMod : MelonMod
 		SessionPing.Draw();
 		SteamFriendsWindow.Draw();
 		CoopFatigue.Draw();
+		BedRest.Draw();
 		DeathRespawn.Draw();
 	}
 
