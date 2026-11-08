@@ -218,7 +218,7 @@ public static class GameCompat
 		}
 		catch (Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Could not reach panel " + typeof(T).Name + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Could not reach panel " + typeof(T).Name + ": " + ex.Message);
 		}
 		return null;
 	}
@@ -260,7 +260,7 @@ public static class GameCompat
 		GearItem gearItemPrefab = MyMod.GetGearItemPrefab(gearName);
 		if (gearItemPrefab == null)
 		{
-			MelonLogger.Warning("[SkyCoop] No gear prefab named " + gearName);
+			MelonLogger.Warning("[TLD Coop] No gear prefab named " + gearName);
 			return null;
 		}
 		return pm.InstantiateItemInPlayerInventory(gearItemPrefab, units);

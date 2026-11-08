@@ -6,17 +6,17 @@ using System.Runtime.Versioning;
 using MelonLoader;
 using SkyCoop;
 
-[assembly: AssemblyTitle("SkyCoop")]
+[assembly: AssemblyTitle("TLD Coop")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("SkyCoop")]
+[assembly: AssemblyProduct("TLD Coop")]
 [assembly: AssemblyCopyright("Copyright ©  2021")]
 [assembly: AssemblyTrademark("")]
-[assembly: MelonInfo(typeof(MyMod), "Sky Co-op LTS", "0.16.13", "Filigrani", null)]
+[assembly: MelonInfo(typeof(MyMod), "TLD Coop", "0.16.14", "Filigrani", null)]
 [assembly: MelonGame("Hinterland", "TheLongDark")]
 [assembly: HarmonyDontPatchAll]
 [assembly: ComVisible(false)]
 [assembly: Guid("7f1e1453-c20a-4a4c-9c7d-41dd727613bf")]
-[assembly: AssemblyFileVersion("0.16.13")]
-[assembly: AssemblyVersion("0.16.13.0")]
+[assembly: AssemblyFileVersion("0.16.14")]
+[assembly: AssemblyVersion("0.16.14.0")]

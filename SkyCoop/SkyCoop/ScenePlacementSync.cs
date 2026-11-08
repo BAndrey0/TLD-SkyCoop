@@ -26,7 +26,7 @@ internal static class ScenePlacementSync
             float.IsFinite(Qx) && float.IsFinite(Qy) && float.IsFinite(Qz) && float.IsFinite(Qw);
     }
 
-    private sealed record Move(string Id, string Parent, Pose Pose, string Operation, long Revision, int Version = 0);
+    private sealed record Move(string Id, string Parent, Pose Pose, string Operation, long Revision, int Version = 0, string Anchor = "", string ParentAnchor = "");
     private sealed class FurniturePlacement
     {
         internal GameObject Object;
@@ -66,23 +66,64 @@ internal static class ScenePlacementSync
     private static string Id(GameObject obj)
     {
         if (obj == null) return "";
+        string persistent = obj.GetComponent<ObjectGuid>()?.Get() ?? "";
+        if (persistent.Length > 0) return persistent;
         var placeable = obj.GetComponent<Placeable>();
         if (placeable != null && !string.IsNullOrEmpty(placeable.m_Guid)) return placeable.m_Guid;
-        var guid = obj.GetComponent<ObjectGuid>();
-        return guid != null ? guid.Get() ?? "" : "";
+        string anchor = Anchor(obj);
+        return anchor.Length == 0 ? "" : "anchor-" + anchor;
     }
 
-    private static GameObject Find(string id)
+    private static string Anchor(GameObject obj)
+    {
+        var decoration = obj != null ? obj.GetComponent<DecorationItem>() : null;
+        return decoration != null && OriginalAnchors.TryGetValue(decoration.GetInstanceID(), out string key) ? key : "";
+    }
+
+    private static readonly Dictionary<int, string> OriginalAnchors = new();
+
+    [HarmonyPatch(typeof(DecorationItem), nameof(DecorationItem.Awake))]
+    private static class RememberOriginalFurniture
+    {
+        private static void Prefix(DecorationItem __instance)
+        {
+            var position = __instance.transform.position;
+            if (!__instance.gameObject.scene.IsValid() || position == Vector3.zero) return;
+            string identity = FormattableString.Invariant(
+                $"{GameCompat.StripCloneSuffix(__instance.name)}|{position.x:F2}|{position.y:F2}|{position.z:F2}");
+            OriginalAnchors[__instance.GetInstanceID()] = Shared.StableHash(identity).ToString("X8");
+        }
+    }
+
+    [HarmonyPatch(typeof(DecorationItem), nameof(DecorationItem.OnDestroy))]
+    private static class ForgetFurnitureAnchor
+    {
+        private static void Prefix(DecorationItem __instance) => OriginalAnchors.Remove(__instance.GetInstanceID());
+    }
+
+    private static GameObject Find(string id, string anchor = "")
     {
         if (string.IsNullOrEmpty(id)) return null;
         var obj = ObjectGuidManager.Lookup(id);
         if (obj != null) return obj;
+        if (DecorationItem.TryGetDecorationFromId(id, out var decoration) && decoration != null) return decoration.gameObject;
         var placeables = UnityEngine.Object.FindObjectsOfType<Placeable>();
         for (int i = 0; i < placeables.Length; i++)
         {
             var placeable = placeables[i];
             if (placeable != null && !placeable.m_Invalidated && placeable.m_Guid == id)
                 return placeable.gameObject;
+        }
+        if (!string.IsNullOrEmpty(anchor))
+        {
+            GameObject match = null;
+            foreach (var item in UnityEngine.Object.FindObjectsOfType<DecorationItem>())
+            {
+                if (item == null || Anchor(item.gameObject) != anchor) continue;
+                if (match != null) return null;
+                match = item.gameObject;
+            }
+            return match;
         }
         return null;
     }
@@ -117,12 +158,13 @@ internal static class ScenePlacementSync
         string id = Id(obj);
         if (id.Length == 0) return null;
         string parent = decoration != null && decoration.DecorationParent != null ? Id(decoration.DecorationParent.gameObject) : "";
-        return new Move(id, parent, Pose.From(obj.transform), Guid.NewGuid().ToString("N"), 0, 2);
+        return new Move(id, parent, Pose.From(obj.transform), Guid.NewGuid().ToString("N"), 0, 2,
+            Anchor(obj), Anchor(decoration?.DecorationParent?.gameObject));
     }
 
     private static void PublishMove(Move move)
     {
-        if (move == null) return;
+        if (move?.Pose?.Valid != true || move.Pose.Position == Vector3.zero) return;
         if (MyMod.iAmHost) AcceptMove(MyMod.level_guid, move);
         else
         {
@@ -138,7 +180,7 @@ internal static class ScenePlacementSync
         private static void Prefix(PlayerManager __instance, out FurniturePlacement __state)
         {
             __state = null;
-            var obj = __instance.m_ObjectToPlace;
+            var obj = __instance.m_ObjectToPlaceDecorationItem?.gameObject ?? __instance.m_ObjectToPlace;
             if (!InWorld || obj == null || IsFixedBed(obj) ||
                 (obj.GetComponent<DecorationItem>() == null && obj.GetComponent<Placeable>() == null)) return;
             var moves = obj.GetComponentsInChildren<DecorationItem>(true)
@@ -163,10 +205,12 @@ internal static class ScenePlacementSync
             if (__state == null || (!__state.Confirmed && __instance.m_ObjectToPlace == __state.Object)) return;
             foreach (var captured in __state.Moves)
             {
-                var obj = Find(captured.Id);
+                var obj = Find(captured.Id, captured.Anchor);
                 var decoration = obj != null ? obj.GetComponent<DecorationItem>() : null;
                 string parent = decoration?.DecorationParent != null ? Id(decoration.DecorationParent.gameObject) : "";
-                PublishMove(captured with { Parent = parent });
+                var parentAnchor = Anchor(decoration?.DecorationParent?.gameObject);
+                var pose = obj != null && obj.transform.position != Vector3.zero ? Pose.From(obj.transform) : captured.Pose;
+                PublishMove(captured with { Parent = parent, ParentAnchor = parentAnchor, Pose = pose });
             }
         }
 
@@ -176,7 +220,7 @@ internal static class ScenePlacementSync
         }
     }
 
-    [HarmonyPatch(typeof(DecorationItem), nameof(DecorationItem.FinalizePlacement))]
+    [HarmonyPatch(typeof(DecorationItem), nameof(DecorationItem.FinalizePlacementRecursive))]
     private static class DecorationPlaced
     {
         private static void Prefix(DecorationItem __instance, bool __0, out Move __state)
@@ -191,7 +235,11 @@ internal static class ScenePlacementSync
                 if (__0 && placingFurniture.Object == __instance.gameObject) placingFurniture.Confirmed = true;
                 return;
             }
-            if (__0) PublishMove(__state);
+            if (__0 && __state != null)
+            {
+                var current = CaptureFurniture(__instance.gameObject);
+                PublishMove(current != null && current.Pose.Position != Vector3.zero ? current : __state);
+            }
         }
     }
 
@@ -229,7 +277,8 @@ internal static class ScenePlacementSync
     private static void AcceptMove(string area, Move move, int sender = 0)
     {
         if (move?.Pose?.Valid != true || string.IsNullOrEmpty(move.Id) || move.Id.Length > 100 ||
-            move.Parent == null || move.Parent.Length > 100 || move.Id == move.Parent || move.Version != 2 ||
+            (move.Anchor?.Length ?? 0) > 8 || (move.ParentAnchor?.Length ?? 0) > 8 ||
+            move.Pose.Position == Vector3.zero || move.Parent == null || move.Parent.Length > 100 || move.Id == move.Parent || move.Version != 2 ||
             !Guid.TryParseExact(move.Operation, "N", out _)) return;
         var moves = GetScene(area);
         string ancestor = move.Parent;
@@ -246,7 +295,11 @@ internal static class ScenePlacementSync
             AcceptedOperations.Add(move.Operation);
             OperationOrder.Enqueue(move.Operation);
             move = move with { Revision = ++revision };
+            if (!string.IsNullOrEmpty(move.Anchor))
+                foreach (var old in moves.Values.Where(existing => existing.Id != move.Id && existing.Anchor == move.Anchor).ToArray())
+                    moves.Remove(old.Id);
             moves[move.Id] = move;
+            MelonLoader.MelonLogger.Msg("[Furniture] Saved move " + move.Id + " in " + area + " revision=" + move.Revision);
             MPSaveManager.ValidateRootExits();
             MPSaveManager.SaveData(area + "_FurniturePositions", JsonSerializer.Serialize(moves), MPSaveManager.GetSeed());
             ReceiveMove(area, move);
@@ -270,7 +323,7 @@ internal static class ScenePlacementSync
     private static bool Apply(Move move)
     {
         if (PlaceableManager.s_IsDeserializing) return false;
-        var obj = Find(move.Id);
+        var obj = Find(move.Id, move.Anchor);
         if (obj == null) return false;
         if (IsFixedBed(obj)) return true;
         var player = GameManager.GetPlayerManagerComponent();
@@ -280,7 +333,7 @@ internal static class ScenePlacementSync
         if (decoration == null && obj.GetComponent<Placeable>() == null) return true;
         if (decoration != null)
         {
-            var parent = Find(move.Parent);
+            var parent = Find(move.Parent, move.ParentAnchor);
             if (move.Parent.Length > 0 && parent == null) return false;
             var parentDecoration = parent != null ? parent.GetComponent<DecorationItem>() : null;
             if (parentDecoration != decoration.DecorationParent &&

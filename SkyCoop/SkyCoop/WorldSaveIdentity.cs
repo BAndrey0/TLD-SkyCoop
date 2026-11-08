@@ -9,6 +9,14 @@ internal static class WorldSaveIdentity
 {
 	private const string SaveKey = "skycoop_worldid";
 	internal static string Active { get; private set; } = "";
+	private static string pendingSlot;
+	private static string pendingWorld;
+
+	internal static void PrepareResume(string slotName, string hostWorld)
+	{
+		pendingSlot = slotName;
+		pendingWorld = hostWorld;
+	}
 
 	internal static string Read(string slotName)
 	{
@@ -21,7 +29,7 @@ internal static class WorldSaveIdentity
 		private static void Postfix(SlotData slot)
 		{
 			string worldId = Active;
-			if (slot == null || worldId.Length == 0 || slot.m_InternalName != SaveGameSystem.GetCurrentSaveName())
+			if (slot == null || worldId.Length == 0 || slot.m_GameId != SaveGameSystem.m_CurrentGameId)
 			{
 				return;
 			}
@@ -38,6 +46,7 @@ internal static class WorldSaveIdentity
 		private static void Prefix()
 		{
 			Server.Stop();
+			pendingSlot = pendingWorld = null;
 			Active = MyMod.sendMyPosition && !MyMod.ShouldCreateSaveForHost && MyMod.PendingSave != null
 				? MyMod.PendingSave.m_WorldId
 				: Guid.NewGuid().ToString("N");
@@ -50,6 +59,8 @@ internal static class WorldSaveIdentity
 		private static void Postfix(string name)
 		{
 			string saved = Read(name);
+			if (saved.Length == 0 && pendingSlot == name) saved = pendingWorld;
+			pendingSlot = pendingWorld = null;
 			Active = Guid.TryParseExact(saved, "N", out Guid worldId) ? worldId.ToString("N") : "";
 		}
 	}

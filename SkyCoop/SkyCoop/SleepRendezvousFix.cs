@@ -31,6 +31,8 @@ public static class SleepRendezvousFix
 		return VoteOrder.Count == 0 ? 0 : currentVote(VoteOrder[0]);
 	}
 
+	internal static int ProposalOwner => VoteOrder.Count > 0 ? VoteOrder[0] : -1;
+
 	internal static void ClearVotes() => VoteOrder.Clear();
 
 	private static bool waiting;
@@ -383,8 +385,15 @@ public static class SleepRendezvousFix
 		}
 	}
 
-	public static void ProcessReadiness(int sleepers, int required, bool everyoneReady, int commonHours)
+	public static void ProcessReadiness(int sleepers, int required, bool everyoneReady, int commonHours, string proposer)
 	{
+		if (commonHours != 0 && offeredHours != commonHours && !Waiting && !everyoneReady &&
+			!MyMod.DedicatedServerAppMode && !MyMod.LoadingScreenIsOn && !string.IsNullOrEmpty(proposer))
+		{
+			string action = commonHours < 0 ? "совместное ожидание" : "совместный сон";
+			HUDMessage.AddMessage(proposer + " предлагает " + action + " на " + Math.Abs(commonHours) + " ч",
+				highPriority: true, ignoreOverlayActive: true);
+		}
 		offeredHours = commonHours;
 		if (!Waiting)
 		{
@@ -420,6 +429,7 @@ public static class SleepRendezvousFix
 		}
 		if (commonHours < 0)
 		{
+			CoopFatigue.ApplyPassTime(-commonHours);
 			panel_Rest.Enable(false);
 			HUDMessage.AddMessage("Совместное ожидание: " + Math.Abs(commonHours) + " ч");
 			MyMod.SyncSleeping();

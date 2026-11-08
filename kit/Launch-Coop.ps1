@@ -11,8 +11,9 @@ if(!$installRoot){throw ('Co-op game is not installed here. Run Install.cmd in f
 $game=Join-Path $installRoot 'game'
 if($game -match '[^\x00-\x7F]'){throw 'MelonLoader cannot reliably load from a path containing non-ASCII letters. Close the game and move the entire co-op folder (player and friend-kit together) to a path such as D:\TLD-Coop, then run player\Play-Coop.cmd. No reinstall is needed.'}
 if(Test-Path -LiteralPath (Join-Path $installRoot '.update-incomplete')){throw 'Update is incomplete. Run Update.cmd from the new friend-kit again.'}
+if(Test-Path -LiteralPath (Join-Path $installRoot '.migration-incomplete')){throw 'Save migration is incomplete. Open the previous installation in the launcher and retry the upgrade.'}
 if(Test-Path -LiteralPath (Join-Path $installRoot '.install-incomplete')){throw 'Installation is incomplete. Complete Install.cmd before starting the game.'}
-foreach($file in @('tld.exe','Mods\SkyCoop.dll','Mods\CoopProfile.dll','Mods\multiplayerstuff.unity3d','winhttp.dll','MelonLoader\net6\MelonLoader.dll','MelonLoader\Dependencies\SupportModules\Il2Cpp.dll')){if(!(Test-Path -LiteralPath (Join-Path $game $file))){throw "Missing co-op file in installed player copy: $file. Installation folder: $installRoot"}}
+foreach($file in @('tld.exe','Mods\TLD-Coop.dll','Mods\CoopProfile.dll','Mods\multiplayerstuff.unity3d','winhttp.dll','MelonLoader\net6\MelonLoader.dll','MelonLoader\Dependencies\SupportModules\Il2Cpp.dll')){if(!(Test-Path -LiteralPath (Join-Path $game $file))){throw "Missing co-op file in installed player copy: $file. Installation folder: $installRoot"}}
 if(!(Test-Path -LiteralPath (Join-Path $installRoot 'runtime\dotnet.exe'))){throw "Portable runtime is missing in $installRoot. Complete installation first."}
 if(Test-Path -LiteralPath (Join-Path $game 'Mods\CoopLab.dll')){throw 'Test bot found. Use a production copy without CoopLab.dll'}
 if($CheckOnly){[pscustomobject]@{installRoot=$installRoot;game=$game;runtime=(Join-Path $installRoot 'runtime');ready=$true};return}

@@ -36,7 +36,7 @@ public class MyMod : MelonMod
 {
 	public static class BuildInfo
 	{
-		public const string Name = "Sky Co-op LTS";
+		public const string Name = "TLD Coop";
 
 		public const string Description = "Multiplayer mod";
 
@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.13";
+		public const string Version = "0.16.14";
 
 		public const string DownloadLink = null;
 
@@ -491,7 +491,44 @@ public class MyMod : MelonMod
 
 	public static System.Collections.Generic.Dictionary<int, GameObject> TrackableDroppedGearsObjs = new System.Collections.Generic.Dictionary<int, GameObject>();
 
-	public static int OverrideLampReduceFuel = -1;
+	private static KeroseneLampItem loadingDroppedLamp;
+	private static float loadingLampHours;
+	private static bool loadingLampFuelApplied;
+
+	internal static void AdjustDroppedLampFuel(KeroseneLampItem lamp, ref float hours)
+	{
+		if (lamp != loadingDroppedLamp) return;
+		hours = loadingLampFuelApplied ? 0f : loadingLampHours;
+		loadingLampFuelApplied = true;
+	}
+
+	private static void DeserializeDroppedGear(GearItem gear, string json, DataStr.ExtraDataForDroppedGear extra)
+	{
+		var lamp = gear.m_KeroseneLampItem;
+		if (lamp == null || extra == null)
+		{
+			gear.DeserializeFromJson(json);
+			return;
+		}
+		var previousLamp = loadingDroppedLamp;
+		float previousHours = loadingLampHours;
+		bool previousApplied = loadingLampFuelApplied;
+		loadingDroppedLamp = lamp;
+		loadingLampHours = extra.m_Variant == 1 ? System.Math.Max(0L, (long)MinutesFromStartServer - extra.m_DroppedTime) / 60f : 0f;
+		loadingLampFuelApplied = false;
+		try
+		{
+			gear.DeserializeFromJson(json);
+			if (!loadingLampFuelApplied && loadingLampHours > 0f && lamp.m_On)
+				lamp.ReduceFuel(loadingLampHours);
+		}
+		finally
+		{
+			loadingDroppedLamp = previousLamp;
+			loadingLampHours = previousHours;
+			loadingLampFuelApplied = previousApplied;
+		}
+	}
 
 	public static System.Collections.Generic.Dictionary<string, float> BooksResearched = new System.Collections.Generic.Dictionary<string, float>();
 
@@ -1097,15 +1134,10 @@ public class MyMod : MelonMod
 		gameObject.name = CloneTrimer(gameObject.name);
 		DataStr.ExtraDataForDroppedGear extra = jData.m_Extra;
 		GearItem component = gameObject.GetComponent<GearItem>();
-		if (gameObject.GetComponent<KeroseneLampItem>() != null && extra != null)
-		{
-			int num = (OverrideLampReduceFuel = MinutesFromStartServer - extra.m_DroppedTime);
-			MelonLogger.Msg(System.ConsoleColor.Cyan, "Lamp been dropped " + num + " minutes");
-		}
 		bool flag = false;
 		if (!string.IsNullOrEmpty(value3))
 		{
-			gameObject.GetComponent<GearItem>().DeserializeFromJson(value3);
+			DeserializeDroppedGear(component, value3, extra);
 		}
 		else
 		{
@@ -2101,21 +2133,21 @@ public class MyMod : MelonMod
 		}
 		catch (System.Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Skipped " + what + " during startup: " + ex.GetType().Name + ": " + ex.Message);
-			MelonLogger.Warning("[SkyCoop] The rest of the mod is unaffected.");
+			MelonLogger.Warning("[TLD Coop] Skipped " + what + " during startup: " + ex.GetType().Name + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] The rest of the mod is unaffected.");
 		}
 	}
 
 	private static void ReportUnusableBundle()
 	{
-		MelonLogger.Error("[SkyCoop] Could not load Mods\\multiplayerstuff.unity3d.");
+		MelonLogger.Error("[TLD Coop] Could not load Mods\\multiplayerstuff.unity3d.");
 		if (!File.Exists("Mods\\multiplayerstuff.unity3d"))
 		{
-			MelonLogger.Error("[SkyCoop] The file is not in the Mods folder. Multiplayer UI and player models are unavailable until it is.");
+			MelonLogger.Error("[TLD Coop] The file is not in the Mods folder. Multiplayer UI and player models are unavailable until it is.");
 			return;
 		}
-		MelonLogger.Error("[SkyCoop] The bundle exists but failed to load. Check its absolute path, file integrity and Unity player log. Tested v13.2 assets load on Unity " + Application.unityVersion + ".");
-		MelonLogger.Error("[SkyCoop] Multiplayer UI and player models are unavailable until the load succeeds.");
+		MelonLogger.Error("[TLD Coop] The bundle exists but failed to load. Check its absolute path, file integrity and Unity player log. Tested v13.2 assets load on Unity " + Application.unityVersion + ".");
+		MelonLogger.Error("[TLD Coop] Multiplayer UI and player models are unavailable until the load succeeds.");
 	}
 
 	public static T BundleAsset<T>(string name) where T : UnityEngine.Object
@@ -4258,7 +4290,7 @@ public class MyMod : MelonMod
 			{
 				component.Set(text);
 			}
-			MelonLogger.Warning("[SkyCoop] Wildlife handoff retained native owner " + text + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Wildlife handoff retained native owner " + text + ": " + ex.Message);
 			return false;
 		}
 	}
@@ -4458,7 +4490,7 @@ public class MyMod : MelonMod
 			{
 				component.Set(text);
 			}
-			MelonLogger.Warning("[SkyCoop] Wildlife takeover retained replica " + text + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Wildlife takeover retained replica " + text + ": " + ex.Message);
 			return false;
 		}
 	}
@@ -5891,6 +5923,7 @@ public class MyMod : MelonMod
 			LetChooseSpawnForClient(PendingSave);
 			return;
 		}
+		WorldSaveIdentity.PrepareResume(slot.m_SaveSlotName, PendingSave.m_WorldId);
 		PendingSave = null;
 		SaveGameSlots.SetBaseNameForSave(slot.m_SaveSlotName, slot.m_SaveSlotName);
 		SaveGameSystem.SetCurrentSaveInfo(slot.m_Episode, slot.m_GameMode, slot.m_GameId, slot.m_SaveSlotName);
@@ -5912,12 +5945,19 @@ public class MyMod : MelonMod
 		AnimalsController = false;
 		PendingSaveSlotInfo = null;
 		var sortedSaveSlots = SaveGameSystem.GetSortedSaveSlots((Episode)Data.m_Episode, (SaveSlotType)Data.m_SaveSlotType);
+		SaveSlotInfo legacySlot = null;
+		string legacyUser = "";
+		long legacyHash = 0;
+		int legacyMatches = 0;
 		for (int i = 0; i < sortedSaveSlots.Count; i++)
 		{
 			SaveSlotInfo slot = sortedSaveSlots[i];
 			string name = slot.m_SaveSlotName;
-			if (!WorldSaveMatch.CanResume(Data.m_WorldId, Data.m_Seed, WorldSaveIdentity.Read(name), slot.m_UserDefinedName) ||
-				MenuChange.GetRNGGen(name) != 5)
+			string slotWorld = WorldSaveIdentity.Read(name);
+			bool exact = WorldSaveMatch.CanResume(Data.m_WorldId, Data.m_Seed, slotWorld, slot.m_UserDefinedName);
+			bool legacy = !exact && ServerConfig.m_SaveScamProtection && System.Guid.TryParseExact(Data.m_WorldId, "N", out _) &&
+				WorldSaveMatch.CanResume("", Data.m_Seed, slotWorld, slot.m_UserDefinedName);
+			if ((!exact && !legacy) || MenuChange.GetRNGGen(name) != 5)
 			{
 				continue;
 			}
@@ -5943,10 +5983,26 @@ public class MyMod : MelonMod
 			{
 				continue;
 			}
-			PendingSaveSlotInfo = slot;
-			SendVerifySave(userId, userId == "" ? 0L : Shared.GetSaveFingerprint(global));
+			long hash = userId == "" ? 0L : Shared.GetSaveFingerprint(global);
+			if (exact)
+			{
+				PendingSaveSlotInfo = slot;
+				SendVerifySave(userId, hash);
+				return;
+			}
+			legacyMatches++;
+			legacySlot = slot;
+			legacyUser = userId;
+			legacyHash = hash;
+		}
+		if (legacyMatches == 1)
+		{
+			PendingSaveSlotInfo = legacySlot;
+			MelonLogger.Msg("[Save join] Matching legacy guest slot by world seed: " + legacySlot.m_SaveSlotName);
+			SendVerifySave(legacyUser, legacyHash);
 			return;
 		}
+		MelonLogger.Msg("[Save join] No matching guest slot in the active save profile.");
 		SendVerifySave("", 0L);
 	}
 
@@ -6983,11 +7039,6 @@ public class MyMod : MelonMod
 				GameObject gameObject = UnityEngine.Object.Instantiate(gearItemObject, position, rotation);
 				DisableObjectForXPMode.RemoveDisabler(gameObject.gameObject);
 				DataStr.ExtraDataForDroppedGear extra = obj.GetComponent<Comps.DroppedGearDummy>().m_Extra;
-				if (gameObject.GetComponent<KeroseneLampItem>() != null && obj != null)
-				{
-					int num2 = (OverrideLampReduceFuel = MinutesFromStartServer - extra.m_DroppedTime);
-					MelonLogger.Msg(System.ConsoleColor.Cyan, "Lamp been dropped " + num2 + " minutes");
-				}
 				if (gameObject == null)
 				{
 					MelonLogger.Msg(System.ConsoleColor.Red, "Gear prefab with name " + text4 + " not exist! Maybe you miss an modded item pack?");
@@ -6996,7 +7047,7 @@ public class MyMod : MelonMod
 				gameObject.name = CloneTrimer(gameObject.name);
 				if (!string.IsNullOrEmpty(slicedJsonDroppedGear.m_Json))
 				{
-					gameObject.GetComponent<GearItem>().DeserializeFromJson(slicedJsonDroppedGear.m_Json);
+					DeserializeDroppedGear(gameObject.GetComponent<GearItem>(), slicedJsonDroppedGear.m_Json, extra);
 					ThrownFlareSync.ApplyPickupBurn(gameObject.GetComponent<GearItem>(), obj.GetComponent<Comps.DroppedGearDummy>()?.m_Extra);
 				}
 				if (!string.IsNullOrEmpty(extra.m_PhotoGUID))
@@ -7165,14 +7216,9 @@ public class MyMod : MelonMod
 				}
 				gameObject.name = CloneTrimer(gameObject.name);
 				Comps.DroppedGearDummy component = obj.GetComponent<Comps.DroppedGearDummy>();
-				if (gameObject.GetComponent<KeroseneLampItem>() != null)
-				{
-					int num2 = (OverrideLampReduceFuel = MinutesFromStartServer - component.m_Extra.m_DroppedTime);
-					MelonLogger.Msg(System.ConsoleColor.Cyan, "Lamp been dropped " + num2 + " minutes");
-				}
 				if (!string.IsNullOrEmpty(slicedJsonDroppedGear.m_Json))
 				{
-					gameObject.GetComponent<GearItem>().DeserializeFromJson(slicedJsonDroppedGear.m_Json);
+					DeserializeDroppedGear(gameObject.GetComponent<GearItem>(), slicedJsonDroppedGear.m_Json, component.m_Extra);
 					ThrownFlareSync.ApplyPickupBurn(gameObject.GetComponent<GearItem>(), obj.GetComponent<Comps.DroppedGearDummy>()?.m_Extra);
 				}
 				if (!string.IsNullOrEmpty(component.m_Extra.m_PhotoGUID))
@@ -9017,7 +9063,7 @@ public class MyMod : MelonMod
 			else
 			{
 				MyLastLightSourceName = MyLightSourceName;
-				if (playersData[0].m_Mimic && players[0] != null)
+				if (playersData.Count > 0 && players.Count > 0 && playersData[0]?.m_Mimic == true && players[0] != null)
 				{
 					playersData[0].m_PlayerEquipmentData.m_HoldingItem = MyLightSourceName;
 				}
@@ -9595,7 +9641,7 @@ public class MyMod : MelonMod
 		if (MyPreviousAnimState != MyAnimState)
 		{
 			MyPreviousAnimState = MyAnimState;
-			if (playersData[0].m_Mimic && players[0] != null)
+			if (playersData.Count > 0 && players.Count > 0 && playersData[0]?.m_Mimic == true && players[0] != null)
 			{
 				playersData[0].m_AnimState = MyAnimState;
 			}
@@ -11290,7 +11336,7 @@ public class MyMod : MelonMod
 			}
 			catch (System.Exception ex)
 			{
-				MelonLogger.Warning("[SkyCoop] Could not preload RuralRegion_STORY: " + ex.Message);
+				MelonLogger.Warning("[TLD Coop] Could not preload RuralRegion_STORY: " + ex.Message);
 			}
 			DonePreloadNextFrame = true;
 			return;
@@ -11309,7 +11355,7 @@ public class MyMod : MelonMod
 		}
 		catch (System.Exception ex2)
 		{
-			MelonLogger.Warning("[SkyCoop] Preload could not register every semi-prefab: " + ex2.Message);
+			MelonLogger.Warning("[TLD Coop] Preload could not register every semi-prefab: " + ex2.Message);
 		}
 		finally
 		{
@@ -11989,8 +12035,8 @@ public class MyMod : MelonMod
 			fireSync = serverSettingsData.m_CFG.m_FireSync;
 			cheatsMode = serverSettingsData.m_CFG.m_CheatsMode;
 			num2 = serverSettingsData.m_Accessibility;
-			MelonLogger.Msg(System.ConsoleColor.Yellow, "[SkyCoop] No host settings panel (the asset bundle did not load), hosting with the saved settings instead:");
-			MelonLogger.Msg(System.ConsoleColor.Yellow, "[SkyCoop]   max players " + maxPlayers + ", port " + num + ", " + (flag ? "Steam lobby" : "direct IP"));
+			MelonLogger.Msg(System.ConsoleColor.Yellow, "[TLD Coop] No host settings panel (the asset bundle did not load), hosting with the saved settings instead:");
+			MelonLogger.Msg(System.ConsoleColor.Yellow, "[TLD Coop]   max players " + maxPlayers + ", port " + num + ", " + (flag ? "Steam lobby" : "direct IP"));
 		}
 		else
 		{
@@ -12025,7 +12071,7 @@ public class MyMod : MelonMod
 		}
 		if (flag && !SteamConnect.CanUseSteam)
 		{
-			MelonLogger.Warning("[SkyCoop] Steam hosting was requested but Steam is not available; hosting on port " + num + " instead. Others join by IP.");
+			MelonLogger.Warning("[TLD Coop] Steam hosting was requested but Steam is not available; hosting on port " + num + " instead. Others join by IP.");
 			flag = false;
 		}
 		if (!flag)
@@ -12129,7 +12175,7 @@ public class MyMod : MelonMod
 			}
 			if (UIHostMenu == null)
 			{
-				MelonLogger.Msg(System.ConsoleColor.Yellow, "[SkyCoop] Host settings panel unavailable, hosting directly.");
+				MelonLogger.Msg(System.ConsoleColor.Yellow, "[TLD Coop] Host settings panel unavailable, hosting directly.");
 				HostMenuHost();
 				return;
 			}

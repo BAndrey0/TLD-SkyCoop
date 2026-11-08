@@ -70,7 +70,7 @@ public static class FarTerritory
 			}
 			catch (Exception ex)
 			{
-				MelonLogger.Warning("[SkyCoop] Could not read the cougar state: " + ex.Message);
+				MelonLogger.Warning("[TLD Coop] Could not read the cougar state: " + ex.Message);
 			}
 			return cougarStateSync;
 		}
@@ -114,7 +114,7 @@ public static class FarTerritory
 			}
 			catch (Exception ex)
 			{
-				MelonLogger.Warning("[SkyCoop] Could not apply the cougar state: " + ex.Message);
+				MelonLogger.Warning("[TLD Coop] Could not apply the cougar state: " + ex.Message);
 			}
 		}
 
@@ -203,7 +203,7 @@ public static class FarTerritory
 			}
 			catch (Exception ex)
 			{
-				MelonLogger.Warning("[SkyCoop] Could not read the trader state: " + ex.Message);
+				MelonLogger.Warning("[TLD Coop] Could not read the trader state: " + ex.Message);
 				return "";
 			}
 		}
@@ -227,7 +227,7 @@ public static class FarTerritory
 			}
 			catch (Exception ex)
 			{
-				MelonLogger.Warning("[SkyCoop] Could not apply the trader state: " + ex.Message);
+				MelonLogger.Warning("[TLD Coop] Could not apply the trader state: " + ex.Message);
 			}
 			finally
 			{

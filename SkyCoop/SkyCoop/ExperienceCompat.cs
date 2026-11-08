@@ -44,13 +44,13 @@ public static class ExperienceCompat
 			}
 			if (fallback != null)
 			{
-				MelonLogger.Warning("[SkyCoop] No survival config for " + type.ToString() + ", using " + fallback.name);
+				MelonLogger.Warning("[TLD Coop] No survival config for " + type.ToString() + ", using " + fallback.name);
 				return fallback;
 			}
 		}
 		catch (Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Could not look up game mode " + type.ToString() + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Could not look up game mode " + type.ToString() + ": " + ex.Message);
 		}
 		return null;
 	}
@@ -65,7 +65,7 @@ public static class ExperienceCompat
 		}
 		else
 		{
-			MelonLogger.Warning("[SkyCoop] No game mode config for " + type.ToString() + ", experience mode unchanged");
+			MelonLogger.Warning("[TLD Coop] No game mode config for " + type.ToString() + ", experience mode unchanged");
 		}
 	}
 
@@ -87,7 +87,7 @@ public static class ExperienceCompat
 		}
 		catch (Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Could not read the selected experience mode: " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Could not read the selected experience mode: " + ex.Message);
 		}
 		return ExperienceModeType.Pilgrim;
 	}

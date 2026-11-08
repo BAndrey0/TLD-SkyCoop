@@ -19,7 +19,7 @@ internal sealed partial class LauncherForm
 	private readonly Button syncButton = new Button(), sourceButton = new Button(), existingButton = new Button();
 	private void InitializeModernView()
 	{
-		Text="Sky Co-op · The Long Dark"; ClientSize=new Size(1020,700); MinimumSize=new Size(960,700);
+		Text="TLD Coop · The Long Dark"; ClientSize=new Size(1020,700); MinimumSize=new Size(960,700);
 		StartPosition=FormStartPosition.CenterScreen; Font=new Font("Segoe UI",10); BackColor=Ink; ForeColor=Color.FromArgb(235,241,244);
 		AutoScaleMode=AutoScaleMode.Dpi; DoubleBuffered=true;
 		var sidebar=new Panel{Dock=DockStyle.Left,Width=194,BackColor=Color.FromArgb(11,18,26),Padding=new Padding(24)};

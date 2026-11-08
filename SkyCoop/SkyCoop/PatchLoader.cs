@@ -16,7 +16,7 @@ public static class PatchLoader
 	{
 		if (harmony == null)
 		{
-			MelonLogger.Error("[SkyCoop] No Harmony instance to patch with.");
+			MelonLogger.Error("[TLD Coop] No Harmony instance to patch with.");
 			return;
 		}
 		AppliedPatches = 0;
@@ -44,17 +44,17 @@ public static class PatchLoader
 				{
 					string text = type.FullName + ": " + Describe(e);
 					FailedPatches.Add(text);
-					MelonLogger.Warning("[SkyCoop] Skipped patch " + text);
+					MelonLogger.Warning("[TLD Coop] Skipped patch " + text);
 				}
 			}
 		}
 		if (FailedPatches.Count == 0)
 		{
-			MelonLogger.Msg(ConsoleColor.Green, "[SkyCoop] Applied " + AppliedPatches + " patch classes.");
+			MelonLogger.Msg(ConsoleColor.Green, "[TLD Coop] Applied " + AppliedPatches + " patch classes.");
 			return;
 		}
-		MelonLogger.Warning("[SkyCoop] Applied " + AppliedPatches + " patch classes, " + FailedPatches.Count + " did not fit this game version. The features behind them are disabled; the rest of the mod works.");
-		MelonLogger.Warning("[SkyCoop] This usually means the game updated. Check for a newer SkyCoop build.");
+		MelonLogger.Warning("[TLD Coop] Applied " + AppliedPatches + " patch classes, " + FailedPatches.Count + " did not fit this game version. The features behind them are disabled; the rest of the mod works.");
+		MelonLogger.Warning("[TLD Coop] This usually means the game updated. Check for a newer TLD Coop build.");
 	}
 
 	private static bool HasHarmonyPatchAttribute(Type type)

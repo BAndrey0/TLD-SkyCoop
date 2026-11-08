@@ -82,6 +82,36 @@ public static class CoopFatigue
 	private static float lastGoodStrength=MaxStrength;
 	private static float lastRepairWarning=-100;
 	private static float lastSprintMaximum=1;
+	internal static void ApplyPassTime(int hours)
+	{
+		if (hours < 1 || hours > 24 || MyMod.IsDead || MyMod.DedicatedServerAppMode) return;
+		var hunger = GameManager.GetHungerComponent();
+		var thirst = GameManager.GetThirstComponent();
+		var freezing = GameManager.GetFreezingComponent();
+		var fatigue = GameManager.GetFatigueComponent();
+		if (hunger != null)
+			hunger.RemoveReserveCalories(VitalNumbers.Rate(hunger.GetCurrentCalorieBurnPerHour(), hunger.m_CalorieBurnPerHourStanding) * hours);
+		if (thirst != null)
+			thirst.AddThirst(VitalNumbers.Rate(thirst.m_ThirstIncreasePerDay, 0f) * hours / 24f);
+		if (freezing != null)
+		{
+			float degreesBelowThreshold = freezing.m_TemperatureFreezingStarts - freezing.CalculateBodyTemperature();
+			float rate = degreesBelowThreshold > 0 ? freezing.m_FreezingIncreasePerHourPerDegreeCelsius :
+				freezing.m_WarmingIncreasePerHourPerDegreeCelsius;
+			if (float.IsFinite(degreesBelowThreshold) && float.IsFinite(rate))
+				freezing.AddFreezing(degreesBelowThreshold * Mathf.Abs(rate) * hours);
+		}
+		if (fatigue != null)
+		{
+			RepairFatigue(fatigue);
+			fatigue.CalculateTotalFatigueBurnPerHour();
+			float rate = VitalNumbers.Rate(fatigue.m_TotalFatigueBurnPerHour, fatigue.m_MaxFatigue / CoopBalancePolicy.BaseAwakeHours);
+			fatigue.AddFatigue(rate * hours);
+			expectedFatigue = fatigue.m_CurrentFatigue;
+			Travel.Remember(expectedFatigue);
+		}
+	}
+
 	private static void RepairFatigue(Fatigue fatigue)
 	{
 		if(fatigue==null||!fatigue.m_StartHasBeenCalled)return;
@@ -108,7 +138,7 @@ public static class CoopFatigue
 		private static void Postfix(Fatigue __instance,ref float __result)
 		{if(Active&&!float.IsFinite(__result))__result=VitalNumbers.Fraction(__instance.m_CurrentFatigue,__instance.m_MaxFatigue,Travel.Last??60);}
 	}
-	[HarmonyPatch(typeof(Fatigue),"AddFatigue")]
+	[HarmonyPatch(typeof(Fatigue), nameof(Fatigue.AddFatigue), new[] { typeof(float) })]
 	private static class FiniteAddition
 	{
 		private static bool Prefix(Fatigue __instance,ref float __0)

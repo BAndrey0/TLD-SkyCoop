@@ -81,7 +81,7 @@ public static class RegionCompat
 		}
 		catch (Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Could not enumerate region specifications: " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Could not enumerate region specifications: " + ex.Message);
 		}
 		s_SpecCache.TryGetValue(region, out value);
 		return value;
@@ -115,7 +115,7 @@ public static class RegionCompat
 		}
 		else
 		{
-			MelonLogger.Warning("[SkyCoop] No region asset found for " + region.ToString() + ", leaving the start region alone");
+			MelonLogger.Warning("[TLD Coop] No region asset found for " + region.ToString() + ", leaving the start region alone");
 		}
 	}
 

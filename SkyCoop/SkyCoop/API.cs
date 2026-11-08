@@ -29,7 +29,7 @@ public class API
 	{
 		if (m_Debug)
 		{
-			MelonLogger.Msg(ConsoleColor.Blue, "[SkyCoop API] ");
+			MelonLogger.Msg(ConsoleColor.Blue, "[TLD Coop API] ");
 		}
 	}
 
@@ -49,7 +49,7 @@ public class API
 		}
 		else if (m_ClientState == SkyCoopClientState.CLIENT)
 		{
-			MelonLogger.Msg(ConsoleColor.Red, "[SkyCoop API] Client trying call SendDataToEveryone, but this host only method.");
+			MelonLogger.Msg(ConsoleColor.Red, "[TLD Coop API] Client trying call SendDataToEveryone, but this host only method.");
 		}
 	}
 
@@ -62,7 +62,7 @@ public class API
 		}
 		else if (m_ClientState == SkyCoopClientState.CLIENT)
 		{
-			MelonLogger.Msg(ConsoleColor.Red, "[SkyCoop API] Client trying call SendDataToClient, but this host only method.");
+			MelonLogger.Msg(ConsoleColor.Red, "[TLD Coop API] Client trying call SendDataToClient, but this host only method.");
 		}
 	}
 
@@ -74,7 +74,7 @@ public class API
 		}
 		else if (m_ClientState == SkyCoopClientState.HOST)
 		{
-			MelonLogger.Msg(ConsoleColor.Red, "[SkyCoop API] Host trying call SendToHost, but this client only method.");
+			MelonLogger.Msg(ConsoleColor.Red, "[TLD Coop API] Host trying call SendToHost, but this client only method.");
 		}
 	}
 

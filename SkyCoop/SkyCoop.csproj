@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>SkyCoop</AssemblyName>
+    <AssemblyName>TLD-Coop</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>netcoreapp6.0</TargetFramework>
     <!-- MelonLoader-installed co-op game copy; override with -p:GameDir=... -->

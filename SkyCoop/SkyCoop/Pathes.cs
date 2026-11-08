@@ -1281,7 +1281,7 @@ public class Pathes
 						else if (!warnedMissingWoodHarvestDependencies)
 						{
 							warnedMissingWoodHarvestDependencies = true;
-							MelonLogger.Warning("[SkyCoop] Custom wood-form crafting unavailable: wood-form prefab=" + (gearItem != null) + ", knife tool=" + (toolsItem != null) + ". Keeping stock wood behavior.");
+							MelonLogger.Warning("[TLD Coop] Custom wood-form crafting unavailable: wood-form prefab=" + (gearItem != null) + ", knife tool=" + (toolsItem != null) + ". Keeping stock wood behavior.");
 						}
 					}
 					else if (__instance.name == "GEAR_SCWoodFormB")
@@ -6193,25 +6193,8 @@ public class Pathes
 	[HarmonyPatch(typeof(KeroseneLampItem), "ReduceFuel")]
 	private static class KeroseneLampItem_ReduceFuel
 	{
-		private static bool Prefix(KeroseneLampItem __instance, float hoursBurned)
-		{
-			if (MyMod.OverrideLampReduceFuel == -1)
-			{
-				return true;
-			}
-			if (KeroseneLampItem.m_InfiniteLampOn)
-			{
-				MyMod.OverrideLampReduceFuel = -1;
-				return true;
-			}
-			float num = __instance.GetModifiedFuelBurnLitersPerHour().ToLiters() / 60f;
-			__instance.m_CurrentFuelLiters -= GameCompat.Liters((float)MyMod.OverrideLampReduceFuel * num);
-			__instance.m_CurrentFuelLiters = GameCompat.Liters(Mathf.Clamp(__instance.m_CurrentFuelLiters.ToLiters(), 0f, __instance.m_MaxFuel.ToLiters()));
-			MelonLogger.Msg("[KeroseneLampItem][ReduceFuel] Override lamp fuel. Patchedup time " + __instance.m_CurrentFuelLiters);
-			MelonLogger.Msg("[KeroseneLampItem][ReduceFuel] Game wanted remove " + hoursBurned + " hours but we replace it on " + MyMod.OverrideLampReduceFuel + " minutes");
-			MyMod.OverrideLampReduceFuel = -1;
-			return false;
-		}
+		private static void Prefix(KeroseneLampItem __instance, ref float hoursBurned) =>
+			MyMod.AdjustDroppedLampFuel(__instance, ref hoursBurned);
 	}
 
 	[HarmonyPatch(typeof(PlayerManager), "OnCompletedDecalPlaceDown")]
@@ -6506,7 +6489,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			__result = true;
+			if (MyMod.InOnline()) __result = true;
 		}
 	}
 
@@ -6515,6 +6498,7 @@ public class Pathes
 	{
 		private static bool Prefix(IntestinalParasites __instance, bool nofx)
 		{
+			if (!MyMod.InOnline()) return true;
 			if (MyMod.CrazyPatchesLogger)
 			{
 				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
@@ -7381,9 +7365,11 @@ public class Pathes
 	public static void LoadUGUID(string name)
 	{
 		string text = SaveSlotCompat.LoadDataFromSlot(name, "UserGUID");
-		if (text != null)
+		MyMod.MyUGUID = "";
+		if (!string.IsNullOrEmpty(text))
 		{
-			MyMod.MyUGUID = JSON.Load(text).Make<string[]>()[0];
+			var ids = JSON.Load(text).Make<string[]>();
+			if (ids != null && ids.Length > 0) MyMod.MyUGUID = ids[0] ?? "";
 		}
 	}
 

@@ -249,7 +249,9 @@ internal sealed partial class LauncherForm : Form
 
 	private static bool IsInstalled(string dir)
 	{
-		return !string.IsNullOrEmpty(dir) && File.Exists(Path.Combine(dir, "game", "tld.exe")) && File.Exists(Path.Combine(dir, "game", "Mods", "SkyCoop.dll")) && File.Exists(Path.Combine(dir, "Launch-Coop.ps1"));
+		return !string.IsNullOrEmpty(dir) && !File.Exists(Path.Combine(dir, ".migration-incomplete")) &&
+			File.Exists(Path.Combine(dir, "game", "tld.exe")) && (File.Exists(Path.Combine(dir, "game", "Mods", "TLD-Coop.dll")) ||
+			File.Exists(Path.Combine(dir, "game", "Mods", "SkyCoop.dll"))) && File.Exists(Path.Combine(dir, "Launch-Coop.ps1"));
 	}
 
 	private Version InstalledVersion()
@@ -560,7 +562,7 @@ internal sealed partial class LauncherForm : Form
 				}
 				if (!IsInstalled(folder))
 				{
-					MessageBox.Show(this, "В этой папке нет установленного кооператива (game\\Mods\\SkyCoop.dll и Launch-Coop.ps1).", Text);
+					MessageBox.Show(this, "В этой папке нет установленного кооператива (папка game и Launch-Coop.ps1).", Text);
 					return;
 				}
 				state.installDirectory = folder;
@@ -625,7 +627,8 @@ internal sealed partial class LauncherForm : Form
 			}
 			else
 			{
-				await RunScript(Path.Combine(KitDir, "Install-Lab.ps1"), "-GameDirectory \"" + gameDir + "\" -InstallDirectory \"" + installDir + "\"");
+				string defer = previousInstall != null ? " -DeferInstallLocation" : "";
+				await RunScript(Path.Combine(KitDir, "Install-Lab.ps1"), "-GameDirectory \"" + gameDir + "\" -InstallDirectory \"" + installDir + "\"" + defer);
 				await RunScript(Path.Combine(KitDir, "Update-Coop.ps1"), "-InstallDirectory \"" + installDir + "\"");
 			}
 			if (previousInstall != null && Directory.Exists(Path.Combine(previousInstall, "saves")))
@@ -637,6 +640,13 @@ internal sealed partial class LauncherForm : Form
 					Directory.CreateDirectory(Path.GetDirectoryName(destination));
 					File.Copy(file, destination, false);
 				}
+			}
+			if (previousInstall != null)
+			{
+				string pointer = Path.Combine(root, "coop-install-location.json");
+				var location = new Dictionary<string, string> { ["installDirectory"] = installDir };
+				File.Delete(Path.Combine(installDir, ".migration-incomplete"));
+				File.WriteAllText(pointer, new JavaScriptSerializer().Serialize(location), Encoding.UTF8);
 			}
 			state.installDirectory = installDir;
 			if (gameDir != null) state.gameDirectory = gameDir;

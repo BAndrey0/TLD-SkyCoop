@@ -1,4 +1,4 @@
-# Builds SkyCoop.dll and CoopProfile.dll and assembles the player kit:
+# Builds TLD-Coop.dll and CoopProfile.dll and assembles the player kit:
 #   out\friend-kit\{Install.cmd, Update.cmd, ..., files\*.dll, manifest.json, licenses\}
 #   out\TLD-SkyCoop-<version>.zip
 # Requires a MelonLoader-installed co-op game copy (for the generated Il2Cpp assemblies), see README.md.
@@ -36,12 +36,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $kit 'files'), (Join-Path $
 Copy-Item -Path (Join-Path $root 'kit\*') -Destination $kit
 Copy-Item -Path (Join-Path $root 'licenses\*') -Destination (Join-Path $kit 'licenses')
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $kit 'licenses\TLD-SkyCoop-LICENSE.txt')
-Copy-Item -LiteralPath (Join-Path $root 'SkyCoop\bin\Release\netcoreapp6.0\SkyCoop.dll') -Destination (Join-Path $kit 'files')
+Copy-Item -LiteralPath (Join-Path $root 'SkyCoop\bin\Release\netcoreapp6.0\TLD-Coop.dll') -Destination (Join-Path $kit 'files')
 Copy-Item -LiteralPath (Join-Path $root 'CoopProfile\bin\Release\netcoreapp6.0\CoopProfile.dll') -Destination (Join-Path $kit 'files')
 # Steamworks.NET (MIT) as shipped with the game copy's UserLibs by the original kit.
 Copy-Item -LiteralPath (Join-Path $GameDir 'UserLibs\Steamworks.NET.dll') -Destination (Join-Path $kit 'files')
 
-$files = foreach ($name in @('CoopProfile.dll', 'SkyCoop.dll', 'Steamworks.NET.dll')) {
+$files = foreach ($name in @('CoopProfile.dll', 'TLD-Coop.dll', 'Steamworks.NET.dll')) {
 	[ordered]@{ sha256 = (Get-FileHash -LiteralPath (Join-Path $kit "files\$name") -Algorithm SHA256).Hash; name = $name }
 }
 $commit = (& git -C $root rev-parse --short HEAD 2>$null)

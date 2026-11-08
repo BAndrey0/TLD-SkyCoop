@@ -72,7 +72,7 @@ public static class SaveSlotCompat
 		}
 		catch (System.Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Could not write \"" + key + "\" to save slot " + name + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Could not write \"" + key + "\" to save slot " + name + ": " + ex.Message);
 			return false;
 		}
 	}
@@ -122,7 +122,7 @@ public static class SaveSlotCompat
 		}
 		catch (System.Exception ex)
 		{
-			MelonLogger.Warning("[SkyCoop] Could not read \"" + key + "\" from save slot " + name + ": " + ex.Message);
+			MelonLogger.Warning("[TLD Coop] Could not read \"" + key + "\" from save slot " + name + ": " + ex.Message);
 		}
 		return null;
 	}

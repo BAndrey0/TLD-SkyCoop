@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.13");
+			packet.Write("0.16.14");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -327,7 +327,7 @@ public class ClientHandle
 			}
 		}
 		int finalHours = _packet.ReadInt();
-		Shared.ProcessSleep(num2, num, num3, finalHours);
+		Shared.ProcessSleep(num2, num, num3, finalHours, _packet.ReadString());
 		MyMod.UpdatePlayerStatusMenu(list);
 	}
 

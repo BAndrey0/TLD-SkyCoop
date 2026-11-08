@@ -1042,11 +1042,10 @@ public class Shared
 		}
 	}
 
-	public static void ProcessSleep(int Sleepers, int SleepersNeed, int Deads, int FinalHours)
+	public static void ProcessSleep(int Sleepers, int SleepersNeed, int Deads, int FinalHours, string proposer)
 	{
-		bool flag = Sleepers >= SleepersNeed && Deads < SleepersNeed;
-		flag = SleepRendezvousPolicy.AllReady(Sleepers, SleepersNeed, Deads);
-		SleepRendezvousFix.ProcessReadiness(Sleepers, SleepersNeed, flag, FinalHours);
+		bool flag = SleepRendezvousPolicy.AllReady(Sleepers, SleepersNeed, Deads);
+		SleepRendezvousFix.ProcessReadiness(Sleepers, SleepersNeed, flag, FinalHours, proposer);
 		if (!MyMod.iAmHost)
 		{
 			return;
@@ -1240,9 +1239,11 @@ public class Shared
 			packet.Write(list[j]);
 		}
 		packet.Write(num5);
+		string proposer = list.Find(status => status.m_ID == SleepRendezvousFix.ProposalOwner)?.m_Name ?? "";
+		packet.Write(proposer);
 		ServerSend.SendUDPDataToAll(packet);
 		MyMod.PlayersOnServer = num;
-		ProcessSleep(num2, num, num3, num5);
+		ProcessSleep(num2, num, num3, num5, proposer);
 		return list;
 	}
 

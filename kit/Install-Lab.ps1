@@ -1,4 +1,4 @@
-param([string]$GameDirectory,[string]$InstallDirectory=(Join-Path $PSScriptRoot '..\player'),[switch]$PlanOnly)
+param([string]$GameDirectory,[string]$InstallDirectory=(Join-Path $PSScriptRoot '..\player'),[switch]$PlanOnly,[switch]$DeferInstallLocation)
 $ErrorActionPreference='Stop'
 $manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Raw|ConvertFrom-Json
 foreach($entry in $manifest.files){$p=Join-Path $PSScriptRoot ('files\'+$entry.name);if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne $entry.sha256){throw "Kit file checksum mismatch: $($entry.name)"}}
@@ -15,6 +15,7 @@ if(Test-Path -LiteralPath $game){throw 'Target game folder already exists. Selec
 if($PlanOnly){[pscustomobject]@{source=$source;target=$target;gameVersion=$manifest.targetGame;copyGameGB=21.4;downloadMB=103;originalSaves='untouched';testBots='excluded'};return}
 New-Item -ItemType Directory -Force -Path $target,$cache|Out-Null
 $marker=Join-Path $target '.install-incomplete';'Installation in progress'|Set-Content -LiteralPath $marker
+if($DeferInstallLocation){'Save migration in progress' | Set-Content -LiteralPath (Join-Path $target '.migration-incomplete')}
 function Fetch($name,$url,$hash){$p=Join-Path $cache $name;if(!(Test-Path -LiteralPath $p)){[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $p};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne $hash){throw "Checksum mismatch: $name"};return $p}
 $loader=Fetch 'MelonLoader-0.7.3-x64.zip' 'https://github.com/LavaGang/MelonLoader/releases/download/v0.7.3/MelonLoader.x64.zip' '5B2B2F3D1CD42B59EC886C5BDC2663EDAE87A0097A4F4A8F58C0965A99DDA416'
 $assets=Fetch 'SkyCoop-v13.2.zip' 'https://github.com/Filigrani/SkyCoop/releases/download/v13.2/SkyCoopRelease.zip' '6FEE0723EBD72AF22C5362AA7DE966881875962305599DC38F321118E0B661B2'
@@ -31,7 +32,7 @@ Copy-Item -LiteralPath (Join-Path $unpack 'loader\version.dll') -Destination (Jo
 New-Item -ItemType Directory -Force -Path (Join-Path $game 'Mods'),(Join-Path $game 'UserLibs')|Out-Null
 $bundle=@(Get-ChildItem -LiteralPath (Join-Path $unpack 'assets') -Recurse -File -Filter 'multiplayerstuff.unity3d');if($bundle.Count -ne 1){throw 'Unexpected asset archive structure'}
 Copy-Item -LiteralPath $bundle[0].FullName -Destination (Join-Path $game 'Mods\multiplayerstuff.unity3d')
-foreach($name in @('SkyCoop.dll','CoopProfile.dll')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot "files\$name") -Destination (Join-Path $game "Mods\$name")}
+foreach($name in @('TLD-Coop.dll','CoopProfile.dll')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot "files\$name") -Destination (Join-Path $game "Mods\$name")}
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'files\Steamworks.NET.dll') -Destination (Join-Path $game 'UserLibs\Steamworks.NET.dll')
 [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'),'305620',[Text.Encoding]::ASCII)
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Launch-Coop.ps1') -Destination (Join-Path $target 'Launch-Coop.ps1')
@@ -40,6 +41,6 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Sync-GameContent.ps1') -Destina
 @{gameDirectory=$source}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $target 'game-source.json') -Encoding utf8
 # The archive launcher can find custom installation directories too.
 $locationFile=Join-Path (Split-Path -Parent $PSScriptRoot) 'coop-install-location.json'
-@{installDirectory=$target}|ConvertTo-Json|Set-Content -LiteralPath $locationFile -Encoding utf8
+if(!$DeferInstallLocation){@{installDirectory=$target}|ConvertTo-Json|Set-Content -LiteralPath $locationFile -Encoding utf8}
 Remove-Item -LiteralPath $marker
 Write-Host "Installed separate co-op copy: $target. Start Play-Coop.cmd."

@@ -20,7 +20,7 @@ if((Get-FileHash -LiteralPath (Join-Path $game 'GameAssembly.dll') -Algorithm SH
 foreach($process in @(Get-Process tld -ErrorAction SilentlyContinue)){
  if(!$process.Path -or $process.Path -eq (Join-Path $game 'tld.exe')){throw 'Close the co-op game normally through its pause menu, then run Update.cmd again.'}
 }
-$destinations=@{'SkyCoop.dll'='Mods\SkyCoop.dll';'CoopProfile.dll'='Mods\CoopProfile.dll';'Steamworks.NET.dll'='UserLibs\Steamworks.NET.dll'}
+$destinations=@{'TLD-Coop.dll'='Mods\TLD-Coop.dll';'CoopProfile.dll'='Mods\CoopProfile.dll';'Steamworks.NET.dll'='UserLibs\Steamworks.NET.dll'}
 foreach($entry in $manifest.files){if(!$destinations.ContainsKey([string]$entry.name)){throw 'Unexpected manifest entry'}}
 if($CheckOnly){[pscustomobject]@{installRoot=$target;version=$manifest.localRevision;ready=$true;saveChanges=$false};return}
 $backup=Join-Path $target ('updates\'+[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmssfff'))
@@ -35,9 +35,10 @@ foreach($entry in $manifest.files){
  if((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $entry.sha256){throw "Installed file checksum mismatch: $($entry.name)"}
 }
 foreach($name in @('Launch-Coop.ps1','Play-Coop.cmd','Sync-GameContent.ps1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $target $name) -Force}
-# SkyCoopHotfix.dll fixes are built into SkyCoop.dll 0.14.2; keeping it would patch the same code twice.
-$obsolete=Join-Path $game 'Mods\SkyCoopHotfix.dll'
-if(Test-Path -LiteralPath $obsolete){Move-Item -LiteralPath $obsolete -Destination (Join-Path $backup 'SkyCoopHotfix.dll') -Force}
+foreach($legacyName in @('SkyCoop.dll','SkyCoopHotfix.dll')){
+ $obsolete=Join-Path $game ('Mods\'+$legacyName)
+ if(Test-Path -LiteralPath $obsolete){Move-Item -LiteralPath $obsolete -Destination (Join-Path $backup $legacyName) -Force}
+}
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $target 'coop-version.json')
 Remove-Item -LiteralPath $marker
 Write-Host "Updated: $target"

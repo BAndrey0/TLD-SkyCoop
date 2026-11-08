@@ -47,7 +47,7 @@ public static class WildlifeCompat
 		};
 		if (stage == "detached-inactive-region")
 		{
-			MelonLogger.Msg("[SkyCoop] Detached wildlife agent from inactive region: " + ((gameObject != null) ? gameObject.name : "null"));
+			MelonLogger.Msg("[TLD Coop] Detached wildlife agent from inactive region: " + ((gameObject != null) ? gameObject.name : "null"));
 		}
 	}
 
@@ -126,7 +126,7 @@ public static class WildlifeCompat
 		if (value != null)
 		{
 			Prefabs[prefabName] = value;
-			MelonLogger.Msg("[SkyCoop] Resolved wildlife prefab " + prefabName);
+			MelonLogger.Msg("[TLD Coop] Resolved wildlife prefab " + prefabName);
 		}
 		return value;
 	}
