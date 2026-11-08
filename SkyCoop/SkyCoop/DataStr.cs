@@ -92,6 +92,9 @@ public class DataStr
 		public int m_GoalTime;
 
 		public float m_FlareRemainingMinutes = -1f;
+		public float m_FlareDropPhase;
+		public bool m_FlarePickupSnapshot;
+		internal ExtraDataForDroppedGear Copy() => (ExtraDataForDroppedGear)MemberwiseClone();
 
 		public string m_Dropper = "";
 
@@ -360,8 +363,6 @@ public class DataStr
 		public int m_LastWeatherRegion = 6;
 
 		public int m_LastRegion = 6;
-
-		public bool m_IsSafe;
 
 		public string m_SteamOrEGSID = "";
 

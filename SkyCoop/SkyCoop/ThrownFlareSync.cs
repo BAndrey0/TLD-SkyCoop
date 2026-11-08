@@ -17,7 +17,7 @@ public static class ThrownFlareSync
 
 		public Light Light;
 
-		public int Deadline;
+		public DataStr.ExtraDataForDroppedGear Extra;
 		public Loop Sound;
 	}
 
@@ -39,6 +39,50 @@ public static class ThrownFlareSync
 
 	private static readonly Dictionary<int, Loop> Held = new();
 	private static float nextSoundUpdate;
+	private static float clockReceivedAt = float.NegativeInfinity;
+	private static int clockMinute = -1;
+	private static float ClockPhase => clockMinute == MyMod.MinutesFromStartServer && MyMod.period > 0f
+		? Mathf.Clamp((Time.time - clockReceivedAt) / MyMod.period, 0f, .999f) : 0f;
+
+	internal static void ClockSync()
+	{
+		if (clockMinute == MyMod.MinutesFromStartServer) return;
+		clockMinute = MyMod.MinutesFromStartServer;
+		clockReceivedAt = Time.time;
+	}
+
+	internal static bool IsFlareName(string name) => name != null &&
+		(name.Equals("GEAR_FlareA", StringComparison.OrdinalIgnoreCase) || name.Equals("GEAR_BlueFlare", StringComparison.OrdinalIgnoreCase));
+
+	internal static float Remaining(DataStr.ExtraDataForDroppedGear extra)
+	{
+		if (extra == null || extra.m_Variant != 1) return 0f;
+		if (!float.IsFinite(extra.m_FlareRemainingMinutes) || extra.m_FlareRemainingMinutes <= 0f)
+			return Math.Max(0L, (long)extra.m_GoalTime - MyMod.MinutesFromStartServer);
+		if (extra.m_FlarePickupSnapshot) return extra.m_FlareRemainingMinutes;
+		float elapsed = (long)MyMod.MinutesFromStartServer - extra.m_DroppedTime + ClockPhase - extra.m_FlareDropPhase;
+		return Math.Max(0f, extra.m_FlareRemainingMinutes - Math.Max(0f, elapsed));
+	}
+
+	internal static void StampDrop(DataStr.ExtraDataForDroppedGear extra)
+	{
+		if (extra == null || !IsFlareName(extra.m_GearName) || extra.m_Variant != 1 ||
+			!float.IsFinite(extra.m_FlareRemainingMinutes) || extra.m_FlareRemainingMinutes <= 0f) return;
+		extra.m_DroppedTime = MyMod.MinutesFromStartServer;
+		extra.m_FlareDropPhase = ClockPhase;
+		extra.m_GoalTime = extra.m_DroppedTime + (int)Math.Ceiling(extra.m_FlareRemainingMinutes);
+		extra.m_FlarePickupSnapshot = false;
+	}
+
+	internal static DataStr.ExtraDataForDroppedGear SnapshotPickup(DataStr.ExtraDataForDroppedGear extra)
+	{
+		if (extra == null || !IsFlareName(extra.m_GearName) || extra.m_Variant != 1) return extra;
+		var result = extra.Copy();
+		result.m_FlareRemainingMinutes = Remaining(extra);
+		result.m_Variant = result.m_FlareRemainingMinutes > 0f ? 1 : 2;
+		result.m_FlarePickupSnapshot = true;
+		return result;
+	}
 	private static AkAudioListener[] listeners = Array.Empty<AkAudioListener>();
 	private static float nextListenerScan;
 	private static readonly List<Visual> visuals = new List<Visual>();
@@ -74,7 +118,7 @@ public static class ThrownFlareSync
 			}
 			else
 			{
-				bool flag = MyMod.MinutesFromStartServer < visual.Deadline;
+				bool flag = Remaining(visual.Extra) > 0f;
 				if (visual.Effects != null && visual.Effects.activeSelf != flag)
 				{
 					visual.Effects.SetActive(flag);
@@ -102,29 +146,37 @@ public static class ThrownFlareSync
 			extra.m_Variant = flag ? 1 : flareItem.IsBurnedOut() ? 2 : 0;
 			float num = Math.Max(0f, flareItem.GetModifiedBurnLifetimeMinutes() - flareItem.m_ElapsedBurnMinutes);
 			extra.m_FlareRemainingMinutes = flag ? num : -1f;
-			extra.m_GoalTime = (flag ? (MyMod.MinutesFromStartServer + (int)Math.Ceiling(num)) : 0);
+			extra.m_GoalTime = 0;
+			if (flag) StampDrop(extra);
 		}
 	}
 
 	public static void PrepareReplica(GameObject obj, DataStr.ExtraDataForDroppedGear extra)
 	{
-		if (obj == null || extra == null || extra.m_Variant != 1 || extra.m_GoalTime <= MyMod.MinutesFromStartServer)
+		if (obj == null || extra == null || Remaining(extra) <= 0f)
 		{
 			return;
 		}
 		FlareItem component = obj.GetComponent<FlareItem>();
 		if (!(component == null))
 		{
+			var pose = (obj.transform.position, obj.transform.rotation);
 			component.OnIgniteComplete();
+			obj.transform.SetPositionAndRotation(pose.position, pose.rotation);
 			Visual visual = new Visual
 			{
 				Owner = obj,
-				Deadline = extra.m_GoalTime,
+				Extra = extra,
 				Sound = NewLoop(obj, component.m_LoopWithoutIgniteAudio)
 			};
 			if (component.m_FXGameObject != null && component.m_FXGameObject != obj)
 			{
-				visual.Effects = UnityEngine.Object.Instantiate(component.m_FXGameObject, obj.transform, worldPositionStays: false);
+				var source = component.m_FXGameObject.transform;
+				visual.Effects = UnityEngine.Object.Instantiate(component.m_FXGameObject, source.position, source.rotation, obj.transform);
+				Vector3 parentScale = obj.transform.lossyScale;
+				Vector3 scale = source.lossyScale;
+				if (Mathf.Abs(parentScale.x * parentScale.y * parentScale.z) > .00001f)
+					visual.Effects.transform.localScale = new Vector3(scale.x / parentScale.x, scale.y / parentScale.y, scale.z / parentScale.z);
 				visual.Effects.name = "SkyCoopFlareEffects";
 				visual.Effects.SetActive(value: true);
 				foreach (var effect in visual.Effects.GetComponentsInChildren<ParticleSystem>(true))
@@ -243,9 +295,7 @@ public static class ThrownFlareSync
 		var flare = gear.m_FlareItem;
 		if (extra.m_Variant == 2) { flare.ForceBurnout(); return; }
 		if (extra.m_Variant != 1) return;
-		float remaining = float.IsFinite(extra.m_FlareRemainingMinutes) && extra.m_FlareRemainingMinutes > 0f
-			? extra.m_FlareRemainingMinutes - Math.Max(0, MyMod.MinutesFromStartServer - extra.m_DroppedTime)
-			: extra.m_GoalTime - MyMod.MinutesFromStartServer;
+		float remaining = Remaining(extra);
 		if (remaining <= 0f) { flare.ForceBurnout(); return; }
 		if (!flare.IsBurning()) flare.OnIgniteComplete();
 		flare.m_State = FlareState.Burning;

@@ -742,7 +742,6 @@ public class Shared
 			return;
 		}
 		MPStats.EverySecond();
-		ExpeditionManager.UpdateExpeditions();
 		SecondsBeforeUnload++;
 		if (SecondsBeforeUnload > MPSaveManager.SaveRecentTimer)
 		{
@@ -754,7 +753,6 @@ public class Shared
 		UpdateTicksOnScenes();
 		MyMod.UpdatePlayerStatusMenu(SleepTrackerAndTimeOutAndAnimalControllers());
 		WeatherUpdateSecond();
-		SafeZoneManager.UpdatePlayersSafeZoneStatus();
 		for (int i = 0; i < MyMod.RecentlyPickedGears.Count; i++)
 		{
 			DataStr.PickedGearSync pickedGearSync = MyMod.RecentlyPickedGears[i];
@@ -1469,7 +1467,7 @@ public class Shared
 		if (slicedJsonDroppedGear != null)
 		{
 			Log("Found gear with hash " + Hash);
-			SendDroppedItemToPicker(slicedJsonDroppedGear.m_Json, sendTo, Hash, -1, place, slicedJsonDroppedGear.m_Extra);
+			SendDroppedItemToPicker(slicedJsonDroppedGear.m_Json, sendTo, Hash, -1, place, ThrownFlareSync.SnapshotPickup(slicedJsonDroppedGear.m_Extra));
 			if (!MyMod.DedicatedServerAppMode && MyMod.players[sendTo] != null && MyMod.players[sendTo].GetComponent<Comps.MultiplayerPlayerAnimator>() != null)
 			{
 				MyMod.players[sendTo].GetComponent<Comps.MultiplayerPlayerAnimator>().Pickup();
@@ -1528,6 +1526,7 @@ public class Shared
 			if (MyMod.SlicedJsonDataBuffer.TryGetValue(jData.m_Hash, out value3))
 			{
 				MyMod.SlicedJsonDataBuffer.Remove(jData.m_Hash);
+				ThrownFlareSync.StampDrop(jData.m_Extra);
 				AddDroppedGear(jData.m_SendTo, jData.m_Hash, value3, jData.m_GearName, jData.m_Extra);
 			}
 		}
@@ -2759,70 +2758,6 @@ public class Shared
 						return "Scene " + text11 + " does not contains contaienr with GUID " + text12 + " or this container already has loot!";
 					}
 					return "Incorrect syntax";
-				}
-				if (text.StartsWith("exp "))
-				{
-					string[] array6 = CMD.Split(' ');
-					if (array6.Length == 3)
-					{
-						string text13 = array6[1];
-						int iD = int.Parse(array6[2]);
-						string mACByID = Server.GetMACByID(iD);
-						if (string.IsNullOrEmpty(mACByID))
-						{
-							return "There no player with ID " + iD;
-						}
-						for (int num3 = ExpeditionManager.m_ActiveExpeditions.Count - 1; num3 >= 0; num3--)
-						{
-							if (ExpeditionManager.m_ActiveExpeditions[num3].m_Players.Contains(mACByID))
-							{
-								ExpeditionManager.CompleteExpedition(ExpeditionManager.m_ActiveExpeditions[num3].m_GUID, 0);
-							}
-						}
-						if (ExpeditionManager.StartNewExpedition(mACByID, 0, text13, NoMessage: true))
-						{
-							return "Expedition " + text13 + " started for player ID " + iD;
-						}
-						return "Wasn't able to start expedition " + text13;
-					}
-					return "Incorrect syntax.";
-				}
-				if (text == "exps")
-				{
-					ExpeditionBuilder.RefrashTemplatesList();
-					string text14 = "";
-					{
-						foreach (System.Collections.Generic.KeyValuePair<int, System.Collections.Generic.List<ExpeditionBuilder.ExpeditionTaskTemplate>> expeditionTask in ExpeditionBuilder.m_ExpeditionTasks)
-						{
-							_ = expeditionTask.Key;
-							foreach (ExpeditionBuilder.ExpeditionTaskTemplate item in expeditionTask.Value)
-							{
-								if (item.m_CanBeTaken && item.m_TaskType != ExpeditionManager.ExpeditionTaskType.CRASHSITE)
-								{
-									string alias = item.m_Alias;
-									text14 = ((!string.IsNullOrEmpty(text14)) ? (text14 + "\n" + alias) : alias);
-								}
-							}
-						}
-						return text14;
-					}
-				}
-				if (text == "expsfull")
-				{
-					ExpeditionBuilder.RefrashTemplatesList();
-					string text15 = "";
-					{
-						foreach (System.Collections.Generic.KeyValuePair<int, System.Collections.Generic.List<ExpeditionBuilder.ExpeditionTaskTemplate>> expeditionTask2 in ExpeditionBuilder.m_ExpeditionTasks)
-						{
-							_ = expeditionTask2.Key;
-							foreach (ExpeditionBuilder.ExpeditionTaskTemplate item2 in expeditionTask2.Value)
-							{
-								string alias2 = item2.m_Alias;
-								text15 = ((!string.IsNullOrEmpty(text15)) ? (text15 + "\n" + alias2) : alias2);
-							}
-						}
-						return text15;
-					}
 				}
 				uConsole.RunCommand(CMD);
 				return uConsoleLog.m_Log[uConsoleLog.m_Log.Count - 1];

@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.17");
+			packet.Write("0.16.18");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -123,6 +123,7 @@ public class ClientHandle
 	{
 		MyMod.OveridedTime = _packet.ReadString();
 		MyMod.MinutesFromStartServer = _packet.ReadInt();
+		ThrownFlareSync.ClockSync();
 		MyMod.NeedSyncTime = true;
 	}
 

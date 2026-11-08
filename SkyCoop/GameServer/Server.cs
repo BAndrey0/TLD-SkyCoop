@@ -173,7 +173,7 @@ internal class Server
 				if (packet.UnreadLength() <= 12)
 				{
 					Log("Client without SubNetworkGUID trying to connect, rejecting, _clientId " + num);
-					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.17");
+					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.18");
 					return;
 				}
 				text = packet.ReadString();
@@ -797,22 +797,6 @@ internal class Server
 				ServerHandle.GOTPHOTOSLICE
 			},
 			{
-				163,
-				ServerHandle.STARTEXPEDITION
-			},
-			{
-				164,
-				ServerHandle.ACCEPTEXPEDITIONINVITE
-			},
-			{
-				165,
-				ServerHandle.REQUESTEXPEDITIONINVITES
-			},
-			{
-				166,
-				ServerHandle.CREATEEXPEDITIONINVITE
-			},
-			{
 				170,
 				ServerHandle.ADDROCKCACH
 			},
@@ -825,36 +809,12 @@ internal class Server
 				ServerHandle.REMOVEROCKCACHFINISHED
 			},
 			{
-				173,
-				ServerHandle.CHARCOALDRAW
-			},
-			{
 				174,
 				ServerHandle.CHATCOMMAND
 			},
 			{
 				177,
 				ServerHandle.REQUESTCONTAINERSTATE
-			},
-			{
-				179,
-				ServerHandle.INTERACTIONDONE
-			},
-			{
-				180,
-				ServerHandle.REMOVEOBJECTGROUP
-			},
-			{
-				181,
-				ServerHandle.REQUESTSPECIALEXPEDITION
-			},
-			{
-				186,
-				ServerHandle.PICKUPSPECAILITEM
-			},
-			{
-				185,
-				ServerHandle.REQUESTSPECIALITEMS
 			},
 			{
 				187,

@@ -9,7 +9,7 @@ namespace SkyCoop;
 
 internal static class ContainerLockSync
 {
-    internal sealed record State(string Id, LockState Value, bool WasLocked, bool Opened);
+    internal sealed record State(string Id, LockState Value, bool WasLocked, bool Opened, int Version = 0);
     private static readonly Dictionary<int, Container> LockAnimations = new();
     private static readonly Dictionary<string, Lock> Local = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, State> Confirmed = new(StringComparer.Ordinal);
@@ -17,11 +17,24 @@ internal static class ContainerLockSync
     private static readonly Dictionary<string, Dictionary<string, State>> Saved = new(StringComparer.Ordinal);
     private static int worldSeed;
     private static string scene;
-    private static float nextCheck;
+
 
     private static string Id(Container container) => container.GetComponent<ObjectGuid>()?.Get() ?? "";
     private static State Snapshot(string id, Lock item, bool opened = false) =>
-        new(id, item.m_LockState, item.m_WasEverLocked, opened);
+        new(id, item.m_LockState, item.m_WasEverLocked, opened, Version: 1);
+
+    private static Lock FindLock(Container container) => container.m_Lock ?? container.GetComponent<Lock>();
+
+    private static void RollNative(Lock item, string area, string id)
+    {
+        var saved = UnityEngine.Random.state;
+        try
+        {
+            UnityEngine.Random.InitState(Shared.StableHash(area + "|" + id) ^ MPSaveManager.GetSeed());
+            item.RollLockedState();
+        }
+        finally { UnityEngine.Random.state = saved; }
+    }
 
     private static Dictionary<string, State> ForScene(string area)
     {
@@ -40,7 +53,6 @@ internal static class ContainerLockSync
     internal static void Prepare(string area)
     {
         scene = area;
-        nextCheck = 0f;
         Local.Clear();
         LockAnimations.Clear();
         Pending.Clear();
@@ -48,7 +60,7 @@ internal static class ContainerLockSync
         if (area == null) return;
         foreach (var container in UnityEngine.Object.FindObjectsOfType<Container>())
         {
-            var item = container.m_Lock;
+            var item = FindLock(container);
             if (item == null) continue;
             string id = Id(container);
             if (id.Length == 0) continue;
@@ -56,7 +68,15 @@ internal static class ContainerLockSync
             if (container.m_ObjectAnims != null)
                 foreach (var animation in container.m_ObjectAnims)
                     if (animation != null) LockAnimations[animation.GetInstanceID()] = container;
-            if (!item.m_LockStateRolled) item.RollLockedState();
+            var cache = MyMod.iAmHost ? ForScene(area) : null;
+            if (cache != null && cache.TryGetValue(id, out var old) && old.Version == 0 &&
+                old.Value == LockState.Unlocked && !old.Opened && !old.WasLocked && item.m_ChanceLocked > 0f &&
+                !container.m_Inspected && MPSaveManager.GetContainerState(area, id) < 0)
+            {
+                cache.Remove(id);
+                item.m_LockStateRolled = false;
+            }
+            if (!item.m_LockStateRolled) RollNative(item, area, id);
             if (MyMod.iAmHost) Receive(Accept(area, Snapshot(id, item), fromHost: true, save: false));
         }
         if (MyMod.iAmHost && Local.Count > 0) Save(area, ForScene(area));
@@ -65,15 +85,7 @@ internal static class ContainerLockSync
     internal static Container ContainerForAnimation(ObjectAnim animation) => animation != null &&
         LockAnimations.TryGetValue(animation.GetInstanceID(), out var container) ? container : null;
 
-    internal static void CheckForUnlocks()
-    {
-        if (scene == null || Time.realtimeSinceStartup < nextCheck) return;
-        nextCheck = Time.realtimeSinceStartup + 1f;
-        foreach (var entry in Local)
-            if (entry.Value != null && Confirmed.TryGetValue(entry.Key, out var old) &&
-                old.Value == LockState.Locked && entry.Value.m_LockState != LockState.Locked && !Pending.ContainsKey(entry.Key))
-                PublishUnlock(entry.Key, entry.Value);
-    }
+    internal static bool IsLockedOnHost(string area, string id) => ForScene(area).TryGetValue(id, out var state) && state.Value == LockState.Locked;
 
     internal static IEnumerable<State> Requests()
     {
@@ -114,10 +126,12 @@ internal static class ContainerLockSync
 
     internal static bool CanInteract(Container container)
     {
-        if (!MyMod.InOnline() || MyMod.iAmHost || container == null || container.m_Lock == null) return true;
+        if (!MyMod.InOnline() || MyMod.iAmHost || container == null) return true;
+        var item = FindLock(container);
+        if (item == null) return true;
         string id = Id(container);
         if (id.Length == 0 || !Local.ContainsKey(id) || Confirmed.ContainsKey(id)) return true;
-        ScenePlacementSync.PublishLock(Snapshot(id, container.m_Lock));
+        ScenePlacementSync.PublishLock(Snapshot(id, item));
         HUDMessage.AddMessage("Проверяем состояние замка…");
         return false;
     }
@@ -129,20 +143,30 @@ internal static class ContainerLockSync
         ScenePlacementSync.PublishLock(state);
     }
 
+    private static void NotifyUnlock(Lock item, LockState before)
+    {
+        if (!MyMod.InOnline() || scene == null || before != LockState.Locked || item.m_LockState == LockState.Locked) return;
+        foreach (var entry in Local)
+        {
+            if (entry.Value != item || !Confirmed.TryGetValue(entry.Key, out var state) ||
+                state.Value != LockState.Locked || Pending.ContainsKey(entry.Key)) continue;
+            PublishUnlock(entry.Key, item);
+            break;
+        }
+    }
+
     [HarmonyPatch(typeof(Lock), nameof(Lock.SetLockState))]
     private static class ObserveUnlock
     {
         private static void Prefix(Lock __instance, out LockState __state) => __state = __instance.m_LockState;
-        private static void Postfix(Lock __instance, LockState __state)
-        {
-            if (!MyMod.InOnline() || scene == null || __state != LockState.Locked ||
-                __instance.m_LockState == LockState.Locked) return;
-            foreach (var entry in Local)
-            {
-                if (entry.Value != __instance) continue;
-                PublishUnlock(entry.Key, __instance);
-                break;
-            }
-        }
+        private static void Postfix(Lock __instance, LockState __state) => NotifyUnlock(__instance, __state);
+    }
+
+    [HarmonyPatch(typeof(Lock), nameof(Lock.FinishForceLock))]
+    private static class ObservePry
+    {
+        private static void Prefix(Lock __instance, out LockState __state) => __state = __instance.m_LockState;
+        private static void Postfix(Lock __instance, bool __0, LockState __state)
+        { if (__0) NotifyUnlock(__instance, __state); }
     }
 }

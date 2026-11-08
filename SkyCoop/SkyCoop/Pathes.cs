@@ -1180,10 +1180,6 @@ public class Pathes
 					{
 						ServerSend.SHOOTSYNC(0, shootSync, toEveryOne: true);
 					}
-					if (shootSync.m_projectilename == "GEAR_FlareGunAmmoSingle")
-					{
-						ExpeditionManager.RegisterFlaregunShot(MyMod.level_guid, GameManager.GetPlayerTransform().position);
-					}
 				}
 				if (MyMod.ExpeditionEditorUI != null && MyMod.ExpeditionEditorUI.activeSelf && shootSync.m_projectilename == "GEAR_FlareGunAmmoSingle")
 				{
@@ -3525,6 +3521,14 @@ public class Pathes
 					{
 						__result = component2.m_LocalizedDisplayName + "\nDropped " + text5 + " ago";
 					}
+					return;
+				}
+				if (ThrownFlareSync.IsFlareName(component2.m_Extra.m_GearName))
+				{
+					float left = ThrownFlareSync.Remaining(component2.m_Extra);
+					string status = left > 0f ? $"Горит · осталось {Mathf.CeilToInt(left)} мин." :
+						component2.m_Extra.m_Variant == 0 ? "Оставил" : "Прогорел";
+					__result = component2.m_LocalizedDisplayName + "\n" + status + " · " + component2.m_Extra.m_Dropper;
 					return;
 				}
 				string text6 = "Dropped";
@@ -5888,11 +5892,6 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (!MyMod.VanilaRadio && (bool)__instance.m_ItemInHands && __instance.m_ItemInHands.GetFPSMeshID() == 17)
-			{
-				GameManager.GetPlayerManagerComponent().UnequipItemInHandsSkipAnimation();
-				return false;
-			}
 			return true;
 		}
 	}
@@ -6120,14 +6119,6 @@ public class Pathes
 			{
 				return;
 			}
-			if (!MyMod.VanilaRadio && gi.GetGearName() == "GEAR_HandheldShortwave")
-			{
-				Texture2D texture2D = MyMod.BundleAsset<Texture2D>("ico_GearItem__HandheldShortwave");
-				if (texture2D != null)
-				{
-					__result = texture2D;
-				}
-			}
 			if (gi.GetGearName() == "GEAR_Shovel")
 			{
 				Texture2D texture2D2 = MyMod.BundleAsset<Texture2D>("ico_GearItem__Shovel");
@@ -6163,10 +6154,6 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
-			if (!MyMod.VanilaRadio && name == "ico_GearItem__HandheldShortwave")
-			{
-				__result = MyMod.BundleAsset<Texture2D>("ico_GearItem__HandheldShortwave");
-			}
 			if (name == "ico_GearItem__Shovel")
 			{
 				__result = MyMod.BundleAsset<Texture2D>("ico_GearItem__Shovel");
@@ -6179,7 +6166,6 @@ public class Pathes
 	{
 		private static void Postfix()
 		{
-			GameManager.GetPlayerManagerComponent().InstantiateItemInPlayerInventory("GEAR_HandheldShortwave", 1);
 			GameManager.GetPlayerManagerComponent().InstantiateItemInPlayerInventory("GEAR_SCHeatPack", 1);
 			GameManager.GetPlayerManagerComponent().InstantiateItemInPlayerInventory("GEAR_SCEmergencyRation", 1);
 		}
@@ -6606,7 +6592,7 @@ public class Pathes
 		private static void Postfix(EquipItemPopup __instance)
 		{
 			GearItem itemInHands = GameManager.GetPlayerManagerComponent().m_ItemInHands;
-			if ((bool)itemInHands && (MyMod.IsCustomHandItem(itemInHands.GetGearName()) || itemInHands.GetGearName() == "GEAR_HandheldShortwave"))
+			if ((bool)itemInHands && MyMod.IsCustomHandItem(itemInHands.GetGearName()))
 			{
 				__instance.HideAmmoPopup();
 			}
@@ -6628,14 +6614,7 @@ public class Pathes
 				string text2 = "";
 				bool flag = Utils.IsGamepadActive();
 				bool flag2 = false;
-				if (gi.GetGearName() == "GEAR_HandheldShortwave")
-				{
-					__instance.m_ButtonPromptScrollWheel.ShowPromptForKey("Change frequency", "Scroll");
-					__instance.m_ButtonPromptReload.ShowPromptForKey(Localization.Get("GAMEPLAY_Help"), "Reload");
-					text2 = "Expeditions";
-					flag2 = true;
-				}
-				else if (gi.GetGearName() == "GEAR_SCNote")
+				if (gi.GetGearName() == "GEAR_SCNote")
 				{
 					text = "Read";
 					flag2 = true;
@@ -7621,10 +7600,6 @@ public class Pathes
 	{
 		_ = MyMod.playersData[m_ID];
 		DataStr.PriorityActionForOtherPlayer priorityActionForOtherPlayer = new DataStr.PriorityActionForOtherPlayer();
-		if (GameManager.m_PlayerManager != null && GameManager.m_PlayerManager.m_ItemInHands != null && GameManager.m_PlayerManager.m_ItemInHands.m_HandheldShortwaveItem != null)
-		{
-			return MyMod.GetActionForOtherPlayer("Invite");
-		}
 		if (GameManager.m_PlayerManager != null && GameManager.m_PlayerManager.m_ItemInHands != null && GameManager.m_PlayerManager.m_ItemInHands.m_EmergencyStim != null)
 		{
 			return MyMod.GetActionForOtherPlayer("Stim");
@@ -7895,7 +7870,6 @@ public class Pathes
 			MyMod.DoPleaseWait("Please wait...", "Downloading scene drops...");
 			RequestDropsForScene();
 		}
-		ExpeditionManager.MaySpawnSpeicalExpeditionItem(0, MyMod.level_guid);
 	}
 
 	public static bool ShouldKeepAfterTreatment(AfflictionType type)

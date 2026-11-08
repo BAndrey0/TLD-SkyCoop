@@ -70,7 +70,11 @@ internal static class ThrownGearSync
         current.Expires = Time.realtimeSinceStartup + (state.End ? 10f : 2f);
         if (state.End)
         {
-            if (current.Visual != null) UnityEngine.Object.Destroy(current.Visual);
+            if (current.Visual != null)
+            {
+                current.Visual.transform.SetPositionAndRotation(state.Position, state.Rotation);
+                UnityEngine.Object.Destroy(current.Visual);
+            }
             current.Visual = null;
             return true;
         }

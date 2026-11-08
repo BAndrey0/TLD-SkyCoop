@@ -305,14 +305,6 @@ public class DeBugMenu
 				ResourceIndependent.SpawnSomeGearsOnScene(MyMod.level_name, "", "GEAR_SCPresent");
 				ResourceIndependent.SpawnSomeGearsOnScene(MyMod.level_name, "SANDBOX", "GEAR_SCPresent");
 			}
-			if (GUI.Button(new Rect(160f, 160f, 80f, 20f), "CrashSite") && MyMod.iAmHost)
-			{
-				ExpeditionManager.StartCrashSite();
-			}
-			if (GUI.Button(new Rect(160f, 190f, 80f, 20f), "Show"))
-			{
-				SafeZoneManager.DebugRenderZones();
-			}
 		}
 		if (MyMod.UIDebugType == "PlayerDebug")
 		{

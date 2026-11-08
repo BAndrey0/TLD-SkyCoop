@@ -208,7 +208,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.16.17")
+				if (text2 != "0.16.18")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
@@ -844,28 +844,8 @@ internal class ClientUser
 				ClientHandle.TRIGGEREMOTE
 			},
 			{
-				158,
-				ClientHandle.EXPEDITIONSYNC
-			},
-			{
-				159,
-				ClientHandle.EXPEDITIONRESULT
-			},
-			{
 				162,
 				ClientHandle.READYSENDNEXTSLICEPHOTO
-			},
-			{
-				165,
-				ClientHandle.REQUESTEXPEDITIONINVITES
-			},
-			{
-				167,
-				ClientHandle.NEWPLAYEREXPEDITION
-			},
-			{
-				168,
-				ClientHandle.NEWEXPEDITIONINVITE
 			},
 			{
 				169,
@@ -892,24 +872,8 @@ internal class ClientUser
 				ClientHandle.CUSTOMSOUNDEVENT
 			},
 			{
-				180,
-				ClientHandle.REQUESTSPECIALEXPEDITION
-			},
-			{
 				181,
 				ClientHandle.REQUESTSPHOTOAGAIN
-			},
-			{
-				182,
-				ClientHandle.REQUESTEXPEDITIONSPROGRESS
-			},
-			{
-				183,
-				ClientHandle.REGISTERSPEICALITEM
-			},
-			{
-				184,
-				ClientHandle.REQUESTSPECIALITEMS
 			},
 			{
 				188,

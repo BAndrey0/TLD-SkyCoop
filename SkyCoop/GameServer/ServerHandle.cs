@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.17")
+			if (text2 != "0.16.18")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.17");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.18");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -101,10 +101,6 @@ internal class ServerHandle
 			if (!string.IsNullOrEmpty(text4))
 			{
 				ServerSend.TRADERSTATE(_fromClient, text4);
-			}
-			foreach (ExpeditionManager.SpecialExpeditionItem specialItem in ExpeditionManager.m_SpecialItems)
-			{
-				ServerSend.REGISTERSPEICALITEM(specialItem, _fromClient);
 			}
 			if (!MyMod.DedicatedServerAppMode)
 			{
@@ -347,15 +343,6 @@ internal class ServerHandle
 	public static void SHOOTSYNC(int _fromClient, Packet _packet)
 	{
 		DataStr.ShootSync shootSync = _packet.ReadShoot();
-		Vector3 position = new Vector3(0f, 0f, 0f);
-		if (MyMod.playersData[_fromClient] != null)
-		{
-			position = MyMod.playersData[_fromClient].m_Position;
-		}
-		if (shootSync.m_projectilename == "GEAR_FlareGunAmmoSingle")
-		{
-			ExpeditionManager.RegisterFlaregunShot(shootSync.m_sceneguid, position);
-		}
 		MyMod.DoShootSync(shootSync, _fromClient);
 		ServerSend.SHOOTSYNC(_fromClient, shootSync, toEveryOne: false);
 	}
@@ -430,11 +417,6 @@ internal class ServerHandle
 			ServerSend.DOORLOCKEDMSG(_fromClient, "You cannot attack players on this server.");
 			return;
 		}
-		if (MyMod.playersData[_fromClient] != null && MyMod.playersData[_fromClient].m_IsSafe)
-		{
-			ServerSend.DOORLOCKEDMSG(_fromClient, "You cannot attack when you in the safe zone!");
-			return;
-		}
 		float num = _packet.ReadFloat();
 		int bodypart = _packet.ReadInt();
 		int num2 = _packet.ReadInt();
@@ -444,25 +426,10 @@ internal class ServerHandle
 		{
 			meleeWeapon = _packet.ReadString();
 		}
-		if (num2 == 0)
-		{
-			if ((bool)GameManager.m_PlayerObject && (SafeZoneManager.SceneIsSafe(MyMod.level_guid) || SafeZoneManager.InsideSafeZone(MyMod.level_guid, GameManager.GetPlayerTransform().position)))
-			{
-				ServerSend.DOORLOCKEDMSG(_fromClient, "You cannot attack players in the safe zone!");
-			}
-			else
-			{
-				MyMod.DamageByBullet(num, _fromClient, bodypart, flag, meleeWeapon);
-			}
-		}
-		else if (MyMod.playersData[num2] != null && MyMod.playersData[num2].m_IsSafe)
-		{
-			ServerSend.DOORLOCKEDMSG(_fromClient, "You cannot attack players in the safe zone!");
-		}
-		else
-		{
+		if (num2 == 0) MyMod.DamageByBullet(num, _fromClient, bodypart, flag, meleeWeapon);
+		else if (num2 > 0 && num2 < MyMod.playersData.Count && MyMod.playersData[num2] != null)
 			ServerSend.BULLETDAMAGE(num2, num, bodypart, _fromClient, flag, meleeWeapon);
-		}
+
 	}
 
 	public static void MULTISOUND(int _fromClient, Packet _packet)
@@ -925,6 +892,7 @@ internal class ServerHandle
 	public static void DROPITEM(int _fromClient, Packet _packet)
 	{
 		DataStr.DroppedGearItemDataPacket droppedGearItemDataPacket = _packet.ReadDroppedGearData();
+		ThrownFlareSync.StampDrop(droppedGearItemDataPacket.m_Extra);
 		Shared.FakeDropItem(droppedGearItemDataPacket);
 		ServerSend.DROPITEM(_fromClient, droppedGearItemDataPacket, toEveryOne: true);
 	}
@@ -1108,11 +1076,9 @@ internal class ServerHandle
 			Log("Sending done, " + num + " packets has been sent");
 			ServerSend.LOADINGSCENEDROPSDONE(_fromClient, _msg: true);
 		}
-		ExpeditionManager.MaySpawnSpeicalExpeditionItem(_fromClient, text);
 		Shared.RemoveLoadingClient(_fromClient);
 		if (MyMod.playersData[_fromClient].m_FirstBoot)
 		{
-			ExpeditionManager.MayNotifyAboutCrashSite(_fromClient);
 			MyMod.playersData[_fromClient].m_FirstBoot = false;
 		}
 	}
@@ -1126,7 +1092,7 @@ internal class ServerHandle
 		string text = _packet.ReadString();
 		string text2 = _packet.ReadString();
 		Log("Client " + _fromClient + " request container data for " + text2);
-		if (!ContainerLootSync.Reserve(_fromClient, text, text2))
+		if (ContainerLockSync.IsLockedOnHost(text, text2) || !ContainerLootSync.Reserve(_fromClient, text, text2))
 		{
 			ServerSend.OPENEMPTYCONTAINER(_fromClient, _msg: false, text, text2);
 			return;

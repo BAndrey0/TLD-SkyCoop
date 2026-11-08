@@ -322,6 +322,7 @@ internal class ServerSend
 
 	public static void GAMETIME(string _msg)
 	{
+		ThrownFlareSync.ClockSync();
 		using Packet packet = new Packet(8);
 		packet.Write(_msg);
 		packet.Write(MyMod.MinutesFromStartServer);
@@ -547,19 +548,6 @@ internal class ServerSend
 
 	public static void BULLETDAMAGE(int _toClient, float _msg, int bodypart, int _From, bool Melee = false, string MeleeWeapon = "")
 	{
-		if (_From == 0)
-		{
-			if ((bool)GameManager.m_PlayerObject && (SafeZoneManager.SceneIsSafe(MyMod.level_guid) || SafeZoneManager.InsideSafeZone(MyMod.level_guid, GameManager.GetPlayerTransform().position)))
-			{
-				HUDMessage.AddMessage("You cannot attack when you in the safe zone!");
-				return;
-			}
-			if (MyMod.playersData[_toClient] != null && MyMod.playersData[_toClient].m_IsSafe)
-			{
-				HUDMessage.AddMessage("You cannot attack players in the safe zone!");
-				return;
-			}
-		}
 		using Packet packet = new Packet(29);
 		packet.Write(_msg);
 		packet.Write(bodypart);
@@ -1940,7 +1928,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.17");
+		packet.Write("0.16.18");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));

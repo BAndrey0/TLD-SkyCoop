@@ -1539,6 +1539,7 @@ public class Comps
 		public string m_HoldingItem = "";
 
 		public string m_HoldingFood = "";
+		private bool restingPose;
 
 		public bool m_LightSourceOn;
 
@@ -1810,6 +1811,7 @@ public class Comps
 			hand_l.transform.GetChild(4).gameObject.SetActive(value: false);
 			hand_l.transform.GetChild(5).gameObject.SetActive(value: false);
 			string animState = MyMod.playersData[m_ID].m_AnimState;
+			if (animState == BedRest.Animation) return;
 			if (m_HoldingFood == "" && animState != "Igniting")
 			{
 				if (m_HoldingItem.StartsWith("GEAR_Flare") != m_HoldingItem.Contains("Gun"))
@@ -2053,8 +2055,10 @@ public class Comps
 				}
 			}
 			DataStr.PlayerEquipmentData playerEquipmentData = multiPlayerClientData.m_PlayerEquipmentData;
-			if (playerEquipmentData.m_HoldingItem != m_HoldingItem || playerEquipmentData.m_LightSourceOn != m_LightSourceOn)
+			bool inBed = multiPlayerClientData.m_AnimState == BedRest.Animation;
+			if (restingPose != inBed || playerEquipmentData.m_HoldingItem != m_HoldingItem || playerEquipmentData.m_LightSourceOn != m_LightSourceOn)
 			{
+				restingPose = inBed;
 				m_HoldingItem = playerEquipmentData.m_HoldingItem;
 				m_LightSourceOn = playerEquipmentData.m_LightSourceOn;
 				UpdateHeldItem();
@@ -2083,7 +2087,7 @@ public class Comps
 				position.y -= 0.194f;
 				m_Player.transform.localScale = new Vector3(0.867f, 1f, 0.867f);
 			}
-			if (m_HoldingItem == "Book")
+			if (m_HoldingItem == "Book" && !inBed)
 			{
 				if (multiPlayerClientData.m_AnimState == "Idle")
 				{
@@ -2179,16 +2183,7 @@ public class Comps
 				bool flag = false;
 				if (clothing == null)
 				{
-					int index = 0;
-					clothing = m_Player.transform.GetChild(index).gameObject;
-					arms_middle = m_Player.transform.GetChild(1).GetChild(0).GetChild(0)
-						.gameObject;
-					arms_short = m_Player.transform.GetChild(1).GetChild(0).GetChild(1)
-						.gameObject;
-					arms_tiny = m_Player.transform.GetChild(1).GetChild(0).GetChild(2)
-						.gameObject;
-					arms_long = m_Player.transform.GetChild(1).GetChild(0).GetChild(3)
-						.gameObject;
+					InitializeGeometry();
 					flag = true;
 				}
 				int iD = m_Player.GetComponent<MultiplayerPlayer>().m_ID;
@@ -2210,13 +2205,46 @@ public class Comps
 			}
 		}
 
+		private void InitializeGeometry()
+		{
+			clothing = m_Player.transform.GetChild(0).gameObject;
+			arms_middle = m_Player.transform.GetChild(1).GetChild(0).GetChild(0)
+				.gameObject;
+			arms_short = m_Player.transform.GetChild(1).GetChild(0).GetChild(1)
+				.gameObject;
+			arms_tiny = m_Player.transform.GetChild(1).GetChild(0).GetChild(2)
+				.gameObject;
+			arms_long = m_Player.transform.GetChild(1).GetChild(0).GetChild(3)
+				.gameObject;
+		}
+
+		internal void ApplyLocalRest(GameObject avatar)
+		{
+			m_Player = avatar;
+			InitializeGeometry();
+			m_Hat = MyMod.MyHat;
+			m_Top = MyMod.MyTop;
+			m_Bottom = MyMod.MyBottom;
+			m_Boots = MyMod.MyBoots;
+			m_Scarf = MyMod.MyScarf;
+			m_Balaclava = MyMod.MyBalaclava;
+			UpdateClothing((int)PlayerManager.m_VoicePersona);
+		}
+
 		public void UpdateClothing()
+		{
+			if (m_Player == null || clothing == null) return;
+			int id = m_Player.GetComponent<MultiplayerPlayer>().m_ID;
+			UpdateClothing(MyMod.playersData[id].m_Character);
+			NativeAppearance.Apply(m_Player);
+		}
+
+		private void UpdateClothing(int character)
 		{
 			if (!(clothing != null))
 			{
 				return;
 			}
-			int iD = m_Player.GetComponent<MultiplayerPlayer>().m_ID;
 			int childCount = clothing.transform.GetChild(0).childCount;
 			int childCount2 = clothing.transform.GetChild(1).childCount;
 			int childCount3 = clothing.transform.GetChild(2).childCount;
@@ -2229,7 +2257,7 @@ public class Comps
 			string text = "";
 			string text2 = "Full";
 			bool flag = false;
-			int num6 = MyMod.playersData[iD].m_Character;
+			int num6 = character == 1 ? 1 : 0;
 			GameObject gameObject = null;
 			GameObject gameObject2 = null;
 			if (m_Balaclava != "")
@@ -2475,7 +2503,6 @@ public class Comps
 			GameCompat.SetChildActive(clothing.transform.GetChild(1), num2, true);
 			GameCompat.SetChildActive(clothing.transform.GetChild(2), num3, true);
 			GameCompat.SetChildActive(clothing.transform.GetChild(3), num4, true);
-			NativeAppearance.Apply(m_Player);
 		}
 	}
 

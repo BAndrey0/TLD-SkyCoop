@@ -11,6 +11,10 @@ internal static class BedRest
     private static Bed bed;
     private static PlayerManager player;
     private static Transform camera;
+    private static Camera weaponCamera;
+    private static bool weaponCameraEnabled;
+    private static Vector3 surfacePosition;
+    private static Quaternion surfaceRotation;
     private static Vector3 cameraPosition;
     private static Quaternion cameraRotation;
     private static string scene;
@@ -23,13 +27,50 @@ internal static class BedRest
     internal const string Animation = "BedRest";
     internal const string Status = "Отдых · Сила восстанавливается\nEsc / пробел — встать";
     internal static void Request() => restClicked = true;
-    internal static Transform BodyPose => Active ? bed.m_BodyPlacementTransform ?? bed.transform : null;
+    internal static Vector3 Position => surfacePosition;
+    internal static Quaternion Rotation => surfaceRotation;
 
-    internal static Quaternion SurfaceRotation(Transform pose)
+    private static (Vector3 Position, Quaternion Rotation) Surface(Bed target)
     {
-        var forward = Vector3.ProjectOnPlane(pose.forward, Vector3.up);
-        if (forward.sqrMagnitude < .01f) forward = Vector3.ProjectOnPlane(pose.up, Vector3.up);
-        return Quaternion.LookRotation(forward.sqrMagnitude >= .01f ? forward : Vector3.forward, Vector3.up);
+        var anchor = target.m_BodyPlacementTransform;
+        if (anchor == null) anchor = target.transform;
+        bool portable = target.m_Bedroll != null || target.GetComponent<Comps.FakeBedDummy>() != null;
+        var meshRoot = target.m_BedRollPlacedMesh;
+        return SurfaceFromMeshes(anchor, meshRoot != null ? meshRoot : target.gameObject,
+            portable, portable || target.m_BodyPlacementTransform == null);
+    }
+
+    internal static (Vector3 Position, Quaternion Rotation) SurfaceFromMeshes(Transform anchor, GameObject meshRoot, bool portable, bool useMeshHeight)
+    {
+        Vector3 forward = Vector3.ProjectOnPlane(anchor.forward, Vector3.up).normalized;
+        if (forward.sqrMagnitude < .01f) forward = Vector3.ProjectOnPlane(anchor.up, Vector3.up).normalized;
+        if (forward.sqrMagnitude < .01f) forward = Vector3.forward;
+        Vector3 center = anchor.position;
+        Vector3 longest = portable ? Vector3.Cross(Vector3.up, forward) : forward;
+        float bestArea = 0f;
+        foreach (var filter in meshRoot.GetComponentsInChildren<MeshFilter>())
+        {
+            if (filter.sharedMesh == null) continue;
+            var mesh = filter.sharedMesh.bounds;
+            var x = filter.transform.TransformVector(Vector3.right * mesh.size.x);
+            var y = filter.transform.TransformVector(Vector3.up * mesh.size.y);
+            var z = filter.transform.TransformVector(Vector3.forward * mesh.size.z);
+            var a = Vector3.ProjectOnPlane(x, Vector3.up);
+            var b = Vector3.ProjectOnPlane(y, Vector3.up);
+            var c = Vector3.ProjectOnPlane(z, Vector3.up);
+            float area = (Vector3.Cross(a, b).magnitude + Vector3.Cross(a, c).magnitude + Vector3.Cross(b, c).magnitude);
+            if (area <= bestArea) continue;
+            bestArea = area;
+            longest = a.sqrMagnitude >= b.sqrMagnitude && a.sqrMagnitude >= c.sqrMagnitude ? a : b.sqrMagnitude >= c.sqrMagnitude ? b : c;
+            var meshCenter = filter.transform.TransformPoint(mesh.center);
+            center = new Vector3(meshCenter.x, anchor.position.y, meshCenter.z);
+            if (useMeshHeight)
+                center.y = meshCenter.y + (Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y)) * .5f;
+        }
+        var axis = longest.normalized;
+        var preferred = Mathf.Abs(Vector3.Dot(axis, forward)) > .25f ? forward : Vector3.ProjectOnPlane(anchor.right, Vector3.up);
+        if (Vector3.Dot(axis, preferred) < 0f) axis = -axis;
+        return (center, Quaternion.LookRotation(axis.sqrMagnitude > .01f ? axis : forward, Vector3.up));
     }
 
     internal static bool IsOccupied(Bed target)
@@ -38,8 +79,8 @@ internal static class BedRest
         if (target == bed || target.GetOccupant() != null) return true;
         var rest = GameManager.m_Rest;
         if (rest != null && rest.IsSleeping() && rest.m_Bed == target) return true;
-        if (target.m_BodyPlacementTransform == null) return false;
-        Vector3 position = target.m_BodyPlacementTransform.position;
+        var anchor = target.m_BodyPlacementTransform;
+        Vector3 position = anchor != null ? anchor.position : target.transform.position;
         foreach (var remote in MyMod.playersData)
             if (remote != null && remote.m_LevelGuid == MyMod.level_guid && (remote.m_AnimState == "Sleep" || remote.m_AnimState == Animation) &&
                 (remote.m_Position - position).sqrMagnitude < 2.25f) return true;
@@ -73,8 +114,13 @@ internal static class BedRest
             return;
         }
         var manager = GameManager.GetPlayerManagerComponent();
-        var view = GameManager.GetVpFPSCamera()?.GetCameraComponent()?.transform;
+        var fps = GameManager.GetVpFPSCamera();
+        var view = fps?.GetCameraComponent()?.transform;
         if (manager == null || view == null) return;
+        (surfacePosition, surfaceRotation) = Surface(target);
+        weaponCamera = fps.GetWeaponCamera();
+        weaponCameraEnabled = weaponCamera != null && weaponCamera.enabled;
+        if (weaponCamera != null) weaponCamera.enabled = false;
         panel.Enable(false);
         camera = view;
         cameraPosition = view.localPosition;
@@ -85,12 +131,15 @@ internal static class BedRest
         player.SetControlMode(PlayerControlMode.Locked);
         var prefab = MyMod.BundleAsset<GameObject>("multiplayerPlayer");
         if (prefab == null) return;
-        var pose = BodyPose;
-        body = UnityEngine.Object.Instantiate(prefab, pose.position, SurfaceRotation(pose));
+        body = UnityEngine.Object.Instantiate(prefab, surfacePosition, surfaceRotation);
         foreach (var collider in body.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
         foreach (var source in body.GetComponentsInChildren<AudioSource>(true)) source.enabled = false;
         body.SetActive(true);
         FreezeRestAnimation(body);
+        var clothing = body.AddComponent<Comps.MultiplayerPlayerClothingManager>();
+        clothing.ApplyLocalRest(body);
+        clothing.enabled = false;
+        NativeAppearance.ApplyChoice(body, NativeAppearance.Choice);
         localRig = new RestRig(body.transform);
     }
 
@@ -107,6 +156,8 @@ internal static class BedRest
 
     private static void End()
     {
+        if (weaponCamera != null) weaponCamera.enabled = weaponCameraEnabled;
+        weaponCamera = null;
         if (camera != null)
         {
             camera.localPosition = cameraPosition;
@@ -136,11 +187,10 @@ internal static class BedRest
 
     private static void UpdateCamera()
     {
-        var pose = BodyPose;
-        if (camera == null || pose == null) return;
-        Quaternion rotation = SurfaceRotation(pose);
-        localRig?.Align(pose.position, rotation);
-        var view = FirstPerson(localRig, pose.position, rotation);
+        if (camera == null || !Active) return;
+        if (weaponCamera != null && weaponCamera.enabled) weaponCamera.enabled = false;
+        localRig?.Align(surfacePosition, surfaceRotation);
+        var view = FirstPerson(localRig, surfacePosition, surfaceRotation);
         camera.SetPositionAndRotation(view.Position, view.Rotation);
     }
 

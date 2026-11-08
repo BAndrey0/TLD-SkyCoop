@@ -125,7 +125,7 @@ public static class CoopContainerFlow
 
 	public static void Prefetch(Container box)
 	{
-		if (!(box == null) && MyMod.sendMyPosition && !ContainerLootSync.HasPendingUpload && !(request == box) && !(request != null) && !(presentation != null))
+		if (!(box == null) && !box.IsLocked() && MyMod.sendMyPosition && !ContainerLootSync.HasPendingUpload && !(request == box) && !(request != null) && !(presentation != null))
 		{
 			request = box;
 			scene = MyMod.level_guid;

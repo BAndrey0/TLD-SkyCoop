@@ -120,6 +120,37 @@ public static class SelfTest
 		}
 	}
 
+	private static void ProbeFlareAndBed()
+	{
+		int previousMinute = MyMod.MinutesFromStartServer;
+		try
+		{
+			MyMod.MinutesFromStartServer = 103;
+			ThrownFlareSync.ClockSync();
+			var flare = new DataStr.ExtraDataForDroppedGear { m_GearName = "GEAR_BlueFlare", m_Variant = 1,
+				m_DroppedTime = 100, m_FlareRemainingMinutes = 12.5f, m_FlareDropPhase = .25f };
+			var pickup = ThrownFlareSync.SnapshotPickup(flare);
+			if (Mathf.Abs(pickup.m_FlareRemainingMinutes - 9.75f) > .05f || flare.m_FlarePickupSnapshot)
+				throw new InvalidOperationException("Flare ground aging or pickup snapshot failed");
+			MyMod.MinutesFromStartServer = 400;
+			ThrownFlareSync.ClockSync();
+			if (ThrownFlareSync.Remaining(pickup) <= 0f || ThrownFlareSync.SnapshotPickup(flare).m_Variant != 2)
+				throw new InvalidOperationException("Flare pickup depends on client clock, or ground expiry failed");
+		}
+		finally { MyMod.MinutesFromStartServer = previousMinute; ThrownFlareSync.ClockSync(); }
+		var mattress = GameObject.CreatePrimitive(PrimitiveType.Cube);
+		try
+		{
+			mattress.transform.localScale = new Vector3(2f, .15f, .65f);
+			mattress.transform.rotation = Quaternion.Euler(0f, 37f, 0f);
+			var surface = BedRest.SurfaceFromMeshes(mattress.transform, mattress, portable: true, useMeshHeight: true);
+			if (Mathf.Abs(Vector3.Dot(surface.Rotation * Vector3.forward, mattress.transform.right)) < .99f ||
+				Mathf.Abs(surface.Position.y - .075f) > .01f)
+				throw new InvalidOperationException("Rest pose failed to align along rotated mattress");
+		}
+		finally { UnityEngine.Object.Destroy(mattress); }
+	}
+
 	internal static void ProbeInteractions()
 	{
 		if (Environment.GetEnvironmentVariable("SKYCOOP_INTERACTION_PROBE") == "1")
@@ -150,7 +181,8 @@ public static class SelfTest
 					SleepRendezvousFix.RecordVote(2, 0);
 					if (SleepRendezvousFix.SelectOffer(id => id == 1 ? -2 : 0) != -2)
 						throw new InvalidOperationException("Group wait cancellation failed");
-					MelonLogger.Msg("[Interaction probe] PASS native shared-drop interface, hover, target and first-voter wait duration");
+					ProbeFlareAndBed();
+					MelonLogger.Msg("[Interaction probe] PASS native shared-drop interface, wait vote, flare lifetime and rotated bed surface");
 					if (!string.IsNullOrEmpty(RestRender)) RenderRestPose(RestRender);
 				}
 				catch (Exception ex) { MelonLogger.Error("[Interaction probe] FAIL " + ex); }

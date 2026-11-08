@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.17";
+		public const string Version = "0.16.18";
 
 		public const string DownloadLink = null;
 
@@ -201,8 +201,6 @@ public class MyMod : MelonMod
 	public static bool StartServerAfterSelectSave = false;
 
 	public static int PortsToHostOn = 26950;
-
-	public static bool LastSafeStatus = false;
 
 	public static bool OnExpedition = false;
 
@@ -548,14 +546,6 @@ public class MyMod : MelonMod
 
 	public static GameObject ModdedHandsBook = null;
 
-	public static GameObject ViewModelRadio = null;
-
-	private static bool LoggedMissingRadio;
-
-	public static GameObject ViewModelRadioNeedle = null;
-
-	public static GameObject ViewModelRadioLED = null;
-
 	public static GameObject MyRadioAudio = null;
 
 	public static GameObject ViewModelHatchet = null;
@@ -593,10 +583,6 @@ public class MyMod : MelonMod
 	public static GameObject ViewModelHands = null;
 
 	public static bool UseBoltInsteadOfStone = false;
-
-	public static bool OriginalRadioSeaker = false;
-
-	public static bool VanilaRadio = false;
 
 	public static GameObject ViewModelDummy = null;
 
@@ -1212,10 +1198,7 @@ public class MyMod : MelonMod
 				component.m_Bed.SetState(BedRollState.Rolled);
 				flag2 = true;
 			}
-			component.m_LastUpdatedTODHours = 0f;
-			component.ManualStart();
-			component.ManualUpdate();
-			ThrownFlareSync.ApplyPickupBurn(component, extra);
+			InitializePickedDrop(component, extra);
 			if (component.GetGearName() == "GEAR_SCNote" && string.IsNullOrEmpty(extra.m_Dropper))
 			{
 				flag2 = true;
@@ -1691,10 +1674,8 @@ public class MyMod : MelonMod
 		CheatConsole.RegisterCommands();
 		Comps.RegisterComponents();
 		SelfTest.ProbeInteractions();
-		ExpeditionManager.InitClues();
 		Shared.LoadInterloperReplace();
 		TFHUD.Enabled = System.Environment.GetCommandLineArgs().Contains("-tfhud");
-		MPSaveManager.AddSpecialItem(JSON.Dump(new ExpeditionManager.SpecialExpeditionItem()), "Template");
 	}
 
 	public static void LootEverything()
@@ -2487,48 +2468,6 @@ public class MyMod : MelonMod
 		if (gameObject2 == null)
 		{
 			return;
-		}
-		if (!VanilaRadio && (bool)gameObject2 && ViewModelRadio == null)
-		{
-			GameObject gearItemObject = GetGearItemObject("GEAR_HandheldShortwave");
-			if (gearItemObject == null)
-			{
-				return;
-			}
-			ViewModelRadio = UnityEngine.Object.Instantiate(gearItemObject, gameObject2.transform.position, gameObject2.transform.rotation, gameObject2.transform);
-			ViewModelRadio.name = "FPH_HandheldRadio";
-			ViewModelRadio.SetActive(value: false);
-			ViewModelRadioNeedle = ViewModelRadio.transform.GetChild(0).GetChild(0).GetChild(1)
-				.gameObject;
-			if (ViewModelRadio.GetComponent<GearItem>() != null)
-			{
-				UnityEngine.Object.Destroy(ViewModelRadio.GetComponent<GearItem>());
-			}
-			if (ViewModelRadio.GetComponent<FirstPersonItem>() != null)
-			{
-				UnityEngine.Object.Destroy(ViewModelRadio.GetComponent<FirstPersonItem>());
-			}
-			if (ViewModelRadio.GetComponent<HoverIconsToShow>() != null)
-			{
-				UnityEngine.Object.Destroy(ViewModelRadio.GetComponent<HoverIconsToShow>());
-			}
-			if (ViewModelRadio.GetComponent<Inspect>() != null)
-			{
-				UnityEngine.Object.Destroy(ViewModelRadio.GetComponent<Inspect>());
-			}
-			if (ViewModelRadio.GetComponent<Rigidbody>() != null)
-			{
-				UnityEngine.Object.Destroy(ViewModelRadio.GetComponent<Rigidbody>());
-			}
-			if (ViewModelRadio.GetComponent<LODGroup>() != null)
-			{
-				UnityEngine.Object.Destroy(ViewModelRadio.GetComponent<LODGroup>());
-			}
-			GameObject gameObject3 = new GameObject("LIGHT");
-			gameObject3.transform.SetParent(ViewModelRadio.transform);
-			gameObject3.AddComponent<Light>().color = Color.green;
-			gameObject3.SetActive(value: false);
-			ViewModelRadioLED = gameObject3;
 		}
 		GameObject.Find("/CHARACTER_FPSPlayer");
 		ViewModelHatchet = GameObject.Find(text + "mesh_hatchet");
@@ -5592,14 +5531,6 @@ public class MyMod : MelonMod
 					}
 				}
 			}
-			if ((bool)GameManager.m_PlayerObject)
-			{
-				GearItem itemInHands = GameManager.GetPlayerManagerComponent().m_ItemInHands;
-				if ((bool)itemInHands && (bool)itemInHands.m_HandheldShortwaveItem && CairnsSearchActive())
-				{
-					DoRadioSearch();
-				}
-			}
 			if (GameCompat.Panel<Panel_HUD>() != null && !GameCompat.Panel<Panel_HUD>().IsShowingCollectibleNote() && ForcedShowExpeditionHUDSeconds > 0)
 			{
 				ForcedShowExpeditionHUDSeconds--;
@@ -6713,9 +6644,6 @@ public class MyMod : MelonMod
 			if (!DoingRecord)
 			{
 				RecordReleseButtonHold = Time.time + 0.5f;
-				if ((bool)ViewModelRadio && !ViewModelRadio.activeSelf)
-				{
-				}
 			}
 			else
 			{
@@ -7132,6 +7060,17 @@ public class MyMod : MelonMod
 		}
 	}
 
+	private static void InitializePickedDrop(GearItem gear, DataStr.ExtraDataForDroppedGear extra)
+	{
+		bool flare = ThrownFlareSync.IsFlare(gear);
+		gear.m_LastUpdatedTODHours = flare ? GameManager.GetTimeOfDayComponent().GetHoursPlayedNotPaused() : 0f;
+		gear.ManualStart();
+		if (flare)
+			ThrownFlareSync.ApplyPickupBurn(gear, extra);
+		else
+			gear.ManualUpdate();
+	}
+
 	private static void AddPickedBedroll(GearItem gear)
 	{
 		if (gear != null && !gear.m_InPlayerInventory && gear.GetComponent<Comps.FakeBedDummy>() == null)
@@ -7303,10 +7242,7 @@ public class MyMod : MelonMod
 					gameObject.GetComponent<GearItem>().m_Bed.SetState(BedRollState.Rolled);
 					flag = true;
 				}
-				gameObject.GetComponent<GearItem>().m_LastUpdatedTODHours = 0f;
-				gameObject.GetComponent<GearItem>().ManualStart();
-				gameObject.GetComponent<GearItem>().ManualUpdate();
-				ThrownFlareSync.ApplyPickupBurn(gameObject.GetComponent<GearItem>(), component.m_Extra);
+				InitializePickedDrop(gameObject.GetComponent<GearItem>(), ThrownFlareSync.SnapshotPickup(slicedJsonDroppedGear.m_Extra));
 				if (gameObject.GetComponent<GearItem>().GetGearName() == "GEAR_SCNote" && string.IsNullOrEmpty(component.m_Extra.m_Dropper))
 				{
 					Pathes.DisplayNote(gameObject.GetComponent<GearItem>());
@@ -8668,152 +8604,6 @@ public class MyMod : MelonMod
 					child.GetChild(num).GetChild(2).gameObject.GetComponent<Button>().onClick.AddListener(action3);
 				}
 			}
-			ExpeditionEditorUI = SpawnModAsset(BundleAsset<GameObject>("MP_ExpeditionEditor"), UiCanvas.transform);
-			if (ExpeditionEditorUI != null)
-			{
-				ExpeditionEditorUI.SetActive(value: false);
-				System.Action action4 = delegate
-				{
-					ExpeditionEditor.AutoSelectRegion();
-				};
-				ExpeditionEditorUI.transform.GetChild(2).GetComponent<Button>().onClick.AddListener(action4);
-				System.Action action5 = delegate
-				{
-					ExpeditionEditor.AutoSelectScene();
-				};
-				ExpeditionEditorUI.transform.GetChild(5).GetComponent<Button>().onClick.AddListener(action5);
-				System.Action action6 = delegate
-				{
-					ExpeditionEditor.AutoPositionSelect();
-				};
-				ExpeditionEditorUI.transform.GetChild(8).GetComponent<Button>().onClick.AddListener(action6);
-				System.Action action7 = delegate
-				{
-					ExpeditionEditor.ToggleContainersList();
-				};
-				ExpeditionEditorUI.transform.GetChild(12).GetComponent<Button>().onClick.AddListener(action7);
-				System.Action action8 = delegate
-				{
-					ExpeditionEditor.ToggleGearsList();
-				};
-				ExpeditionEditorUI.transform.GetChild(11).GetComponent<Button>().onClick.AddListener(action8);
-				System.Action action9 = delegate
-				{
-					ExpeditionEditor.RemoveGearVariant();
-				};
-				ExpeditionEditorUI.transform.GetChild(14).GetChild(5).gameObject.GetComponent<Button>().onClick.AddListener(action9);
-				System.Action action10 = delegate
-				{
-					ExpeditionEditor.SaveExpeditionTemplate();
-				};
-				ExpeditionEditorUI.transform.GetChild(15).gameObject.GetComponent<Button>().onClick.AddListener(action10);
-				System.Action action11 = delegate
-				{
-					ExpeditionEditor.BackToSelect(ExpeditionEditorUI.transform.GetChild(1).GetComponent<Dropdown>().m_Value - Shared.GameRegionNegativeOffset);
-				};
-				ExpeditionEditorUI.transform.GetChild(16).gameObject.GetComponent<Button>().onClick.AddListener(action11);
-				System.Action action12 = delegate
-				{
-					ExpeditionEditor.ToggleExtraPanel();
-				};
-				ExpeditionEditorUI.transform.GetChild(14).GetChild(6).gameObject.GetComponent<Button>().onClick.AddListener(action12);
-				System.Action action13 = delegate
-				{
-					ExpeditionEditor.SetObjectiveGear();
-				};
-				ExpeditionEditorUI.transform.GetChild(14).GetChild(7).GetChild(3)
-					.GetComponent<Button>()
-					.onClick.AddListener(action13);
-				System.Action action14 = delegate
-				{
-					ExpeditionEditor.ToggleHarvestablesList();
-				};
-				ExpeditionEditorUI.transform.GetChild(25).GetComponent<Button>().onClick.AddListener(action14);
-				System.Action action15 = delegate
-				{
-					ExpeditionEditor.ToggleBreakdownsList();
-				};
-				ExpeditionEditorUI.transform.GetChild(26).GetComponent<Button>().onClick.AddListener(action15);
-				System.Action action16 = delegate
-				{
-					ExpeditionEditor.ToggleObjectsList();
-				};
-				ExpeditionEditorUI.transform.GetChild(30).GetComponent<Button>().onClick.AddListener(action16);
-				System.Action action17 = delegate
-				{
-					ExpeditionEditor.ToggleObjectSettingsPanel();
-				};
-				ExpeditionEditorUI.transform.GetChild(31).GetChild(3).GetComponent<Button>()
-					.onClick.AddListener(action17);
-				System.Action action18 = delegate
-				{
-					ExpeditionEditor.AddObject();
-				};
-				ExpeditionEditorUI.transform.GetChild(31).GetChild(6).GetComponent<Button>()
-					.onClick.AddListener(action18);
-				System.Action action19 = delegate
-				{
-					ExpeditionEditor.VisualizeObjects();
-				};
-				ExpeditionEditorUI.transform.GetChild(31).GetChild(7).GetComponent<Button>()
-					.onClick.AddListener(action19);
-				System.Action action20 = delegate
-				{
-					ExpeditionEditor.PlaceVisualizedObject();
-				};
-				ExpeditionEditorUI.transform.GetChild(31).GetChild(8).GetComponent<Button>()
-					.onClick.AddListener(action20);
-				System.Action action21 = delegate
-				{
-					ExpeditionEditor.SetContainerContent();
-				};
-				ExpeditionEditorUI.transform.GetChild(31).GetChild(4).GetChild(2)
-					.GetComponent<Button>()
-					.onClick.AddListener(action21);
-				System.Action action22 = delegate
-				{
-					ExpeditionEditor.ApplyObjectSettings();
-				};
-				ExpeditionEditorUI.transform.GetChild(31).GetChild(9).GetChild(15)
-					.gameObject.GetComponent<Button>().onClick.AddListener(action22);
-				Dropdown component5 = ExpeditionEditorUI.transform.GetChild(3).GetComponent<Dropdown>();
-				component5.ClearOptions();
-				component5.options.Add(new Dropdown.OptionData("Scene"));
-				component5.options.Add(new Dropdown.OptionData("Zone"));
-				component5.options.Add(new Dropdown.OptionData("Collect"));
-				component5.options.Add(new Dropdown.OptionData("Flaregun"));
-				component5.options.Add(new Dropdown.OptionData("Charcoal"));
-				component5.options.Add(new Dropdown.OptionData("Stay"));
-				component5.options.Add(new Dropdown.OptionData("Crashsit"));
-				component5.options.Add(new Dropdown.OptionData("AutoComplete"));
-				component5.options.Add(new Dropdown.OptionData("Interact"));
-				Dropdown component6 = ExpeditionEditorUI.transform.GetChild(1).GetComponent<Dropdown>();
-				component6.ClearOptions();
-				for (int num2 = -Shared.GameRegionNegativeOffset; num2 <= Shared.GameRegionPositiveOffset; num2++)
-				{
-					component6.options.Add(new Dropdown.OptionData(ExpeditionBuilder.GetRegionString(num2)));
-				}
-			}
-			ExpeditionEditorSelectUI = SpawnModAsset(BundleAsset<GameObject>("MP_ExpeditionSelect"), UiCanvas.transform);
-			if (ExpeditionEditorSelectUI != null)
-			{
-				ExpeditionEditorSelectUI.SetActive(value: false);
-				System.Action action23 = delegate
-				{
-					ExpeditionEditor.LoadExpedition(new ExpeditionBuilder.ExpeditionTaskTemplate());
-				};
-				ExpeditionEditorSelectUI.transform.GetChild(2).gameObject.GetComponent<Button>().onClick.AddListener(action23);
-				System.Action action24 = delegate
-				{
-					ExpeditionEditor.RefreshExpeditionsList();
-				};
-				ExpeditionEditorSelectUI.transform.GetChild(3).gameObject.GetComponent<Button>().onClick.AddListener(action24);
-				System.Action action25 = delegate
-				{
-					ExpeditionEditor.BackToSelect(6);
-				};
-				ExpeditionEditorSelectUI.transform.GetChild(4).GetComponent<Button>().onClick.AddListener(action25);
-			}
 			if (TFHUD.Enabled)
 			{
 				TFHUD.Init(LoadedBundle, UiCanvas.transform);
@@ -8828,15 +8618,6 @@ public class MyMod : MelonMod
 			CanvasUisReady = false;
 			MelonLogger.Error("[UI] Could not initialize co-op UI: " + ex);
 		}
-	}
-
-	public static bool IsHoldingRadio()
-	{
-		if ((bool)GameManager.m_PlayerManager && (bool)GameManager.GetPlayerManagerComponent().m_ItemInHands && GameManager.GetPlayerManagerComponent().m_ItemInHands.GetGearName() == "GEAR_HandheldShortwave")
-		{
-			return true;
-		}
-		return false;
 	}
 
 	public static void UpdateCanvasUis()
@@ -8868,7 +8649,7 @@ public class MyMod : MelonMod
 							m_By = MyChatName,
 							m_Type = 1,
 							m_Message = chatInput.text,
-							m_Global = IsHoldingRadio()
+							m_Global = false
 						});
 						chatInput.text = "";
 					}
@@ -9927,18 +9708,6 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void SendNewRadioFrequency()
-	{
-		if (sendMyPosition)
-		{
-			using (Packet packet = new Packet(116))
-			{
-				packet.Write(RadioFrequency);
-				SendUDPData(packet);
-			}
-		}
-	}
-
 	public static string GetRadioFrequency(float ID)
 	{
 		return (325f + ID).ToString();
@@ -9965,82 +9734,6 @@ public class MyMod : MelonMod
 			return true;
 		}
 		return false;
-	}
-
-	public static void UpdateRadio()
-	{
-		if ((bool)ViewModelRadioNeedle)
-		{
-			Quaternion localRotation = ViewModelRadioNeedle.transform.localRotation;
-			localRotation.eulerAngles = new Vector3(localRotation.eulerAngles.x, localRotation.eulerAngles.y, RadioFrequency);
-			ViewModelRadioNeedle.transform.localRotation = localRotation;
-		}
-		float axisScrollWheel = InputManager.GetAxisScrollWheel(InputManager.m_CurrentContext);
-		if (axisScrollWheel < 0f && RadioFrequency > -25f)
-		{
-			RadioFrequency -= 0.1f;
-			RadioFrequency = Mathf.Round(RadioFrequency * 10f) * 0.1f;
-			HUDMessage.ShowMessage(message: new HUDMessage.HUDMessageInfo
-			{
-				m_Text = "Frequency " + GetRadioFrequency(RadioFrequency)
-			}, hud: GameCompat.Panel<Panel_HUD>());
-			SendNewRadioFrequency();
-		}
-		if (axisScrollWheel > 0f && RadioFrequency < 25f)
-		{
-			RadioFrequency += 0.1f;
-			RadioFrequency = Mathf.Round(RadioFrequency * 10f) * 0.1f;
-			HUDMessage.HUDMessageInfo hUDMessageInfo = new HUDMessage.HUDMessageInfo();
-			hUDMessageInfo.m_Text = "Frequency " + GetRadioFrequency(RadioFrequency);
-			HUDMessage.ShowMessage(GameCompat.Panel<Panel_HUD>(), hUDMessageInfo);
-			SendNewRadioFrequency();
-		}
-		bool flag = ViewModelRadioLED.activeSelf;
-		if (InputManager.GetAltFirePressed(InputManager.m_CurrentContext))
-		{
-			Panel_ActionPicker panel_ActionPicker = GameCompat.Panel<Panel_ActionPicker>();
-			if ((bool)panel_ActionPicker && !panel_ActionPicker.IsEnabled())
-			{
-				if (MPSaveManager.NeverSeenExpeditions())
-				{
-					ExpeditionHint();
-				}
-				else
-				{
-					ShowRadioActionPicker(null);
-				}
-			}
-		}
-		if (InputManager.GetReloadPressed(InputManager.m_CurrentContext) && MouseActionIsAllowed())
-		{
-			ExpeditionHint();
-		}
-		if (LastSearchDistance != float.PositiveInfinity && CairnsSearchActive())
-		{
-			float radioBeepRate = GetRadioBeepRate(LastSearchDistance);
-			if (nextLEDBlink == 0f)
-			{
-				nextLEDBlink = Time.time + radioBeepRate;
-			}
-			if (Time.time > nextLEDBlink)
-			{
-				nextLEDBlink = Time.time + radioBeepRate;
-				if (!flag)
-				{
-					DoRadioBeep();
-					flag = true;
-				}
-				else
-				{
-					flag = false;
-				}
-			}
-		}
-		else
-		{
-			flag = false;
-		}
-		ViewModelRadioLED.SetActive(flag);
 	}
 
 	public static bool IsCustomHandItem(string item)
@@ -10879,30 +10572,6 @@ public class MyMod : MelonMod
 			return;
 		}
 		string gearName = GameManager.GetPlayerManagerComponent().m_ItemInHands.GetGearName();
-		if ((bool)ViewModelRadio)
-		{
-			if (GameManager.GetPlayerManagerComponent().m_ItemInHands.GetFPSMeshID() == 17)
-			{
-				ViewModelRadio.SetActive(value: true);
-				if (!OriginalRadioSeaker)
-				{
-					UpdateRadio();
-				}
-			}
-			else
-			{
-				ViewModelRadio.SetActive(value: false);
-				SearchModeActive = false;
-			}
-		}
-		else
-		{
-			if (!LoggedMissingRadio)
-			{
-				LoggedMissingRadio = true;
-				MelonLogger.Msg("No ViewModelRadio mesh");
-			}
-		}
 		if (IsCustomHandItem(gearName))
 		{
 			if ((bool)ViewModelDummy)
@@ -13819,6 +13488,7 @@ public class MyMod : MelonMod
 
 	public static GameObject SpawnUniversalSyncableObject(DataStr.UniversalSyncableObject Data, bool DebugPurpose = false)
 	{
+		if (Data == null || !string.IsNullOrEmpty(Data.m_ExpeditionBelong)) return null;
 		GameObject gameObject = ObjectGuidManager.Lookup(Data.m_GUID);
 		string text = Data.m_Prefab;
 		bool flag = false;
@@ -13906,12 +13576,6 @@ public class MyMod : MelonMod
 					value = Data.m_GUID + i;
 				}
 				objectGuid2.Set(value);
-				if (gameObject4.GetComponent<Lock>() != null)
-				{
-					gameObject4.GetComponent<Lock>().m_ChanceLocked = 0f;
-					gameObject4.GetComponent<Lock>().m_LockStateRolled = false;
-					gameObject4.GetComponent<Lock>().RollLockedState();
-				}
 				container.m_RolledSpawnChance = false;
 				container.m_SpawnChance = 100f;
 				container.Start();

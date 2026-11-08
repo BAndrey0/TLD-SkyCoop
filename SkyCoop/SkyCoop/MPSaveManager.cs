@@ -448,8 +448,6 @@ public class MPSaveManager
 		UniversalSyncableObjectsChanged = false;
 		SaveHashsChanged = false;
 
-		ExpeditionBuilder.Init();
-		ExpeditionManager.InitClues();
 		int seed = GetSeed();
 		Log("LoadNonUnloadables Seed " + seed);
 		string text = LoadData("LockedDoors", seed);
@@ -458,7 +456,6 @@ public class MPSaveManager
 		string text4 = LoadData("BanList");
 		string text5 = LoadData("RockCaches", seed);
 		string text6 = LoadData("UniversalSyncables", seed);
-		string jSONString = LoadData("ExpeditionManager", seed);
 		if (!string.IsNullOrEmpty(text))
 		{
 			LockedDoors = JSON.Load(text).Make<Dictionary<string, Dictionary<string, string>>>();
@@ -490,7 +487,6 @@ public class MPSaveManager
 		{
 			UniversalSyncableObjects = JSON.Load(text6).Make<Dictionary<string, Dictionary<string, DataStr.UniversalSyncableObject>>>();
 		}
-		ExpeditionManager.Load(jSONString);
 	}
 
 	public static string GenerateSeededGUID(int gameSeed, Vector3 v3)
@@ -724,7 +720,6 @@ public class MPSaveManager
 		RecentPickedGears = new Dictionary<string, Dictionary<long, DataStr.PickedGearSync>>();
 		RecentlyLootedContainers = new Dictionary<string, Dictionary<string, int>>();
 		RecentlyHarvastedPlants = new Dictionary<string, Dictionary<string, int>>();
-		SaveData("ExpeditionManager", ExpeditionManager.Save(), GetSeed());
 		if (stopwatch != null)
 		{
 			stopwatch.Stop();
@@ -1533,7 +1528,6 @@ public class MPSaveManager
 		{
 			Blanks.Remove(Hash);
 		}
-		ExpeditionManager.RemoveGearSpawnerGear(Hash);
 	}
 
 	public static DataStr.SlicedJsonDroppedGear RequestSpecificGear(int Hash, string Scene, bool Remove = true)
