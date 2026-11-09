@@ -351,6 +351,8 @@ public class Packet : IDisposable
 		Write(obj.m_Boots);
 		Write(obj.m_Scarf);
 		Write(obj.m_Balaclava);
+		Write(obj.m_Gloves);
+		Write(obj.m_Appearance);
 	}
 
 	public void Write(DataStr.BrokenFurnitureSync obj)
@@ -941,7 +943,9 @@ public class Packet : IDisposable
 			m_Bottom = ReadString(),
 			m_Boots = ReadString(),
 			m_Scarf = ReadString(),
-			m_Balaclava = ReadString()
+			m_Balaclava = ReadString(),
+			m_Gloves = ReadString(),
+			m_Appearance = NativeAppearance.Normalize(ReadInt())
 		};
 	}
 

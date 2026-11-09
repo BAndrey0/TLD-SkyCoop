@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.18");
+			packet.Write("0.16.25");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -1040,8 +1040,8 @@ public class ClientHandle
 
 	public static void LOADINGSCENEDROPSDONE(Packet _packet)
 	{
+		if (!Pathes.CompleteSceneDrops(_packet.ReadString())) return;
 		MelonLogger.Msg("Host sent scene loading done!");
-		MyMod.DiscardRepeatPacket();
 		MyMod.RemovePleaseWait();
 		if (MyMod.DelayedGearsPickup)
 		{

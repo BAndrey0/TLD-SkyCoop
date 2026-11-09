@@ -328,6 +328,9 @@ public static class CoopFatigue
 		return $"Сила −{Mathf.CeilToInt(CoopBalancePolicy.Cost(hours, rate))}";
 	}
 
+	internal static string CraftingCostLabel(int minutes) =>
+		$"Сила −{Mathf.CeilToInt(CoopBalancePolicy.Cost(minutes / 60f, WorkRate(Weight.Medium)))}";
+
 	internal static string CostLabelForReading(float hours) =>
 		$"Сила −{Mathf.CeilToInt(CoopBalancePolicy.Cost(hours, WorkRate(Weight.Light)))}";
 

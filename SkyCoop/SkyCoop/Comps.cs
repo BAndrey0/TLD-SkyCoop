@@ -1792,7 +1792,16 @@ public class Comps
 			}
 		}
 
-		public void UpdateHeldItem()
+		internal static (GameObject Right, GameObject Left) HandSockets(GameObject actor)
+		{
+			var chest = actor.transform.GetChild(3).GetChild(8).GetChild(0).GetChild(0).GetChild(0);
+			return (chest.GetChild(1).GetChild(0).GetChild(0).GetChild(0).gameObject,
+				chest.GetChild(0).GetChild(0).GetChild(0).GetChild(0).gameObject);
+		}
+
+		public void UpdateHeldItem() => ShowHeldItem(hand_r, hand_l, m_HoldingItem, m_HoldingFood, m_LightSourceOn, MyMod.playersData[m_ID].m_AnimState);
+
+		internal static void ShowHeldItem(GameObject hand_r, GameObject hand_l, string item, string food, bool lit, string animState)
 		{
 			hand_r.transform.GetChild(0).gameObject.SetActive(value: false);
 			hand_r.transform.GetChild(1).gameObject.SetActive(value: false);
@@ -1810,69 +1819,68 @@ public class Comps
 			hand_l.transform.GetChild(3).gameObject.SetActive(value: false);
 			hand_l.transform.GetChild(4).gameObject.SetActive(value: false);
 			hand_l.transform.GetChild(5).gameObject.SetActive(value: false);
-			string animState = MyMod.playersData[m_ID].m_AnimState;
 			if (animState == BedRest.Animation) return;
-			if (m_HoldingFood == "" && animState != "Igniting")
+			if (food == "" && animState != "Igniting")
 			{
-				if (m_HoldingItem.StartsWith("GEAR_Flare") != m_HoldingItem.Contains("Gun"))
+				if (item.StartsWith("GEAR_Flare") != item.Contains("Gun"))
 				{
 					hand_r.transform.GetChild(0).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_WoodMatches" || m_HoldingItem == "GEAR_PackMatches")
+				if (item == "GEAR_WoodMatches" || item == "GEAR_PackMatches")
 				{
 					hand_r.transform.GetChild(1).gameObject.SetActive(value: true);
 					hand_l.transform.GetChild(0).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_BlueFlare")
+				if (item == "GEAR_BlueFlare")
 				{
 					hand_r.transform.GetChild(2).gameObject.SetActive(value: true);
 				}
-				if (MyMod.IsHeldRifle(m_HoldingItem))
+				if (MyMod.IsHeldRifle(item))
 				{
 					hand_r.transform.GetChild(3).gameObject.SetActive(value: true);
 				}
-				if (MyMod.IsHeldRevolver(m_HoldingItem))
+				if (MyMod.IsHeldRevolver(item))
 				{
 					hand_r.transform.GetChild(4).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem.StartsWith("GEAR_SprayPaintCan"))
+				if (item.StartsWith("GEAR_SprayPaintCan"))
 				{
 					hand_r.transform.GetChild(5).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_Stone")
+				if (item == "GEAR_Stone")
 				{
 					hand_r.transform.GetChild(6).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem.StartsWith("GEAR_KeroseneLamp"))
+				if (item.StartsWith("GEAR_KeroseneLamp"))
 				{
 					hand_r.transform.GetChild(7).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_Torch")
+				if (item == "GEAR_Torch")
 				{
 					hand_r.transform.GetChild(8).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_Bow" || m_HoldingItem == "GEAR_SportBow")
+				if (item == "GEAR_Bow" || item == "GEAR_SportBow")
 				{
 					hand_l.transform.GetChild(3).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "Map")
+				if (item == "Map")
 				{
 					hand_l.transform.GetChild(2).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_FlareGun")
+				if (item == "GEAR_FlareGun")
 				{
 					hand_r.transform.GetChild(9).gameObject.SetActive(value: true);
 				}
-				if (m_HoldingItem == "GEAR_NoiseMaker")
+				if (item == "GEAR_NoiseMaker")
 				{
 					hand_r.transform.GetChild(10).gameObject.SetActive(value: true);
 				}
 			}
 			else
 			{
-				if (m_HoldingFood != "")
+				if (food != "")
 				{
-					if (m_HoldingFood == "Water")
+					if (food == "Water")
 					{
 						hand_l.transform.GetChild(4).gameObject.SetActive(value: true);
 					}
@@ -1887,7 +1895,7 @@ public class Comps
 					hand_l.transform.GetChild(0).gameObject.SetActive(value: true);
 				}
 			}
-			if (m_LightSourceOn)
+			if (lit)
 			{
 				hand_r.transform.GetChild(0).GetChild(1).gameObject.SetActive(value: false);
 				hand_r.transform.GetChild(0).GetChild(2).gameObject.SetActive(value: true);
@@ -1911,11 +1919,11 @@ public class Comps
 				hand_r.transform.GetChild(7).GetChild(0).gameObject.SetActive(value: false);
 				hand_r.transform.GetChild(8).GetChild(1).gameObject.SetActive(value: false);
 			}
-			hand_r.transform.GetChild(0).GetChild(3).gameObject.SetActive(m_LightSourceOn);
-			hand_r.transform.GetChild(1).GetChild(4).gameObject.SetActive(m_LightSourceOn);
-			hand_r.transform.GetChild(2).GetChild(3).gameObject.SetActive(m_LightSourceOn);
-			hand_r.transform.GetChild(7).GetChild(3).gameObject.SetActive(m_LightSourceOn);
-			hand_r.transform.GetChild(8).GetChild(0).gameObject.SetActive(m_LightSourceOn);
+			hand_r.transform.GetChild(0).GetChild(3).gameObject.SetActive(lit);
+			hand_r.transform.GetChild(1).GetChild(4).gameObject.SetActive(lit);
+			hand_r.transform.GetChild(2).GetChild(3).gameObject.SetActive(lit);
+			hand_r.transform.GetChild(7).GetChild(3).gameObject.SetActive(lit);
+			hand_r.transform.GetChild(8).GetChild(0).gameObject.SetActive(lit);
 		}
 
 		private void UpdateOtherAffictions()
@@ -2018,18 +2026,7 @@ public class Comps
 				extras = m_Player.transform.GetChild(index3).gameObject;
 				hip = m_Player.transform.GetChild(index4).gameObject;
 				root = hip.transform.GetChild(index5).gameObject;
-				hand_r = root.transform.GetChild(0).GetChild(0).GetChild(0)
-					.GetChild(1)
-					.GetChild(0)
-					.GetChild(0)
-					.GetChild(0)
-					.gameObject;
-				hand_l = root.transform.GetChild(0).GetChild(0).GetChild(0)
-					.GetChild(0)
-					.GetChild(0)
-					.GetChild(0)
-					.GetChild(0)
-					.gameObject;
+				(hand_r, hand_l) = HandSockets(m_Player);
 				rifle = root.transform.GetChild(0).GetChild(1).gameObject;
 				revolver = root.transform.GetChild(2).GetChild(1).gameObject;
 				quiver = root.transform.GetChild(0).GetChild(2).gameObject;
@@ -2077,16 +2074,6 @@ public class Comps
 			ThrownFlareSync.UpdateHeld(this);
 			Vector3 position = MotionSync.Position(m_ID, multiPlayerClientData.m_Position);
 			Quaternion rotation = multiPlayerClientData.m_Rotation;
-			if (!multiPlayerClientData.m_Female || NativeAppearance.HasCostume(m_Player))
-			{
-				// Position is supplied by the sequenced motion sample.
-				m_Player.transform.localScale = new Vector3(1f, 1f, 1f);
-			}
-			else
-			{
-				position.y -= 0.194f;
-				m_Player.transform.localScale = new Vector3(0.867f, 1f, 0.867f);
-			}
 			if (m_HoldingItem == "Book" && !inBed)
 			{
 				if (multiPlayerClientData.m_AnimState == "Idle")
@@ -2141,6 +2128,10 @@ public class Comps
 	public class MultiplayerPlayerClothingManager : MonoBehaviour
 	{
 		private int lastCharacter = -1;
+		private AvatarWardrobe wardrobe;
+		private AvatarGloves.Fitting gloveMesh;
+		internal bool GlovesVisible => gloveMesh?.Visible == true;
+		private string gloves = "";
 		public string m_Hat = "";
 
 		public string m_Top = "";
@@ -2178,7 +2169,7 @@ public class Comps
 
 		private void Update()
 		{
-			if (m_Player != null)
+			if (m_Player != null && MyMod.InOnline() && GearCatalogIndex.InWorld)
 			{
 				bool flag = false;
 				if (clothing == null)
@@ -2188,9 +2179,9 @@ public class Comps
 				}
 				int iD = m_Player.GetComponent<MultiplayerPlayer>().m_ID;
 				if (iD < 0 || iD >= MyMod.playersData.Count || MyMod.playersData[iD] == null) return;
-				flag |= lastCharacter != MyMod.playersData[iD].m_Character;
 				DataStr.PlayerClothingData playerClothingData = MyMod.playersData[iD].m_PlayerClothingData;
 				if (playerClothingData == null) return;
+				flag |= lastCharacter != MyMod.playersData[iD].m_Character;
 				if (playerClothingData.m_Hat != m_Hat || playerClothingData.m_Top != m_Top || playerClothingData.m_Bottom != m_Bottom || playerClothingData.m_Boots != m_Boots || playerClothingData.m_Scarf != m_Scarf || playerClothingData.m_Balaclava != m_Balaclava || flag)
 				{
 					m_Hat = playerClothingData.m_Hat;
@@ -2199,11 +2190,13 @@ public class Comps
 					m_Boots = playerClothingData.m_Boots;
 					m_Scarf = playerClothingData.m_Scarf;
 					m_Balaclava = playerClothingData.m_Balaclava;
+					gloves = playerClothingData.m_Gloves;
 					UpdateClothing();
 					lastCharacter = MyMod.playersData[iD].m_Character;
 				}
 			}
 		}
+
 
 		private void InitializeGeometry()
 		{
@@ -2218,26 +2211,79 @@ public class Comps
 				.gameObject;
 		}
 
-		internal void ApplyLocalRest(GameObject avatar)
+		internal void ApplyLocalRest(GameObject avatar) => ApplyLocalAppearance(avatar, NativeAppearance.Choice, (int)PlayerManager.m_VoicePersona);
+
+		internal bool ApplyLocalAppearance(GameObject avatar, int choice, int character, DataStr.PlayerClothingData gear = null)
 		{
 			m_Player = avatar;
 			InitializeGeometry();
-			m_Hat = MyMod.MyHat;
-			m_Top = MyMod.MyTop;
-			m_Bottom = MyMod.MyBottom;
-			m_Boots = MyMod.MyBoots;
-			m_Scarf = MyMod.MyScarf;
-			m_Balaclava = MyMod.MyBalaclava;
-			UpdateClothing((int)PlayerManager.m_VoicePersona);
+			gear ??= MyMod.LocalClothing();
+			m_Hat = gear.m_Hat; m_Top = gear.m_Top; m_Bottom = gear.m_Bottom;
+			m_Boots = gear.m_Boots; m_Scarf = gear.m_Scarf; m_Balaclava = gear.m_Balaclava; gloves = gear.m_Gloves;
+			return ApplyClothingAppearance(choice, character);
 		}
 
 		public void UpdateClothing()
 		{
-			if (m_Player == null || clothing == null) return;
+			if (m_Player == null || clothing == null || !MyMod.InOnline() || !GearCatalogIndex.InWorld) return;
 			int id = m_Player.GetComponent<MultiplayerPlayer>().m_ID;
-			UpdateClothing(MyMod.playersData[id].m_Character);
-			NativeAppearance.Apply(m_Player);
+			if (id < 0 || id >= MyMod.playersData.Count || MyMod.playersData[id] == null) return;
+			var gear = MyMod.playersData[id].m_PlayerClothingData;
+			if (gear != null)
+			{
+				m_Hat = gear.m_Hat; m_Top = gear.m_Top; m_Bottom = gear.m_Bottom;
+				m_Boots = gear.m_Boots; m_Scarf = gear.m_Scarf; m_Balaclava = gear.m_Balaclava; gloves = gear.m_Gloves;
+			}
+			ApplyClothingAppearance(-1, MyMod.playersData[id].m_Character);
 		}
+
+		private bool ApplyClothingAppearance(int choice, int character)
+		{
+			if (!NativeAppearance.ExperimentsEnabled)
+			{
+				var stockOutfit = (character, m_Hat, m_Top, m_Bottom, m_Boots, m_Scarf, m_Balaclava, "");
+				if (appliedOutfit == stockOutfit) return false;
+				m_Player.transform.localScale = character == 1 ? new Vector3(.867f, 1f, .867f) : Vector3.one;
+				UpdateClothing(character);
+				appliedOutfit = stockOutfit;
+				return true;
+			}
+
+			int storyChoice = choice is NativeAppearance.MalePreset or NativeAppearance.FemalePreset ? choice : -1;
+			character = NativeAppearance.CharacterFor(choice, character);
+			var outfit = (character, m_Hat, m_Top, m_Bottom, m_Boots, m_Scarf, m_Balaclava, gloves);
+			if (appliedOutfit == outfit && appliedStoryChoice == storyChoice) return false;
+
+			if (storyChoice >= 0)
+			{
+				m_Player.transform.localScale = Vector3.one;
+				NativeAppearance.ApplyChoice(m_Player, storyChoice);
+				NativeAppearance.ApplyClothing(m_Player, new DataStr.PlayerClothingData
+				{
+					m_Hat = m_Hat, m_Top = m_Top, m_Bottom = m_Bottom, m_Boots = m_Boots,
+					m_Scarf = m_Scarf, m_Balaclava = m_Balaclava, m_Gloves = gloves
+				});
+			}
+			else
+			{
+				NativeAppearance.ApplyChoice(m_Player, -1);
+				m_Player.transform.localScale = character == 1 ? new Vector3(.91f, 1f, .93f) : Vector3.one;
+				UpdateClothing(character);
+				bool fittedCoat = (wardrobe ??= new AvatarWardrobe()).Set(m_Player, m_Hat, m_Top, m_Bottom, m_Boots, m_Scarf);
+				if (fittedCoat && m_Top == "GEAR_CottonShirt")
+				{
+					arms_middle.SetActive(false);
+					arms_tiny.SetActive(true);
+				}
+				(gloveMesh ??= new AvatarGloves.Fitting()).Set(m_Player.transform, m_Player.transform.GetChild(1).GetChild(0), gloves, character == 1);
+			}
+			appliedOutfit = outfit;
+			appliedStoryChoice = storyChoice;
+			return true;
+		}
+
+		private (int, string, string, string, string, string, string, string)? appliedOutfit;
+		private int appliedStoryChoice = int.MinValue;
 
 		private void UpdateClothing(int character)
 		{
@@ -2409,7 +2455,7 @@ public class Comps
 				num2 = 12;
 				text = "Long";
 			}
-			else if (m_Top.Contains("LightParka"))
+			else if (m_Top.Contains("Parka"))
 			{
 				num2 = 13;
 				text = "Tiny";
@@ -2543,12 +2589,12 @@ public class Comps
 					return;
 				}
 				text = MyMod.playersData[index].m_AnimState;
-				text2 = gameObject.GetComponent<MultiplayerPlayer>().m_HoldingItem;
+				text2 = gameObject.GetComponent<MultiplayerPlayer>().m_HoldingItem ?? "";
 			}
 			else
 			{
 				text = MyMod.MyAnimState;
-				text2 = MyMod.MyLightSourceName;
+				text2 = MyMod.MyLightSourceName ?? "";
 			}
 			int tagHash = m_Animer.GetCurrentAnimatorStateInfo(0).tagHash;
 			int num = Animator.StringToHash(text == BedRest.Animation ? "Idle" : text);
@@ -2561,7 +2607,7 @@ public class Comps
 			{
 				if (text == "Walk")
 				{
-					m_Animer.Play("Walk", 0);
+					EnterLocomotion("Walk");
 				}
 				if (text == "Idle")
 				{
@@ -2576,7 +2622,7 @@ public class Comps
 					else if (tagHash == Animator.StringToHash("Igniting"))
 					{
 						m_Animer.Play("StopIgniting", 0);
-						gameObject.GetComponent<MultiplayerPlayer>().UpdateHeldItem();
+						gameObject.GetComponent<MultiplayerPlayer>()?.UpdateHeldItem();
 					}
 					else if (tagHash == Animator.StringToHash("Ctrl"))
 					{
@@ -2600,7 +2646,7 @@ public class Comps
 				}
 				if (text == "Run")
 				{
-					m_Animer.Play("Run", 0);
+					EnterLocomotion("Run");
 				}
 				if (text == "Ctrl")
 				{
@@ -2616,7 +2662,7 @@ public class Comps
 					else if (tagHash == Animator.StringToHash("Igniting"))
 					{
 						m_Animer.Play("StopIgnitingSit", 0);
-						gameObject.GetComponent<MultiplayerPlayer>().UpdateHeldItem();
+						gameObject.GetComponent<MultiplayerPlayer>()?.UpdateHeldItem();
 					}
 					else if (text3 != "Male Crouch Pose" && text3 != "Idle_To_Sit")
 					{
@@ -2731,7 +2777,7 @@ public class Comps
 				}
 				if (text == "Igniting")
 				{
-					gameObject.GetComponent<MultiplayerPlayer>().UpdateHeldItem();
+					gameObject.GetComponent<MultiplayerPlayer>()?.UpdateHeldItem();
 					if (tagHash == Animator.StringToHash("Idle"))
 					{
 						m_Animer.Play("StartIgniting", 0);
@@ -2761,7 +2807,7 @@ public class Comps
 				m_AnimStateHands = "No";
 				break;
 			default:
-				if (text2 == "GEAR_Rifle")
+				if (MyMod.IsHeldRifle(text2))
 				{
 					if (text != "Ctrl")
 					{
@@ -2881,12 +2927,13 @@ public class Comps
 				m_AnimStateFingers = "No";
 				break;
 			default:
-				switch (text2)
+				if (MyMod.IsHeldRevolver(text2) || text2 == "GEAR_FlareGun")
 				{
-				case "GEAR_Revolver":
-				case "GEAR_FlareGun":
 					m_AnimStateFingers = "HoldRevolver";
 					break;
+				}
+				switch (text2)
+				{
 				case "GEAR_Stone":
 				case "GEAR_FlareA":
 				case "GEAR_BlueFlare":
@@ -2955,6 +3002,14 @@ public class Comps
 			{
 				MyMod.StepState = 0;
 			}
+		}
+
+		private void EnterLocomotion(string state)
+		{
+			int hash = Animator.StringToHash(state);
+			if (m_Animer.GetCurrentAnimatorStateInfo(0).shortNameHash == hash ||
+				(m_Animer.IsInTransition(0) && m_Animer.GetNextAnimatorStateInfo(0).shortNameHash == hash)) return;
+			m_Animer.CrossFadeInFixedTime(state, .12f, 0);
 		}
 
 		public void Pickup()
@@ -3042,7 +3097,7 @@ public class Comps
 					MyMod.playersData[myId].m_AnimState = "Eating";
 					gameObject.GetComponent<MultiplayerPlayer>().m_HoldingFood = "Food";
 				}
-				gameObject.GetComponent<MultiplayerPlayer>().UpdateHeldItem();
+				gameObject.GetComponent<MultiplayerPlayer>()?.UpdateHeldItem();
 			}
 		}
 
@@ -3056,7 +3111,7 @@ public class Comps
 				if (MyMod.playersData[myId] != null && MyMod.playersData[myId].m_Levelid == MyMod.levelid && !(MyMod.playersData[myId].m_LevelGuid != MyMod.level_guid) && gameObject.GetComponent<MultiplayerPlayer>().m_HoldingFood != "")
 				{
 					gameObject.GetComponent<MultiplayerPlayer>().m_HoldingFood = "";
-					gameObject.GetComponent<MultiplayerPlayer>().UpdateHeldItem();
+					gameObject.GetComponent<MultiplayerPlayer>()?.UpdateHeldItem();
 				}
 			}
 		}

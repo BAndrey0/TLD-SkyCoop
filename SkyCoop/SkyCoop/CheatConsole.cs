@@ -74,6 +74,11 @@ public static class CheatConsole
 	public static void RegisterCommands()
 	{
 		uConsole.RegisterCommand("give", (Action)Give);
+		uConsole.RegisterCommand("thirdperson", (Action)AvatarPreview.Toggle);
+		uConsole.RegisterCommand("thirdperson_turn", (Action)AvatarPreview.Turn);
+		uConsole.RegisterCommand("thirdperson_front", (Action)AvatarPreview.Front);
+		uConsole.RegisterCommand("thirdperson_back", (Action)AvatarPreview.Back);
+		uConsole.RegisterCommand("firstperson_body", (Action)AvatarPreview.ToggleBody);
 	}
 
 	public static void Tick()
@@ -226,6 +231,7 @@ public static class CheatConsole
 
 	public static void Execute(string command)
 	{
+		command = command.Trim();
 		History.Add(command);
 		historyIndex = History.Count;
 		Print("> " + command);
@@ -234,11 +240,28 @@ public static class CheatConsole
 			Print("give <GEAR_имя> [кол-во] — предмет в инвентарь (give без параметров — примеры)");
 			Print("gear_add <GEAR_имя> [кол-во], add_all_gear, god, fly, set_time <часы>, map_reveal,");
 			Print("afflictions_cure, spawn_wolf, spawn_bear, skip <часы> (мод)");
+			Print("thirdperson — переключить вид; thirdperson_front / thirdperson_back — спереди / сзади");
+			Print("firstperson_body — показать или скрыть ноги от первого лица");
 			return;
 		}
 		if (!Allowed)
 		{
 			Print("Читы выключены настройками сервера");
+			return;
+		}
+		Action cameraCommand = command.ToLowerInvariant() switch
+		{
+			"thirdperson" => AvatarPreview.Toggle,
+			"thirdperson_turn" => AvatarPreview.Turn,
+			"thirdperson_front" => AvatarPreview.Front,
+			"thirdperson_back" => AvatarPreview.Back,
+			"firstperson_body" => AvatarPreview.ToggleBody,
+			_ => null
+		};
+		if (cameraCommand != null)
+		{
+			cameraCommand();
+			Print(AvatarPreview.Status);
 			return;
 		}
 		try

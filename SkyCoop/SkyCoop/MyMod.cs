@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.18";
+		public const string Version = "0.16.25";
 
 		public const string DownloadLink = null;
 
@@ -350,6 +350,8 @@ public class MyMod : MelonMod
 	public static int GiveItemTo = -1;
 
 	public static string MyHat = "";
+
+	public static string MyGloves = "";
 
 	public static string MyTop = "";
 
@@ -690,7 +692,6 @@ public class MyMod : MelonMod
 
 	public static System.Collections.Generic.Dictionary<string, int> BannedSpawnRegions = new System.Collections.Generic.Dictionary<string, int>();
 
-	private static Vector3 previoustickpos;
 
 	private static Quaternion previoustickrot;
 
@@ -767,7 +768,6 @@ public class MyMod : MelonMod
 
 	public static int HideChatTimer = 0;
 
-	public static bool PendingRespawn = false;
 
 	public static System.Collections.Generic.List<GameObject> StatusTexes = new System.Collections.Generic.List<GameObject>();
 
@@ -6164,6 +6164,7 @@ public class MyMod : MelonMod
 	public static void BeginRespawn()
 	{
 		MelonLogger.Msg("BeginRespawn");
+		IsDead = false;
 		CoopFatigue.ResetForRespawn();
 		TimerWatchdog.ResetForRespawn();
 		GameManager.GetConditionComponent().m_CurrentHP = GameManager.GetConditionComponent().GetAdjustedMaxHP();
@@ -6180,7 +6181,9 @@ public class MyMod : MelonMod
 		{
 			MelonLogger.Msg("m_PlayerManager is null");
 		}
-		GameCompat.Panel<Panel_Log>().ExitInterface();
+		var journal = GameCompat.Panel<Panel_Log>();
+		if (journal != null && journal.IsEnabled()) journal.ExitInterface();
+		GameManager.GetPlayerManagerComponent().m_Ghost = false;
 		GameManager.GetInventoryComponent().DestroyAllGear();
 		GameManager.GetPlayerManagerComponent().m_StartGear.AddAllToInventory();
 		GameManager.GetSkillArchery().SetPoints(0, SkillsManager.PointAssignmentMode.AssignOnlyInSandbox);
@@ -6195,9 +6198,9 @@ public class MyMod : MelonMod
 		GetCustomSkill(CustomSkills.FirstAid).SetPoints(0, SkillsManager.PointAssignmentMode.AssignOnlyInSandbox);
 		ConsoleManager.CONSOLE_afflictions_cure();
 		GameManager.GetVpFPSCamera().enabled = true;
-		if (!GameManager.IsOutDoorsScene(GameManager.m_ActiveScene))
+		string lastOutdoorScene = GameManager.m_SceneTransitionData?.m_LastOutdoorScene;
+		if (!GameManager.IsOutDoorsScene(GameManager.m_ActiveScene) && !string.IsNullOrEmpty(lastOutdoorScene))
 		{
-			string lastOutdoorScene = GameManager.m_SceneTransitionData.m_LastOutdoorScene;
 			LoadScene loadScene = new GameObject().AddComponent<LoadScene>();
 			loadScene.m_SceneToLoad = lastOutdoorScene;
 			loadScene.Activate();
@@ -6208,8 +6211,6 @@ public class MyMod : MelonMod
 		{
 			GameManager.GetPlayerManagerComponent().TeleportPlayer(gameObject.transform.position, gameObject.transform.rotation);
 		}
-		SaveGameSystem.SetAsyncEnabled(enabled: false);
-		PendingRespawn = true;
 		GameManager.ForceSaveGame();
 	}
 
@@ -10275,7 +10276,7 @@ public class MyMod : MelonMod
 			component.Consumption();
 			break;
 		case "Shoot":
-			if (MyLightSourceName == "GEAR_Rifle")
+			if (IsHeldRifle(MyLightSourceName))
 			{
 				string preAnimStateHands = "RifleShoot";
 				if (MyAnimState == "Ctrl")
@@ -10306,7 +10307,7 @@ public class MyMod : MelonMod
 			MyPlayerDoll.SetActive(value: true);
 			return;
 		}
-		MyPlayerDoll.SetActive(IsFlyModeActive());
+		MyPlayerDoll.SetActive(IsFlyModeActive() || AvatarPreview.ShowsDoll);
 		if (IsFlyModeActive())
 		{
 			MyPlayerDoll.transform.position = GameManager.GetPlayerTransform().position;
@@ -10709,10 +10710,17 @@ public class MyMod : MelonMod
 		UpdateVisualSyncs();
 		if ((bool)playerTransform)
 		{
-			if (previoustickpos != playerTransform.position)
+			var velocity = GameManager.GetPlayerMovementComponent()?.GetVelocity() ?? Vector3.zero;
+			if (velocity.sqrMagnitude < .0001f)
+				velocity = GameManager.GetVpFPSPlayer()?.Controller?.m_Controller?.velocity ?? Vector3.zero;
+			float speedSquared = velocity.x * velocity.x + velocity.z * velocity.z;
+			bool wasMoving = MyAnimState is "Walk" or "Run" or "RopeMoving";
+			float minimumSpeed = wasMoving ? .07f : .13f;
+			bool moving = speedSquared >= minimumSpeed * minimumSpeed ||
+				(GameManager.GetPlayerManagerComponent().PlayerIsClimbing() && Mathf.Abs(velocity.y) > minimumSpeed);
+			if (moving && !flag && !IsDead)
 			{
 				MyEmote = null;
-				previoustickpos = GameManager.GetPlayerTransform().position;
 				SyncMovement(flag, playerTransform);
 			}
 			else
@@ -10850,6 +10858,7 @@ public class MyMod : MelonMod
 
 	public override void OnUpdate()
 	{
+		AvatarPreview.RestoreCamera();
 		SpawnSafety.Tick();
 		SetAppBackgroundMode();
 		FramePacing.Tick();
@@ -11084,6 +11093,7 @@ public class MyMod : MelonMod
 		SteamFriendsWindow.Tick();
 		RadialSpawnSync.Tick();
 		DeathRespawn.Tick();
+		Pathes.CheckSceneDropsTimeout();
 		BedRest.Tick();
 		SleepRendezvousFix.TickNotice();
 		CoopFatigue.Tick();
@@ -11239,7 +11249,7 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public override void OnLateUpdate() { BedRest.LateUpdate(); NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); WorkLighting.SyncSky(); }
+	public override void OnLateUpdate() { BedRest.LateUpdate(); AvatarPreview.LateUpdate(); NativeAppearance.LateUpdate(); SelfTest.LateUpdate(); WorkLighting.SyncSky(); }
 
 	public override void OnGUI()
 	{
@@ -11492,11 +11502,8 @@ public class MyMod : MelonMod
 		{
 			MelonLogger.Msg("Sending spawn data as responce");
 		}
-		DataStr.PlayerClothingData playerClothingData = new DataStr.PlayerClothingData();
-		playerClothingData.m_Hat = MyHat;
-		playerClothingData.m_Top = MyTop;
-		playerClothingData.m_Bottom = MyBottom;
-		playerClothingData.m_Boots = MyBoots;
+		UpdateMyClothing(publish: false);
+		DataStr.PlayerClothingData playerClothingData = LocalClothing();
 		int voicePersona = (int)PlayerManager.m_VoicePersona;
 		if (sendMyPosition)
 		{
@@ -11955,7 +11962,14 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void UpdateMyClothing()
+	internal static DataStr.PlayerClothingData LocalClothing() => new()
+	{
+		m_Hat = MyHat, m_Top = MyTop, m_Bottom = MyBottom, m_Boots = MyBoots,
+		m_Scarf = MyScarf, m_Balaclava = MyBalaclava, m_Gloves = MyGloves,
+		m_Appearance = NativeAppearance.Choice
+	};
+
+	public static void UpdateMyClothing(bool publish = true)
 	{
 		string text = "";
 		string text2 = "";
@@ -11998,7 +12012,8 @@ public class MyMod : MelonMod
 		string clothForSlot5 = GetClothForSlot(ClothingRegion.Chest, ClothingLayer.Top);
 		string clothForSlot6 = GetClothForSlot(ClothingRegion.Chest, ClothingLayer.Top2);
 		text2 = GetClothToDisplay(clothForSlot3, clothForSlot4, clothForSlot5, clothForSlot6);
-		GetClothForSlot(ClothingRegion.Hands, ClothingLayer.Base);
+		MyGloves = GetClothToDisplay(GetClothForSlot(ClothingRegion.Hands, ClothingLayer.Base),
+			GetClothForSlot(ClothingRegion.Hands, ClothingLayer.Mid), GetClothForSlot(ClothingRegion.Hands, ClothingLayer.Top));
 		string clothForSlot7 = GetClothForSlot(ClothingRegion.Legs, ClothingLayer.Base);
 		string clothForSlot8 = GetClothForSlot(ClothingRegion.Legs, ClothingLayer.Mid);
 		string clothForSlot9 = GetClothForSlot(ClothingRegion.Legs, ClothingLayer.Top);
@@ -12018,13 +12033,8 @@ public class MyMod : MelonMod
 		MyBoots = text4;
 		MyScarf = myScarf;
 		MyBalaclava = myBalaclava;
-		DataStr.PlayerClothingData playerClothingData = new DataStr.PlayerClothingData();
-		playerClothingData.m_Hat = MyHat;
-		playerClothingData.m_Top = MyTop;
-		playerClothingData.m_Bottom = MyBottom;
-		playerClothingData.m_Boots = MyBoots;
-		playerClothingData.m_Scarf = MyScarf;
-		playerClothingData.m_Balaclava = MyBalaclava;
+		if (!publish) return;
+		var playerClothingData = LocalClothing();
 		if (sendMyPosition)
 		{
 			using Packet packet = new Packet(46);

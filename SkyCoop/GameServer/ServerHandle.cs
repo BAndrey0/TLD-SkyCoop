@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.18")
+			if (text2 != "0.16.25")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.18");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.25");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -121,10 +121,7 @@ internal class ServerHandle
 				playerEquipmentData.m_HasRifle = MyMod.MyHasRifle;
 				playerEquipmentData.m_Arrows = MyMod.MyArrows;
 				ServerSend.EQUIPMENT(0, playerEquipmentData, toEveryOne: false, _fromClient);
-				DataStr.PlayerClothingData playerClothingData = new DataStr.PlayerClothingData();
-				playerClothingData.m_Hat = MyMod.MyHat;
-				playerClothingData.m_Top = MyMod.MyTop;
-				playerClothingData.m_Bottom = MyMod.MyBottom;
+				var playerClothingData = MyMod.LocalClothing();
 				ServerSend.CLOTH(0, playerClothingData, toEveryOne: false, _fromClient);
 			}
 			for (int i = 1; i <= Server.MaxPlayers; i++)
@@ -1004,8 +1001,9 @@ internal class ServerHandle
 		}
 		foreach (KeyValuePair<string, string> item in MPSaveManager.GetDoorsOnScene(text))
 		{
-			string doorGUID = item.Key.Split('_')[1];
-			ServerSend.ADDDOORLOCK(_fromClient, doorGUID, text);
+			int separator = item.Key.IndexOf('_');
+			if (separator >= 0 && separator + 1 < item.Key.Length)
+				ServerSend.ADDDOORLOCK(_fromClient, item.Key[(separator + 1)..], text);
 		}
 		Dictionary<string, DataStr.BrokenFurnitureSync> dictionary = MPSaveManager.LoadFurnsData(text);
 		if (dictionary != null)
@@ -1063,7 +1061,7 @@ internal class ServerHandle
 		if (MPSaveManager.LoadDropData(text) == null || dictionary5 == null)
 		{
 			Log("Requested scene has no drops " + text);
-			ServerSend.LOADINGSCENEDROPSDONE(_fromClient, _msg: true);
+			ServerSend.LOADINGSCENEDROPSDONE(_fromClient, text);
 		}
 		else
 		{
@@ -1074,10 +1072,10 @@ internal class ServerHandle
 				ServerSend.DROPITEM(0, item7.Value, toEveryOne: false, _fromClient);
 			}
 			Log("Sending done, " + num + " packets has been sent");
-			ServerSend.LOADINGSCENEDROPSDONE(_fromClient, _msg: true);
+			ServerSend.LOADINGSCENEDROPSDONE(_fromClient, text);
 		}
 		Shared.RemoveLoadingClient(_fromClient);
-		if (MyMod.playersData[_fromClient].m_FirstBoot)
+		if (MyMod.playersData[_fromClient]?.m_FirstBoot == true)
 		{
 			MyMod.playersData[_fromClient].m_FirstBoot = false;
 		}

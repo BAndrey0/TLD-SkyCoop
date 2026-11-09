@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
@@ -26,24 +27,392 @@ public static class SelfTest
 	private static float previewSince;
 	private static bool rendered;
 	private static Camera probeCamera;
+	private static string AvatarWorldOutput => Environment.GetEnvironmentVariable("SKYCOOP_AVATAR_WORLD_TEST");
+	private static int avatarStep;
+	private static float avatarNext;
+	private static int avatarMovement;
+	private static bool walked, ran;
+	private static float cameraOffsetVariation;
+	private static Vector3 previousCameraOffset;
+	private static bool sampledCameraOffset;
+	private static float probeTopSpeed;
+	private static Vector3 probeStartPosition;
+	private static GameObject wardrobeTestAvatar;
+	private static readonly string[][] WardrobeOutfits =
+	{
+		new[] { "GEAR_DownParka", "GEAR_InsulatedPants", "GEAR_InsulatedBoots", "GEAR_BasicWoolHat", "GEAR_SkiGloves" },
+		new[] { "GEAR_MilitaryParka", "GEAR_Jeans", "GEAR_BasicShoes", "GEAR_BasicWoolScarf", "GEAR_WorkGloves" },
+		new[] { "GEAR_CottonShirt", "GEAR_CargoPants", "GEAR_WorkBoots" }
+	};
 	private static string RestRender => Environment.GetEnvironmentVariable("SKYCOOP_REST_RENDER");
+
+	private static void WearProbeOutfit(string[] outfit)
+	{
+		var manager = GameManager.GetPlayerManagerComponent();
+		manager.UnequipImmediate(false);
+		foreach (var region in new[] { ClothingRegion.Head, ClothingRegion.Chest, ClothingRegion.Legs, ClothingRegion.Feet, ClothingRegion.Hands })
+			for (int layer = (int)ClothingLayer.Base; layer < (int)ClothingLayer.NumLayers; layer++)
+				manager.GetClothingInSlot(region, (ClothingLayer)layer)?.m_ClothingItem?.TakeOff();
+		foreach (string name in outfit)
+		{
+			var inventory = GameManager.GetInventoryComponent();
+			if (inventory.GetBestGearItemWithName(name) == null) CheatConsole.GiveItem(name, 1);
+			var item = inventory.GetBestGearItemWithName(name)?.m_ClothingItem;
+			if (item == null) throw new InvalidOperationException("Missing fixture garment " + name);
+			item.PutOn(item.m_MinLayer);
+		}
+		MyMod.UpdateMyClothing(publish: false);
+		using var packet = new GameServer.Packet();
+		packet.Write(MyMod.LocalClothing());
+		using var input = new GameServer.Packet(packet.ToArray());
+		var decoded = input.ReadClothingData();
+		MelonLogger.Msg($"[Avatar world] decoded character={decoded.m_Appearance} coat={decoded.m_Top} " +
+			$"pants={decoded.m_Bottom} boots={decoded.m_Boots} hat={decoded.m_Hat} scarf={decoded.m_Scarf} gloves={decoded.m_Gloves}");
+	}
+
+	private static void CheckAvatarInWorld()
+	{
+		string output = AvatarWorldOutput;
+		if (string.IsNullOrEmpty(output) || !GearCatalogIndex.InWorld || GameManager.m_PlayerObject == null) return;
+		if (avatarMovement > 0 && AvatarPreview.CameraApplied)
+		{
+			walked |= MyMod.MyAnimState == "Walk";
+			ran |= MyMod.MyAnimState == "Run";
+			var capsule = GameManager.GetVpFPSPlayer()?.Controller?.m_Controller;
+			if (capsule != null)
+			{
+				var heading = Vector3.ProjectOnPlane(GameManager.GetPlayerTransform().forward, Vector3.up).normalized;
+				GameManager.GetPlayerManagerComponent().m_InRunMode = avatarMovement == 2;
+				capsule.Move(heading * (avatarMovement == 2 ? 3.1f : 1.35f) * Time.deltaTime);
+				probeTopSpeed = Mathf.Max(probeTopSpeed, capsule.velocity.magnitude);
+			}
+			var offset = AvatarPreview.LastRelativeEye;
+			if (sampledCameraOffset) cameraOffsetVariation = Mathf.Max(cameraOffsetVariation, Vector3.Distance(previousCameraOffset, offset));
+			previousCameraOffset = offset;
+			sampledCameraOffset = true;
+		}
+		if (Time.realtimeSinceStartup < avatarNext) return;
+		if (avatarStep < 12)
+		{
+			int outfit = avatarStep / 2 % 3;
+			bool female = avatarStep >= 6;
+			if (avatarStep % 2 == 0)
+			{
+				NativeAppearance.Select(female ? NativeAppearance.FemalePreset : NativeAppearance.MalePreset, persist: false);
+				WearProbeOutfit(WardrobeOutfits[outfit]);
+				AvatarPreview.Front();
+				avatarNext = Time.realtimeSinceStartup + 1.4f;
+			}
+			else
+			{
+				var doll = AvatarPreview.Model;
+				wardrobeTestAvatar ??= doll;
+				float facing = Vector3.Dot(AvatarPreview.LastEye - doll.transform.position, doll.transform.forward);
+				MelonLogger.Msg($"[Avatar world] front={facing > .4f && AvatarPreview.CameraApplied} face={NativeAppearance.HasCostume(doll)} sameAvatar={doll == wardrobeTestAvatar}");
+				CaptureAvatarCamera(output + (female ? "-astrid-" : "-will-") + (outfit + 1) + ".png");
+			}
+			avatarStep++;
+			return;
+		}
+		if (avatarStep == 12)
+		{
+			AvatarPreview.Back();
+			probeStartPosition = GameManager.GetPlayerTransform().position;
+			avatarMovement = 1;
+			avatarNext = Time.realtimeSinceStartup + 1.4f;
+			avatarStep++;
+			return;
+		}
+		if (avatarStep == 13)
+		{
+			CaptureAvatarCamera(output + "-walk.png");
+			avatarMovement = 2;
+			avatarNext = Time.realtimeSinceStartup + 1.8f;
+			avatarStep++;
+			return;
+		}
+		if (avatarStep == 14)
+		{
+			CaptureAvatarCamera(output + "-run.png");
+			avatarMovement = 0;
+			MelonLogger.Msg("[Avatar world] Walk=" + walked + " Run=" + ran +
+				" distance=" + Vector3.Distance(probeStartPosition, GameManager.GetPlayerTransform().position).ToString("F2") +
+				" m speed=" + probeTopSpeed.ToString("F2") +
+				" m/s maximum camera offset change=" + cameraOffsetVariation.ToString("F4") + " m");
+			AvatarPreview.ToggleBody();
+			avatarNext = Time.realtimeSinceStartup + 1f;
+			avatarStep++;
+			return;
+		}
+		if (avatarStep == 15)
+		{
+			var doll = AvatarPreview.Model;
+			int legs = 0;
+			foreach (var renderer in doll.transform.GetChild(0).GetChild(2).GetComponentsInChildren<Renderer>())
+				if (!renderer.forceRenderingOff && renderer.enabled) legs++;
+			MelonLogger.Msg("[Avatar world] first-person trouser renderers=" + legs);
+			CaptureAvatarCamera(output + "-first-person.png", lookDown: true);
+			avatarStep++;
+			return;
+		}
+		Application.Quit();
+	}
+
+
+	private static void CaptureAvatarCamera(string path, bool lookDown = false)
+	{
+		var controller = GameManager.GetVpFPSCamera();
+		AvatarPreview.ApplyCamera(controller);
+		var view = controller.GetCameraComponent();
+		var active = RenderTexture.active;
+		var original = view.targetTexture;
+		var target = RenderTexture.GetTemporary(1600, 1000, 24, RenderTextureFormat.ARGB32);
+		var image = new Texture2D(1600, 1000, TextureFormat.RGB24, false);
+		try
+		{
+			view.targetTexture = target;
+			if (lookDown)
+			{
+				var eye = view.transform.position;
+				var rotation = Quaternion.LookRotation((Vector3.down + AvatarPreview.Model.transform.forward * .36f).normalized, Vector3.up);
+				view.worldToCameraMatrix = Matrix4x4.Scale(new Vector3(1f, 1f, -1f)) * Matrix4x4.TRS(eye, rotation, Vector3.one).inverse;
+			}
+			view.Render();
+			RenderTexture.active = target;
+			image.ReadPixels(new Rect(0, 0, 1600, 1000), 0, 0);
+			image.Apply();
+			System.IO.File.WriteAllBytes(path, image.EncodeToPNG());
+		}
+		finally
+		{
+			view.targetTexture = original;
+			RenderTexture.active = active;
+			RenderTexture.ReleaseTemporary(target);
+			UnityEngine.Object.Destroy(image);
+			AvatarPreview.RestoreCamera();
+			if (lookDown) view.ResetWorldToCameraMatrix();
+		}
+	}
+
 	private static void BuildModelFixture()
 	{
+		if (Environment.GetEnvironmentVariable("TLD_WARDROBE_PROBE") == "1")
+		{
+			nativePreviewCreated = true;
+			WardrobeProbe.Run(Environment.GetEnvironmentVariable("SKYCOOP_MODEL_RENDER"));
+			Application.Quit();
+			return;
+		}
 		bool alignment=Environment.GetEnvironmentVariable("SKYCOOP_MODEL_ALIGNMENT_TEST")=="1";
-		var prefab=MyMod.BundleAsset<GameObject>("multiplayerPlayer");if(prefab==null||NativeCharacterLibrary.Load(0)==null)return;
+		var prefab=MyMod.BundleAsset<GameObject>("multiplayerPlayer");if(prefab==null)return;
 		nativePreviewCreated=true;
 		probeCamera=new GameObject("QA_ModelCamera").AddComponent<Camera>();probeCamera.enabled=false;probeCamera.transform.position=new Vector3(0,1.1f,0);probeCamera.fieldOfView=50;probeCamera.aspect=1.6f;probeCamera.nearClipPlane=.05f;probeCamera.farClipPlane=30;probeCamera.cullingMask=1<<30;probeCamera.clearFlags=CameraClearFlags.SolidColor;probeCamera.backgroundColor=new Color(.18f,.2f,.23f);
 		var light=new GameObject("QA_ModelLight").AddComponent<Light>();light.type=LightType.Directional;light.intensity=1.5f;light.cullingMask=1<<30;light.transform.rotation=Quaternion.Euler(35,-25,0);
 		RenderSettings.ambientLight=new Color(.45f,.45f,.45f);
-		for(int choice=0;choice<(alignment?5:4);choice++)
+		if (Environment.GetEnvironmentVariable("SKYCOOP_MODEL_SWITCHING_TEST") == "1")
 		{
-			var avatar=UnityEngine.Object.Instantiate(prefab,new Vector3((choice-(alignment?2:1.5f))*1.3f,0,alignment?5:4),Quaternion.Euler(0,180,0));
-			foreach(var collider in avatar.GetComponentsInChildren<Collider>(true))collider.enabled=false;
-			NativeAppearance.ApplyChoice(avatar,choice<4?choice:-1);
-			foreach(var t in avatar.GetComponentsInChildren<Transform>(true))t.gameObject.layer=30;
-			foreach(var animator in avatar.GetComponentsInChildren<Animator>(true))if(animator.enabled&&animator.runtimeAnimatorController!=null){animator.applyRootMotion=false;animator.Play(alignment?"Idle":new[]{"Idle","Walk","Run","Ctrl"}[choice],0,0);animator.Update(.3f);break;}
+			MelonCoroutines.Start(CheckModelSwitching(prefab, probeCamera));
+			return;
 		}
-		previewTarget=new Vector3(0,1.05f,alignment?5:4);previewTargetSet=true;previewSince=Time.realtimeSinceStartup;
+		var avatars = new List<GameObject>();
+		for(int choice=0;choice<6;choice++)
+		{
+			var avatar=UnityEngine.Object.Instantiate(prefab,new Vector3((choice-2.5f)*1.22f,0,5.8f),Quaternion.Euler(0,choice >= 4 ? 140f : 180f,0));
+			avatars.Add(avatar);
+			foreach(var collider in avatar.GetComponentsInChildren<Collider>(true))collider.enabled=false;
+			var wardrobe=avatar.AddComponent<Comps.MultiplayerPlayerClothingManager>();
+			wardrobe.enabled=false;
+			int appearance = choice < 4 ? -1 : (choice % 2 == 0 ? NativeAppearance.MalePreset : NativeAppearance.FemalePreset);
+				wardrobe.ApplyLocalAppearance(avatar, appearance, choice % 2,
+				new DataStr.PlayerClothingData
+				{
+					m_Top = choice == 4 ? "GEAR_DownParka" : choice == 5 ? "GEAR_MilitaryParka" : new[] { "GEAR_DownParka", "GEAR_MilitaryParka", "" }[choice / 2],
+					m_Hat = choice < 2 ? "GEAR_BasicWoolHat" : "",
+					m_Boots = choice < 2 ? "GEAR_InsulatedBoots" : "GEAR_BasicShoes",
+					m_Bottom = choice < 2 ? "GEAR_InsulatedPants" : "GEAR_Jeans",
+					m_Scarf = choice >= 2 && choice < 4 ? "GEAR_BasicWoolScarf" : "",
+					m_Gloves = choice < 4 ? "GEAR_SkiGloves" : ""
+				});
+			foreach(var t in avatar.GetComponentsInChildren<Transform>(true))t.gameObject.layer=30;
+			var animator = avatar.GetComponent<Animator>();
+			animator.applyRootMotion = false;
+			string baseAnim = alignment ? "Idle" : choice >= 4 ? "Ctrl" : new[]{"Idle","Walk","Run","Ctrl"}[choice];
+				animator.Play(baseAnim, 0, 0);
+			if (choice >= 4)
+			{
+				bool rifle = choice == 4;
+				var (right, left) = Comps.MultiplayerPlayer.HandSockets(avatar);
+				Comps.MultiplayerPlayer.ShowHeldItem(right, left, rifle ? "GEAR_Rifle" : "GEAR_Revolver", "", false, "Idle");
+				animator.Play(rifle ? "RifleAim" : "HoldGun", 1, 0);
+				if (!rifle) animator.Play("HoldRevolver", 2, 0);
+			}
+			animator.Update(.3f);
+		}
+		for (int i = 0; i < avatars.Count; i++) DumpActiveRenderers(avatars[i], "choice=" + i);
+		previewTarget=new Vector3(0,1.05f,5.8f);previewTargetSet=true;previewSince=Time.realtimeSinceStartup;
+	}
+
+	private static System.Collections.IEnumerator CheckModelSwitching(GameObject prefab, Camera camera)
+	{
+		string output = Environment.GetEnvironmentVariable("SKYCOOP_MODEL_RENDER");
+		string prefix = System.IO.Path.ChangeExtension(output, null);
+		var report = new System.Text.StringBuilder();
+		int failures = 0;
+		void Check(bool pass, string message)
+		{
+			report.AppendLine((pass ? "PASS " : "FAIL ") + message);
+			if (!pass) failures++;
+		}
+		for (int character = 0; character < 2; character++)
+		{
+			string sex = character == 0 ? "classic-male" : "classic-female";
+			int story = character == 0 ? NativeAppearance.MalePreset : NativeAppearance.FemalePreset;
+			string coat = character == 0 ? "GEAR_DownParka" : "GEAR_MilitaryParka";
+			var outfit = new DataStr.PlayerClothingData { m_Top = coat, m_Bottom = "GEAR_Jeans", m_Boots = "GEAR_InsulatedBoots" };
+			var avatar = UnityEngine.Object.Instantiate(prefab, Vector3.zero, Quaternion.identity);
+			var wardrobe = avatar.AddComponent<Comps.MultiplayerPlayerClothingManager>();
+			wardrobe.enabled = false;
+			foreach (var collider in avatar.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
+			var animator = avatar.GetComponent<Animator>();
+			animator.applyRootMotion = false;
+			animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+			var clothing = avatar.transform.GetChild(0);
+			var preDisabled = clothing.GetChild(1).GetChild(0).GetComponentInChildren<SkinnedMeshRenderer>(true);
+			if (preDisabled != null) preDisabled.enabled = false;
+
+			var classicIds = new HashSet<int>();
+			Transform previousStory = null;
+			for (int stage = 0; stage < 5; stage++)
+			{
+				bool storyMode = stage % 2 == 1;
+				bool changed = wardrobe.ApplyLocalAppearance(avatar, storyMode ? story : -1, character, outfit);
+				Transform activeStory = null;
+				int storyRoots = 0;
+				foreach (var t in avatar.GetComponentsInChildren<Transform>(true))
+				{
+					t.gameObject.layer = 30;
+					if (t.name != "TLDCoop_NativeCostume" || !t.gameObject.activeInHierarchy) continue;
+					activeStory = t;
+					storyRoots++;
+				}
+				Check(changed, $"{sex} stage {stage}: same outfit, switch applied");
+				Check(NativeAppearance.HasCostume(avatar) == storyMode && storyRoots == (storyMode ? 1 : 0),
+					$"{sex} stage {stage}: active WINTERMUTE roots={storyRoots}");
+				if (!storyMode && stage > 0)
+					Check(previousStory == null || !previousStory.gameObject.activeInHierarchy, $"{sex} stage {stage}: previous story root inactive");
+
+				report.AppendLine($"[Active renderers] {sex} stage {stage} {(storyMode ? "WINTERMUTE" : "classic")}");
+				var activeIds = new HashSet<int>();
+				var head = avatar.transform.GetChild(1).GetChild(1).GetChild(character);
+				int topCount = 0, detailedTops = 0, bottomCount = 0, detailedBottoms = 0, bootCount = 0, detailedBoots = 0, heads = 0;
+				foreach (var renderer in avatar.GetComponentsInChildren<Renderer>(true))
+				{
+					if (!renderer.enabled || renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy) continue;
+					activeIds.Add(renderer.GetInstanceID());
+					var mesh = renderer.TryCast<SkinnedMeshRenderer>()?.sharedMesh ?? renderer.GetComponent<MeshFilter>()?.sharedMesh;
+					string path = renderer.name;
+					for (var parent = renderer.transform.parent; parent != null && parent != avatar.transform; parent = parent.parent)
+						path = parent.name + "/" + path;
+					report.AppendLine($"  {path} | {mesh?.name ?? "(no mesh)"} | {mesh?.vertexCount ?? 0} vertices");
+					if (renderer.transform.IsChildOf(clothing.GetChild(1)))
+					{
+						topCount++;
+						if (mesh?.name == coat + " · co-op skin") detailedTops++;
+					}
+					if (renderer.transform.IsChildOf(clothing.GetChild(2)))
+					{
+						bottomCount++;
+						if (mesh?.name == "GEAR_Jeans · co-op skin") detailedBottoms++;
+					}
+					if (renderer.transform.IsChildOf(clothing.GetChild(3)))
+					{
+						bootCount++;
+						if (mesh?.name == "GEAR_InsulatedBoots · co-op skin") detailedBoots++;
+					}
+					if (renderer.transform.IsChildOf(head)) heads++;
+				}
+				if (storyMode)
+				{
+					Check(!activeIds.Overlaps(classicIds) && activeIds.Count > 0, $"{sex} stage {stage}: classic renderers hidden");
+					previousStory = activeStory;
+				}
+				else
+				{
+					Check(topCount == 1 && detailedTops == 1 && bottomCount == 1 && detailedBottoms == 1 &&
+						bootCount == 1 && detailedBoots == 1, $"{sex} stage {stage}: one detailed renderer per tested clothing slot");
+					Check(heads > 0, $"{sex} stage {stage}: classic head={head.name}, visible renderers={heads}");
+					if (stage == 0) classicIds = activeIds;
+					else Check(classicIds.SetEquals(activeIds) && preDisabled != null && !preDisabled.enabled,
+						$"{sex} stage {stage}: exact active set restored; disabled renderer stayed disabled");
+				}
+			}
+			animator.Play("Idle", 0, .22f);
+			animator.Update(0f);
+			NativeAppearance.LateUpdate();
+			CaptureModelSwitch(camera, prefix + "-" + sex + "-front.jpg", new Vector3(0, 1.05f, 2.85f), .97f);
+			CaptureModelSwitch(camera, prefix + "-" + sex + "-side.jpg", new Vector3(2.85f, 1.05f, 0), .97f);
+			Transform headBone = null;
+			var coatSkin = clothing.GetChild(1).GetComponentInChildren<SkinnedMeshRenderer>(false);
+			foreach (var bone in coatSkin.bones)
+				if (bone.name == "Head") { headBone = bone; break; }
+			float standingHeight = headBone?.position.y ?? 0f;
+			animator.Play("Ctrl", 0, 0f);
+			float headDrop = 0f;
+			float deadline = Time.realtimeSinceStartup + 2f;
+			while (Time.realtimeSinceStartup < deadline && headDrop < .28f)
+			{
+				yield return null;
+				headDrop = standingHeight - (headBone?.position.y ?? standingHeight);
+			}
+			Check(headDrop >= .28f, $"{sex}: crouch head lowered by {headDrop:F2} m");
+			CaptureModelSwitch(camera, prefix + "-" + sex + "-crouch.jpg", new Vector3(1.25f, .90f, 2.6f), .74f);
+			avatar.SetActive(false);
+			UnityEngine.Object.Destroy(avatar);
+		}
+		report.AppendLine($"Switching result: {(failures == 0 ? "PASS" : "FAIL")} ({failures} failures)");
+		System.IO.File.WriteAllText(output, report.ToString());
+		Application.Quit();
+	}
+
+	private static void CaptureModelSwitch(Camera camera, string output, Vector3 eye, float center)
+	{
+		camera.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(Vector3.up * center - eye));
+		camera.fieldOfView = 46f;
+		var previous = RenderTexture.active;
+		var target = RenderTexture.GetTemporary(960, 1200, 24, RenderTextureFormat.ARGB32);
+		var image = new Texture2D(960, 1200, TextureFormat.RGB24, false);
+		try
+		{
+			camera.aspect = .8f;
+			camera.targetTexture = target;
+			camera.Render();
+			RenderTexture.active = target;
+			image.ReadPixels(new Rect(0, 0, 960, 1200), 0, 0, false);
+			image.Apply();
+			System.IO.File.WriteAllBytes(output, image.EncodeToJPG(92));
+		}
+		finally
+		{
+			camera.targetTexture = null;
+			RenderTexture.active = previous;
+			RenderTexture.ReleaseTemporary(target);
+			UnityEngine.Object.Destroy(image);
+		}
+	}
+
+	private static void DumpActiveRenderers(GameObject avatar, string label)
+	{
+		var sb = new System.Text.StringBuilder();
+		sb.AppendLine("[Active meshes] " + label);
+		foreach (var r in avatar.GetComponentsInChildren<Renderer>(true))
+		{
+			if (!r.enabled || !r.gameObject.activeInHierarchy) continue;
+			if (r is SkinnedMeshRenderer smr)
+				sb.AppendLine($"  SMR {smr.name} mesh={(smr.sharedMesh != null ? smr.sharedMesh.name : "null")} verts={(smr.sharedMesh != null ? smr.sharedMesh.vertexCount : 0)}");
+			else if (r is MeshRenderer mr && mr.TryGetComponent<MeshFilter>(out var mf))
+				sb.AppendLine($"  MR {mr.name} mesh={(mf.sharedMesh != null ? mf.sharedMesh.name : "null")}");
+		}
+		UnityEngine.Debug.Log(sb.ToString());
 	}
 	public static void LateUpdate()
 	{
@@ -51,7 +420,7 @@ public static class SelfTest
 		{
 			var camera=probeCamera;
 			camera.transform.rotation=Quaternion.LookRotation(previewTarget-camera.transform.position,Vector3.up);
-			if(!rendered&&Time.realtimeSinceStartup-previewSince>3)
+			if(!rendered&&Time.realtimeSinceStartup-previewSince>7)
 			{
 				rendered=true;
 				var saved=camera.targetTexture;var active=RenderTexture.active;
@@ -202,6 +571,12 @@ public static class SelfTest
 	public static void Tick()
 	{
 		if (Environment.GetEnvironmentVariable("SKYCOOP_INTERACTION_PROBE") == "1") return;
+		if ((ModelOnly || !string.IsNullOrEmpty(AvatarWorldOutput)) && !started &&
+			GameCompat.Panel<Panel_Boot>() is { } boot)
+		{
+			boot.m_HoldLoadingUntilInputGiven = false;
+			if (boot.m_SceneLoaded && boot.isActiveAndEnabled) boot._ReadyToActivateScene_k__BackingField = true;
+		}
 		if(Environment.GetEnvironmentVariable("SKYCOOP_CATALOG_PROBE")=="1")
 		{
 			Application.runInBackground=true;
@@ -210,7 +585,7 @@ public static class SelfTest
 			return;
 		}
 		if(ModelOnly&&Time.realtimeSinceStartup>300){Application.Quit();return;}
-		if(ModelOnly){Application.runInBackground=true;if(!nativePreviewCreated&&Time.realtimeSinceStartup>35)BuildModelFixture();return;}
+		if(ModelOnly){Application.runInBackground=true;if(!nativePreviewCreated&&Shared.IsMainMenuScene(MyMod.level_name)&&GameCompat.Panel<Panel_MainMenu>()!=null&&Time.realtimeSinceStartup>16)BuildModelFixture();return;}
 		if (Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_MOTION_TEST") == "1") Application.runInBackground = true;
 		if(!nativeAssetsProbed && Environment.GetEnvironmentVariable("SKYCOOP_NATIVE_AVATAR_TEST")=="1" && Time.realtimeSinceStartup>60 && MyMod.BundleAsset<GameObject>("multiplayerPlayer")!=null)
 		{
@@ -292,6 +667,12 @@ public static class SelfTest
 				dumpedAvatar = true;
 			}
 		}
+		CheckAvatarInWorld();
+		if (!string.IsNullOrEmpty(AvatarWorldOutput) && !started)
+		{
+			MoviePlayer.m_HasIntroPlayedForMainMenu = true;
+			if (GameCompat.Panel<Panel_MainMenu>() is { } menu) menu.m_PlayedIntroMovie = true;
+		}
 		if (started)
 		{
 			return;
@@ -304,7 +685,7 @@ public static class SelfTest
 				MelonLogger.Msg("[SelfTest] Will host slot " + slot);
 			}
 		}
-		if (slot.Length == 0 || (!ModelOnly&&!Shared.IsMainMenuScene(MyMod.level_name)))
+		if (slot.Length == 0 || (!ModelOnly && !Shared.IsMainMenuScene(MyMod.level_name)))
 		{
 			return;
 		}
@@ -327,8 +708,8 @@ public static class SelfTest
 			SaveSlotInfo info = slots[i];
 			if (info.m_SaveSlotName == slot || info.m_UserDefinedName == slot)
 			{
-				MelonLogger.Msg("[SelfTest] Loading " + info.m_SaveSlotName + " and hosting after load");
-			MyMod.AutoHostWhenLoaded = !ModelOnly;
+				MyMod.AutoHostWhenLoaded = !ModelOnly && string.IsNullOrEmpty(AvatarWorldOutput);
+				MelonLogger.Msg("[SelfTest] Loading " + info.m_SaveSlotName + (MyMod.AutoHostWhenLoaded ? " and hosting after load" : " for an offline check"));
 				SaveGameSlots.SetBaseNameForSave(info.m_SaveSlotName, info.m_SaveSlotName);
 				SaveGameSystem.SetCurrentSaveInfo(info.m_Episode, info.m_GameMode, info.m_GameId, info.m_SaveSlotName);
 				GameManager.LoadSaveGameSlot(info.m_SaveSlotName, info.m_SaveChangelistVersion);

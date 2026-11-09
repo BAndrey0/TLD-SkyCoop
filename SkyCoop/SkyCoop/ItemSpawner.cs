@@ -123,6 +123,7 @@ public static class ItemSpawner
 	}
 
 	private const string CommandsTab = "#commands";
+	private const string ModelTab = "#model";
 
 	private static void DrawCommands(float x0, float top, float width)
 	{
@@ -153,6 +154,8 @@ public static class ItemSpawner
 		{
 			Run("god");
 		});
+		Button("Вид от третьего лица", delegate { AvatarPreview.Toggle(); status = AvatarPreview.Status; });
+		Button("Повернуть камеру", delegate { AvatarPreview.Turn(); status = AvatarPreview.Status; });
 		Button("Полёт (вкл/выкл)", delegate
 		{
 			Run("fly");
@@ -195,7 +198,8 @@ public static class ItemSpawner
 			Close();
 			CheatConsole.OpenFromWindow();
 		});
-		Button("Выбрать персонажа (F4)", delegate { Close(); NativeAppearance.Open(); });
+		if (NativeAppearance.ExperimentsEnabled)
+			Button("Выбрать персонажа (F4)", delegate { Close(); NativeAppearance.Open(); });
 	}
 
 	private static void Run(string command)
@@ -256,6 +260,7 @@ public static class ItemSpawner
 		return key switch
 		{
 			CommandsTab => "Команды",
+			ModelTab => "Модель",
             "Materials" => "Материалы", "Camping" => "Лагерь", "Fishing" => "Рыбалка", "Decorations" => "Декор", "Quest" => "Квестовые", "Other" => "Прочее",
 			"" => "Все",
 			"FoodItem" => "Еда",
@@ -407,7 +412,7 @@ public static class ItemSpawner
 		float width = Columns * Cell + 20f;
 		float x0 = Mathf.Max(10f, (Screen.width - width) / 2f);
 		float y0 = 40f;
-		float tabsHeight = 26f * (1 + (categories.Count + 1) / 10);
+		float tabsHeight = 26f * ((GearCatalogPolicy.Sections.Length + 3 + 9) / 10);
 		float height = 70f + tabsHeight + Rows * Cell + 40f;
 		GUI.Box(new Rect(x0, y0, width, height), "Предметы");
 
@@ -423,7 +428,9 @@ public static class ItemSpawner
 		}
 
 		List<string> keys = new List<string> { "" };
-		keys.AddRange(GearCatalogPolicy.Sections);keys.Add(CommandsTab);
+		keys.AddRange(GearCatalogPolicy.Sections);
+		keys.Add(CommandsTab);
+		keys.Add(ModelTab);
 		float tabWidth = (width - 20f) / 10f;
 		for (int i = 0; i < keys.Count; i++)
 		{
@@ -444,6 +451,25 @@ public static class ItemSpawner
 		{
 			DrawCommands(x0, gridTop, width);
 			GUI.Label(new Rect(x0 + 10f, gridTop + Rows * Cell + 7f, width - 20f, 24f), status);
+			return;
+		}
+		if (category == ModelTab)
+		{
+			float x = x0 + 12f;
+			if (GUI.Button(new Rect(x, gridTop, 230f, 36f), AvatarPreview.Active ? "Вернуться в первое лицо" : "Включить третье лицо"))
+				AvatarPreview.Toggle();
+			if (GUI.Button(new Rect(x + 244f, gridTop, 110f, 36f), "Спереди")) AvatarPreview.Front();
+			if (GUI.Button(new Rect(x + 366f, gridTop, 110f, 36f), "Сзади")) AvatarPreview.Back();
+			if (NativeAppearance.ExperimentsEnabled && GUI.Button(new Rect(x + 488f, gridTop, 180f, 36f), "Выбрать образ (F4)"))
+			{
+				Close();
+				NativeAppearance.Open();
+			}
+			if (GUI.Button(new Rect(x, gridTop + 45f, 230f, 36f),
+				AvatarPreview.FirstPersonBody ? "Скрыть тело от первого лица" : "Показать тело от первого лица"))
+				AvatarPreview.ToggleBody();
+			GUI.Label(new Rect(x, gridTop + 90f, width - 24f, 26f), AvatarPreview.Status);
+			GUI.Label(new Rect(x, gridTop + 121f, width - 24f, 48f), "Закройте F2, чтобы проверить ходьбу, бег, приседание, хват оружия и взаимодействия.");
 			return;
 		}
 		int first = page * perPage;

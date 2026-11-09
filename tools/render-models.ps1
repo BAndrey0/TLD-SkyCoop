@@ -1,12 +1,12 @@
 # One automated render fixture; no world load, server, UI input, or player saves.
-param([string]$GameDir=(Join-Path $PSScriptRoot '..\..\player\game'),[switch]$Alignment,[switch]$Catalog)
+param([string]$GameDir=(Join-Path $PSScriptRoot '..\..\player\game'),[switch]$Alignment,[switch]$Catalog,[switch]$Switching)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $GameDir=[IO.Path]::GetFullPath($GameDir)
 if(Get-Process tld -ErrorAction SilentlyContinue){throw 'Close the game before the model probe.'}
-if(!$Catalog -and !(Test-Path -LiteralPath (Join-Path $GameDir 'UserData\CharacterSkins\skins.index'))){throw 'Prepare costumes once through F4 before running the quick render.'}
 $qa=Join-Path $root '.model-qa';New-Item -ItemType Directory -Path $qa -Force|Out-Null
 $installed=Join-Path $GameDir 'Mods\TLD-Coop.dll'
+if(!(Test-Path -LiteralPath $installed)){$installed=Join-Path $GameDir 'Mods\SkyCoop.dll'}
 $built=Join-Path $root 'SkyCoop\bin\Release\netcoreapp6.0\TLD-Coop.dll'
 if(!(Test-Path -LiteralPath $built)){throw 'Build SkyCoop first with check-fast.ps1.'}
 $backup=Join-Path $qa 'original.dll';Copy-Item -LiteralPath $installed -Destination $backup -Force
@@ -14,6 +14,7 @@ $digest=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash
 $render=Join-Path $qa ('models-'+[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')+'.jpg')
 $vars=@{DOTNET_ROOT=(Join-Path (Split-Path $GameDir -Parent) 'runtime');DOTNET_MULTILEVEL_LOOKUP='0';SteamAppId='305620';SteamGameId='305620';SKYCOOP_TEST_SAVE_ROOT=(Join-Path $qa 'saves');SKYCOOP_MODEL_ONLY_TEST='1';SKYCOOP_MODEL_RENDER=$render}
 if($Catalog){$render=[IO.Path]::ChangeExtension($render,'txt');$vars['SKYCOOP_MODEL_RENDER']=$render;$vars['SKYCOOP_CATALOG_PROBE']='1'}
+if($Switching){$render=[IO.Path]::ChangeExtension($render,'txt');$vars['SKYCOOP_MODEL_RENDER']=$render;$vars['SKYCOOP_MODEL_SWITCHING_TEST']='1'}
 $saved=@{};$child=$null
 if($Alignment){$vars['SKYCOOP_MODEL_ALIGNMENT_TEST']='1'}
 try{

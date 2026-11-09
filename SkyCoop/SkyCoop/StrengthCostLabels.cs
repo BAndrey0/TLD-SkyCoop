@@ -60,18 +60,23 @@ internal static class StrengthCostLabels
         }
     }
 
-    [HarmonyPatch(typeof(Panel_Crafting), nameof(Panel_Crafting.RefreshSelectedBlueprint))]
+    [HarmonyPatch(typeof(CraftingRequirementTime), nameof(CraftingRequirementTime.Enable))]
     private static class Crafting
     {
-        private static void Postfix(Panel_Crafting __instance)
+        private static void Postfix(CraftingRequirementTime __instance, int __0)
         {
-            if (!CoopFatigue.ShowsStrengthCost || __instance.SelectedBPI == null || __instance.m_SelectedDescription == null) return;
-            int minutes = __instance.GetFinalCraftingTimeWithAllModifiers();
-            var label = __instance.m_SelectedDescription;
-            string description = label.text ?? "";
-            if (description.StartsWith("Сила −", System.StringComparison.Ordinal))
-                description = description.Substring(description.IndexOf('\n') + 1);
-            label.text = CoopFatigue.CostLabel(minutes / 60f) + "\n" + description;
+            if (CoopFatigue.ShowsStrengthCost && __instance.m_Display != null)
+                __instance.m_Display.text = CoopFatigue.CraftingCostLabel(__0);
+        }
+    }
+
+    [HarmonyPatch(typeof(CraftingRequirementTimeSelect), nameof(CraftingRequirementTimeSelect.Refresh))]
+    private static class CraftingSlice
+    {
+        private static void Postfix(CraftingRequirementTimeSelect __instance)
+        {
+            if (CoopFatigue.ShowsStrengthCost && __instance.m_TimeText != null)
+                __instance.m_TimeText.text = CoopFatigue.CraftingCostLabel(__instance.GetCraftingTime());
         }
     }
 

@@ -285,6 +285,9 @@ public class DataStr
 
 	public class PlayerClothingData
 	{
+		public int m_Appearance = -1;
+		public string m_Gloves = "";
+
 		public string m_Hat = "";
 
 		public string m_Top = "";

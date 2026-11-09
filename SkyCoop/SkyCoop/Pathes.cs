@@ -3612,10 +3612,12 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
 			if (hit.transform == null) return;
-			if (ScenePlacementSync.IsCookwareReplica(hit.transform.gameObject))
+			var cookware = ScenePlacementSync.IsCookwareReplica(hit.transform.gameObject)
+				? hit.transform.gameObject : ScenePlacementSync.AimCookware(hit);
+			if (cookware != null)
 			{
 				gi = null;
-				interactiveObj = hit.transform.gameObject;
+				interactiveObj = cookware;
 				return;
 			}
 			var dropped = DroppedGearInteraction.Find(hit.transform.gameObject);
@@ -3729,6 +3731,7 @@ public class Pathes
 					__result = true;
 					break;
 				case "Stim":
+					if (DeathRespawn.TryTreat(component.m_ID)) { __result = true; break; }
 					if (GameManager.m_PlayerManager != null && GameManager.m_PlayerManager.m_ItemInHands != null && GameManager.m_PlayerManager.m_ItemInHands.m_EmergencyStim != null)
 					{
 						MyMod.EmergencyStimBeforeUse = GameManager.m_PlayerManager.m_ItemInHands;
@@ -4561,6 +4564,7 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
+			if (DeathRespawn.TryDown(__instance)) return false;
 			MelonLogger.Msg("[Condition] PlayerDeath");
 			if (MyMod.InOnline())
 			{
@@ -6234,6 +6238,7 @@ public class Pathes
 	{
 		private static bool Prefix(Panel_Log __instance)
 		{
+			if (!MyMod.InOnline()) return true;
 			MyMod.BeginRespawn();
 			return false;
 		}
@@ -6244,6 +6249,7 @@ public class Pathes
 	{
 		private static bool Prefix(GameManager __instance)
 		{
+			if (DeathRespawn.TryDown(GameManager.GetConditionComponent())) return false;
 			if (GameCompat.Panel<Panel_Log>().IsEnabled())
 			{
 				GameCompat.Panel<Panel_Log>().ExitInterfaceOnDeath();
@@ -7602,7 +7608,9 @@ public class Pathes
 		DataStr.PriorityActionForOtherPlayer priorityActionForOtherPlayer = new DataStr.PriorityActionForOtherPlayer();
 		if (GameManager.m_PlayerManager != null && GameManager.m_PlayerManager.m_ItemInHands != null && GameManager.m_PlayerManager.m_ItemInHands.m_EmergencyStim != null)
 		{
-			return MyMod.GetActionForOtherPlayer("Stim");
+			var action = MyMod.GetActionForOtherPlayer("Stim");
+			if (DeathRespawn.CanRevive(m_ID)) action.m_DisplayText = "Оживить шприцем";
+			return action;
 		}
 		if (GameManager.m_PlayerManager != null && GameManager.m_PlayerManager.PlayerHoldingTorchThatCanBeLit() && mP.m_TorchIgniter != null && mP.m_LightSourceOn)
 		{
@@ -7743,15 +7751,53 @@ public class Pathes
 		SendTCPData(packet);
 	}
 
+	private static string sceneDropsArea;
+	private static float sceneDropsTimeout;
+	private static float sceneDropsRetry;
+
+	internal static bool CompleteSceneDrops(string area)
+	{
+		if (area != sceneDropsArea || area != MyMod.level_guid) return false;
+		sceneDropsArea = null;
+		return true;
+	}
+
+	internal static void CheckSceneDropsTimeout()
+	{
+		if (sceneDropsArea == null) return;
+		if (!MyMod.sendMyPosition || sceneDropsArea != MyMod.level_guid)
+		{
+			sceneDropsArea = null;
+			return;
+		}
+		float now = Time.realtimeSinceStartup;
+		if (now < sceneDropsTimeout)
+		{
+			if (now >= sceneDropsRetry) RequestDropsForScene();
+			return;
+		}
+		sceneDropsArea = null;
+		MyMod.DelayedGearsPickup = false;
+		MyMod.DiscardRepeatPacket();
+		MyMod.RemovePleaseWait();
+		CoopReturnToMenu.ConnectionLost("Хост не подтвердил загрузку предметов локации.");
+	}
+
 	public static void RequestDropsForScene()
 	{
+		if (sceneDropsArea != MyMod.level_guid)
+		{
+			sceneDropsArea = MyMod.level_guid;
+			sceneDropsTimeout = Time.realtimeSinceStartup + 35f;
+		}
 		MyMod.DelayedGearsPickup = true;
 		using Packet packet = new Packet(90);
 		packet.Write(MyMod.levelid);
 		packet.Write(MyMod.level_guid);
-		packet.Write(GetWeatherVolunteerData());
-		packet.Write(GetWeatherVolunteerData().CurrentRegion);
-		MyMod.SetRepeatPacket(MyMod.ResendPacketType.Scene);
+		var weather = GetWeatherVolunteerData();
+		packet.Write(weather);
+		packet.Write(weather.CurrentRegion);
+		sceneDropsRetry = Time.realtimeSinceStartup + 4f;
 		SendTCPData(packet);
 	}
 
@@ -8015,24 +8061,6 @@ public class Pathes
 
 	public static void OnSaveCompleted(string name = "")
 	{
-		if (MyMod.PendingRespawn)
-		{
-			SaveGameSystem.SetAsyncEnabled(enabled: true);
-			MyMod.PendingRespawn = false;
-			MelonLogger.Msg("[SaveGameSystem] SaveCompletedInternal PendingRespawn");
-			SaveSlotInfo currentSaveSlotInfo = SaveGameSlotHelper.GetCurrentSaveSlotInfo();
-			if (currentSaveSlotInfo == null)
-			{
-				MelonLogger.Msg("Wooh Save info is null, trying other way...");
-				MelonLogger.Msg("SaveGameSystem.GetCurrentSaveName() = " + SaveGameSystem.GetCurrentSaveName());
-				GameManager.LoadSaveGameSlot(SaveGameSystem.GetCurrentSaveName(), 0);
-			}
-			else
-			{
-				MelonLogger.Msg("[SaveGameSystem] Saving done, loading");
-				GameManager.LoadSaveGameSlot(currentSaveSlotInfo);
-			}
-		}
 		SaveSlotInfo currentSaveSlotInfo2 = SaveGameSlotHelper.GetCurrentSaveSlotInfo();
 		string text = ((currentSaveSlotInfo2 != null) ? currentSaveSlotInfo2.m_SaveSlotName : name);
 		string text2 = SaveSlotCompat.LoadDataFromSlot(text, "global");

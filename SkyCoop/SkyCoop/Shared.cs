@@ -2410,6 +2410,11 @@ public class Shared
 				Supporters.ApplyFlairsForModel(j, MyMod.playersData[j].m_SupporterBenefits.m_Flairs);
 			}
 		}
+		EnsureLocalDoll();
+	}
+
+	internal static void EnsureLocalDoll()
+	{
 		if (MyMod.MyPlayerDoll == null && MyMod.BundleAsset<GameObject>("multiplayerPlayer") != null)
 		{
 			GameObject gameObject8 = MyMod.SpawnModAsset(MyMod.BundleAsset<GameObject>("multiplayerPlayer"));

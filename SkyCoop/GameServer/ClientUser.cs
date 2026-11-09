@@ -208,7 +208,7 @@ internal class ClientUser
 					pingData.CanJoin = false;
 					pingData.Error = "Server is full!";
 				}
-				if (text2 != "0.16.18")
+				if (text2 != "0.16.25")
 				{
 					pingData.CanJoin = false;
 					pingData.Error = "Server using " + text2 + " version of the mod!";
@@ -896,7 +896,6 @@ internal class ClientUser
 				ClientHandle.NOISEMAKERIGNITE
 			}
 		};
-		packetHandlers[193] = NativeAppearance.Receive;
 		packetHandlers[194] = MotionSync.Receive;
 		packetHandlers[195] = SessionPing.Receive;
 		packetHandlers[196] = AnimalTracksSync.Receive;

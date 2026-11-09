@@ -139,7 +139,6 @@ internal static class BedRest
         var clothing = body.AddComponent<Comps.MultiplayerPlayerClothingManager>();
         clothing.ApplyLocalRest(body);
         clothing.enabled = false;
-        NativeAppearance.ApplyChoice(body, NativeAppearance.Choice);
         localRig = new RestRig(body.transform);
     }
 

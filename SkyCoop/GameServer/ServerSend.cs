@@ -1474,11 +1474,10 @@ internal class ServerSend
 		SendTCPData(_toClient, packet);
 	}
 
-	public static void LOADINGSCENEDROPSDONE(int _toClient, bool _msg)
+	public static void LOADINGSCENEDROPSDONE(int _toClient, string area)
 	{
 		using Packet packet = new Packet(99);
-		packet.Write(_msg);
-		packet.Write(_toClient);
+		packet.Write(area);
 		SendTCPData(_toClient, packet);
 	}
 
@@ -1928,7 +1927,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.18");
+		packet.Write("0.16.25");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));

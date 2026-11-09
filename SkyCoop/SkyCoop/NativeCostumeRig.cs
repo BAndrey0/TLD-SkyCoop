@@ -2,69 +2,145 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 namespace SkyCoop;
-// Solve anatomical directions rather than transferring unrelated FBX bone axes.
+// Transfer the animated orientation in the avatar's space. Calibrate the
+// difference between both bind poses once, including the roll of each palm.
 internal sealed class NativeCostumeRig
 {
- private sealed class Link { public Transform source,target,sourceEnd,targetEnd,sa,sb,ta,tb;public Quaternion rest;public int depth;public bool root; }
- private readonly List<Link> links=new();
- private readonly List<(Transform source,Transform target)> feet=new();
+ private sealed record Link(Transform Source, Transform Target, Quaternion Correction, bool Root);
+ private sealed record RestPose(Vector3 Position, Quaternion Rotation);
+ private sealed record Arm(Transform Upper, Transform Elbow, Transform Wrist, Transform Grip);
+ private readonly List<Link> links = new();
+ private readonly List<Arm> arms = new();
  private readonly Transform playerRoot;
- private Transform pelvis;
- public float FitScale{get;private set;}=1;
- public int Count=>links.Count;
- public NativeCostumeRig(GameObject player,GameObject costume)
+ private readonly Vector3 hipOffset;
+ private readonly Transform sourceHead, targetHead;
+ public float FitScale { get; private set; } = 1f;
+ public int Count => links.Count;
+
+ public NativeCostumeRig(GameObject player, GameObject costume, bool headOnly = false)
  {
-  playerRoot=player.transform;
-  var source=new Dictionary<string,Transform>(StringComparer.Ordinal);
-  foreach(var skin in player.GetComponentsInChildren<SkinnedMeshRenderer>(true))foreach(var bone in skin.bones)
-   if(bone!=null&&!bone.IsChildOf(costume.transform)&&!source.ContainsKey(bone.name))source.Add(bone.name,bone);
-  var targets=new Dictionary<string,Transform>(StringComparer.Ordinal);
-  foreach(var bone in costume.GetComponentsInChildren<Transform>(true))targets[bone.name]=bone;
-  float reference=BodyLength(source,false),native=BodyLength(targets,true);
-  FitScale=ModelProportions.Scale(reference,native);costume.transform.localScale*=FitScale;
-  targets.TryGetValue("Hips_jnt",out pelvis);
-  foreach(string side in new[]{"Left","Right"})
-   if(targets.TryGetValue(side+"Toe_jnt",out var targetFoot)&&source.TryGetValue(side=="Left"?"Toe.L":"Toe.R",out var sourceFoot))feet.Add((sourceFoot,targetFoot));
-  foreach(var skin in costume.GetComponentsInChildren<SkinnedMeshRenderer>(true)){skin.updateWhenOffscreen=false;skin.localBounds=new Bounds(new Vector3(0,1.2f,0),new Vector3(4,5,4));}
-  foreach(var pair in targets)
+  playerRoot = player.transform;
+  var source = new Dictionary<string, Transform>(StringComparer.Ordinal);
+  var rest = new Dictionary<string, RestPose>(StringComparer.Ordinal);
+  foreach (var skin in player.GetComponentsInChildren<SkinnedMeshRenderer>(true))
   {
-   string mapped=Map(pair.Key);if(mapped==null||!source.TryGetValue(mapped,out var from))continue;
-   var link=new Link{source=from,target=pair.Value,rest=pair.Value.localRotation,root=pair.Key=="Hips_jnt"};
-   for(var p=pair.Value.parent;p!=null;p=p.parent)link.depth++;
-   string end=End(pair.Key);
-   if(end!=null&&targets.TryGetValue(end,out var te)&&source.TryGetValue(Map(end)??"",out var se)){link.targetEnd=te;link.sourceEnd=se;}
-   if(pair.Key=="LeftHand_jnt"||pair.Key=="RightHand_jnt")
+   var mesh = skin.sharedMesh;
+   if (mesh == null) continue;
+   var bones = skin.bones;
+   var binds = mesh.bindposes;
+   var skinToAvatar = playerRoot.worldToLocalMatrix * skin.transform.localToWorldMatrix;
+   for (int i = 0; i < bones.Length; i++)
    {
-    string side=pair.Key.StartsWith("Left")?"Left":"Right";
-    if(targets.TryGetValue(side+"Index1_jnt",out var a)&&targets.TryGetValue(side+"Pinky1_jnt",out var b)&&source.TryGetValue(Map(a.name),out var sa)&&source.TryGetValue(Map(b.name),out var sb)){link.ta=a;link.tb=b;link.sa=sa;link.sb=sb;}
+    var bone = bones[i];
+    if (bone == null || bone.IsChildOf(costume.transform) || !source.TryAdd(bone.name, bone)) continue;
+    var transform = i < binds.Length ? skinToAvatar * binds[i].inverse : playerRoot.worldToLocalMatrix * bone.localToWorldMatrix;
+    rest.Add(bone.name, new RestPose(transform.MultiplyPoint3x4(Vector3.zero), transform.rotation));
    }
-   links.Add(link);
   }
-  links.Sort((a,b)=>a.depth.CompareTo(b.depth));if(links.Count<15)throw new InvalidOperationException("Incomplete costume rig: "+links.Count);Update();
+  var targets = new Dictionary<string, Transform>(StringComparer.Ordinal);
+  var ordered = costume.GetComponentsInChildren<Transform>(true);
+  foreach (var bone in ordered) targets.TryAdd(bone.name, bone);
+  if (headOnly)
+  {
+   sourceHead = source["Head"];
+   targetHead = targets["Head_jnt"];
+  }
+  FitScale = ModelProportions.Scale(BodyLength(source, false), BodyLength(targets, true));
+  costume.transform.localScale *= FitScale;
+  var inverseRoot = Quaternion.Inverse(playerRoot.rotation);
+  foreach (var target in ordered)
+  {
+   string mapped = Map(target.name);
+   if (mapped == null || !source.TryGetValue(mapped, out var from)) continue;
+   var bind = rest[mapped];
+   Quaternion targetRotation = inverseRoot * target.rotation;
+   string end = End(target.name);
+   if (end != null && targets.TryGetValue(end, out var targetEnd) && rest.TryGetValue(Map(end) ?? "", out var sourceEnd))
+   {
+    Vector3 expected = sourceEnd.Position - bind.Position;
+    Vector3 actual = inverseRoot * (targetEnd.position - target.position);
+    if (expected.sqrMagnitude > .000001f && actual.sqrMagnitude > .000001f)
+    {
+     Quaternion align = Quaternion.FromToRotation(actual, expected);
+     if (target.name is "LeftHand_jnt" or "RightHand_jnt")
+     {
+      string side = target.name.StartsWith("Left", StringComparison.Ordinal) ? "Left" : "Right";
+      if (targets.TryGetValue(side + "Index1_jnt", out var index) && targets.TryGetValue(side + "Pinky1_jnt", out var pinky) &&
+          rest.TryGetValue(Map(index.name), out var sourceIndex) && rest.TryGetValue(Map(pinky.name), out var sourcePinky))
+      {
+       Vector3 a = sourceIndex.Position - sourcePinky.Position;
+       Vector3 b = inverseRoot * (index.position - pinky.position);
+       if (Vector3.Cross(expected, a).sqrMagnitude > .0000001f && Vector3.Cross(actual, b).sqrMagnitude > .0000001f)
+        align = Quaternion.LookRotation(expected, a) * Quaternion.Inverse(Quaternion.LookRotation(actual, b));
+      }
+     }
+     targetRotation = align * targetRotation;
+    }
+   }
+   links.Add(new Link(from, target, Quaternion.Inverse(bind.Rotation) * targetRotation, target.name == "Hips_jnt"));
+  }
+  if (links.Count < 15) throw new InvalidOperationException("Incomplete costume rig: " + links.Count);
+  if (!headOnly) foreach (string side in new[] { "Left", "Right" })
+   if (targets.TryGetValue(side + "UpArm_jnt", out var upper) &&
+       targets.TryGetValue(side + "Elbow_jnt", out var elbow) &&
+       targets.TryGetValue(side + "Hand_jnt", out var wrist) &&
+       source.TryGetValue(Map(wrist.name), out var grip))
+    arms.Add(new Arm(upper, elbow, wrist, grip));
+  hipOffset = StandingOffset(targets, rest);
+  Update();
  }
+
+ private Vector3 StandingOffset(Dictionary<string, Transform> target, Dictionary<string, RestPose> source)
+ {
+  if (!target.TryGetValue("Hips_jnt", out var hip) || !source.TryGetValue("root", out var sourceHip)) return Vector3.zero;
+  float difference = 0f;
+  int count = 0;
+  foreach (string side in new[] { "Left", "Right" })
+  {
+   if (!target.TryGetValue(side + "Toe_jnt", out var toe) || !source.TryGetValue(Map(toe.name), out var sourceToe)) continue;
+   float sourceLength = sourceHip.Position.y - sourceToe.Position.y;
+   float targetLength = playerRoot.InverseTransformPoint(hip.position).y - playerRoot.InverseTransformPoint(toe.position).y;
+   difference += targetLength - sourceLength;
+   count++;
+  }
+  return Vector3.up * (count == 0 ? 0f : Mathf.Clamp(difference / count, -.25f, .25f));
+ }
+
  public void Update()
  {
-  foreach(var l in links)if(l.target!=null)l.target.localRotation=l.rest;
-  foreach(var l in links)
+  // Parents are visited before children. No foot-based pelvis correction runs
+  // during a step, so switching the supporting leg cannot shift the whole body.
+  foreach (var link in links)
   {
-   if(l.source==null||l.target==null)continue;
-   if(l.root)l.target.position=l.source.position;
-   if(l.targetEnd==null||l.sourceEnd==null)continue;
-   var wanted=l.sourceEnd.position-l.source.position;var current=l.targetEnd.position-l.target.position;
-   if(wanted.sqrMagnitude<.000001f||current.sqrMagnitude<.000001f)continue;
-   if(l.ta!=null&&l.sa!=null)
-   {
-    var a=l.sa.position-l.sb.position;var b=l.ta.position-l.tb.position;
-    if(Vector3.Cross(wanted,a).sqrMagnitude>.0000001f&&Vector3.Cross(current,b).sqrMagnitude>.0000001f){l.target.rotation=Quaternion.LookRotation(wanted,a)*Quaternion.Inverse(Quaternion.LookRotation(current,b))*l.target.rotation;continue;}
-   }
-   l.target.rotation=Quaternion.FromToRotation(current,wanted)*l.target.rotation;
+   if (link.Source == null || link.Target == null) continue;
+   if (link.Root) link.Target.position = link.Source.position + playerRoot.TransformVector(hipOffset);
+   link.Target.rotation = link.Source.rotation * link.Correction;
   }
-  if(pelvis!=null&&feet.Count>0)
-  {
-   Vector3 up=playerRoot.up;float a=float.PositiveInfinity,b=float.PositiveInfinity;
-   foreach(var foot in feet)if(foot.source!=null&&foot.target!=null){a=Mathf.Min(a,Vector3.Dot(foot.source.position,up));b=Mathf.Min(b,Vector3.Dot(foot.target.position,up));}
-   if(float.IsFinite(a)&&float.IsFinite(b))pelvis.position+=up*(a-b);
-  }
+  foreach (var arm in arms) AlignGrip(arm);
+  if (sourceHead != null && targetHead != null) targetHead.position = sourceHead.position;
+ }
+
+ private static void AlignGrip(Arm arm)
+ {
+  var shoulder = arm.Upper.position;
+  var elbow = arm.Elbow.position;
+  var wrist = arm.Wrist.position;
+  var requested = arm.Grip.position - shoulder;
+  float upper = Vector3.Distance(shoulder, elbow), lower = Vector3.Distance(elbow, wrist);
+  float reach = requested.magnitude;
+  if (reach < .02f || upper < .02f || lower < .02f) return;
+  var direction = requested / reach;
+  var bend = Vector3.ProjectOnPlane(elbow - shoulder, direction);
+  if (bend.sqrMagnitude < .000001f) return;
+  reach = Mathf.Clamp(reach, Mathf.Abs(upper - lower) + .002f, upper + lower - .002f);
+  float along = (upper * upper - lower * lower + reach * reach) / (2f * reach);
+  float across = Mathf.Sqrt(Mathf.Max(0f, upper * upper - along * along));
+  var newElbow = shoulder + direction * along + bend.normalized * across;
+  var newWrist = shoulder + direction * reach;
+  var wristRotation = arm.Wrist.rotation;
+  arm.Upper.rotation = Quaternion.FromToRotation(elbow - shoulder, newElbow - shoulder) * arm.Upper.rotation;
+  arm.Elbow.rotation = Quaternion.FromToRotation(arm.Wrist.position - arm.Elbow.position, newWrist - arm.Elbow.position) * arm.Elbow.rotation;
+  arm.Wrist.rotation = wristRotation;
  }
  private static float BodyLength(Dictionary<string,Transform> bones,bool native)
  {
