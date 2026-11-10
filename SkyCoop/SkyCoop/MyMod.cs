@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.26";
+		public const string Version = "0.16.27";
 
 		public const string DownloadLink = null;
 
@@ -5328,6 +5328,7 @@ public class MyMod : MelonMod
 			PlayersUpdateManager();
 		}
 		FireHeatSync.Tick();
+		AvatarLighting.Tick();
 		ScenePlacementSync.Tick();
 		if (Shared.IsMainMenuScene(level_name))
 		{

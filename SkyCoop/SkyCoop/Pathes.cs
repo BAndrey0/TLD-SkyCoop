@@ -3613,7 +3613,7 @@ public class Pathes
 			}
 			if (hit.transform == null) return;
 			var cookware = ScenePlacementSync.IsCookwareReplica(hit.transform.gameObject)
-				? hit.transform.gameObject : ScenePlacementSync.AimCookware(hit);
+				? hit.transform.gameObject : ScenePlacementSync.AimCookware(2.5f, hit);
 			if (cookware != null)
 			{
 				gi = null;

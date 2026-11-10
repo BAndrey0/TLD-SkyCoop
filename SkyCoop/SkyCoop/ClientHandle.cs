@@ -39,7 +39,7 @@ public class ClientHandle
 		{
 			packet.Write(ClientUser.myId);
 			packet.Write(MyMod.MyChatName);
-			packet.Write("0.16.26");
+			packet.Write("0.16.27");
 			packet.Write(Supporters.MyID);
 			packet.Write(Supporters.ConfiguratedBenefits);
 			packet.Write(ModsValidation.GetModsHash(Force: true, ModsWhiteList).m_Hash);
@@ -122,7 +122,9 @@ public class ClientHandle
 	public static void GAMETIME(Packet _packet)
 	{
 		MyMod.OveridedTime = _packet.ReadString();
-		MyMod.MinutesFromStartServer = _packet.ReadInt();
+		int minute = _packet.ReadInt();
+		FireHeatSync.SyncCookingClock(minute);
+		MyMod.MinutesFromStartServer = minute;
 		ThrownFlareSync.ClockSync();
 		MyMod.NeedSyncTime = true;
 	}
@@ -1363,13 +1365,14 @@ public class ClientHandle
 
     public static void DoWeatherSync(float start, int seed, float duration, WeatherStage type, int index,
         System.Collections.Generic.List<float> durations, System.Collections.Generic.List<float> transitions,
-        int tod, float high, float low, int previousStage, string setName, int activeStage, float stageElapsed)
+        int tod, float high, float low, int previousStage, string setName, int activeStage, float stageElapsed,
+        int skyStage, int skyPrevious, float skyBlend)
     {
         if (MyMod.LoadingScreenIsOn || !WildlifeSpawnAuthorityPolicy.WorldScene(MyMod.level_name) ||
             !float.IsFinite(start) || !float.IsFinite(duration) || duration <= 0) return;
         var weather = GameManager.m_Weather;
         var transition = GameManager.m_WeatherTransition;
-        if (weather == null || transition == null || transition.m_CurrentWeatherSet == null) return;
+        if (weather == null || weather.IsWeatherStatic() || transition == null || transition.m_CurrentWeatherSet == null) return;
         var sets = weather.m_WeatherSetsForScene;
         if (sets == null || string.IsNullOrEmpty(setName)) return;
         WeatherSetData selected = null;
@@ -1392,6 +1395,7 @@ public class ClientHandle
         if (selected == null || selected.m_WeatherStages == null || selected.m_WeatherStages.Length == 0)
         {
             syncedWeatherUntil = 0;
+            ApplyWeatherVisual(skyStage, skyPrevious, skyBlend, 1f);
             return;
         }
         selected.m_CurrentSetDuration = duration;
@@ -1421,10 +1425,32 @@ public class ClientHandle
             current.ForceTransitionToStep(stage);
         if (selected.m_CurrentIndex == stage)
             selected.m_WeatherStages[stage].m_ElapsedTime = elapsed;
+        var step = selected.m_WeatherStages[stage];
+        float blendDuration = step.m_CurrentTransitionTime;
+        if (skyStage < 0)
+        {
+            skyStage = (int)step.m_WeatherType;
+            skyPrevious = stage == 0 ? previousStage : (int)selected.m_WeatherStages[stage - 1].m_WeatherType;
+            skyBlend = blendDuration > 0 ? Mathf.Clamp01(elapsed / blendDuration) : 1f;
+        }
+        ApplyWeatherVisual(skyStage, skyPrevious, skyBlend, blendDuration);
         weather.m_TempHigh = high;
         weather.m_TempLow = low;
         syncedWeatherScene = MyMod.level_guid;
         syncedWeatherUntil = Time.realtimeSinceStartup + 4f;
+    }
+
+    private static void ApplyWeatherVisual(int current, int previous, float blend, float duration)
+    {
+        if (current < 0 || current >= (int)WeatherStage.Undefined || !float.IsFinite(blend)) return;
+        var sky = GameManager.GetUniStorm();
+        if (sky == null) return;
+        if (previous < 0 || previous >= (int)WeatherStage.Undefined) previous = current;
+        blend = Mathf.Clamp01(blend);
+        if ((int)sky.m_CurrentWeatherStage == current && (blend >= .999f || (int)sky.m_PreviousWeatherStage == previous) &&
+            Mathf.Abs(sky.GetNormalizedWeatherTransition() - blend) <= .04f) return;
+        duration = float.IsFinite(duration) && duration > 0 ? duration : 1f;
+        sky.SetWeatherStateAndBlendDirectly((WeatherStage)current, (WeatherStage)previous, duration * blend, duration);
     }
 
     public static void DEDICATEDWEATHER(Packet _packet)
@@ -1444,8 +1470,11 @@ public class ClientHandle
 		int region = _packet.ReadInt();
 		int activeStage = _packet.ReadInt();
 		float stageElapsed = _packet.ReadFloat();
+		int skyStage = _packet.ReadInt();
+		int skyPrevious = _packet.ReadInt();
+		float skyBlend = _packet.ReadFloat();
 		if (region == MyMod.GetCurrentRegionIfPossible())
-			DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, setName, activeStage, stageElapsed);
+			DoWeatherSync(startAtFrac, weatherSeed, duration, sT, indx, durations, transitions, tOD, high, low, previousStage, setName, activeStage, stageElapsed, skyStage, skyPrevious, skyBlend);
 	}
 
 	public static void WEATHERVOLUNTEER(Packet _packet)

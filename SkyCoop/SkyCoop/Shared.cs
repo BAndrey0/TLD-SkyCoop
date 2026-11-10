@@ -691,9 +691,11 @@ public class Shared
 	public static void WeatherUpdate(int Minutes = 1)
 	{
 		float num = 0.016f;
+		int nativeRegion = !MyMod.DedicatedServerAppMode && GameManager.m_Weather != null && !GameManager.m_Weather.IsWeatherStatic()
+			? MyMod.GetCurrentRegionIfPossible() : -1;
 		foreach (RegionWeatherControler regionWeather in RegionWeathers)
 		{
-			if (!regionWeather.m_WaitsForUpdate && (MyMod.DedicatedServerAppMode || regionWeather.m_Region != MyMod.GetCurrentRegionIfPossible()))
+			if (!regionWeather.m_WaitsForUpdate && regionWeather.m_Region != nativeRegion)
 			{
 				regionWeather.AddTime(num * (float)Minutes);
 				regionWeather.MayRecalculate();
@@ -706,7 +708,10 @@ public class Shared
 		int localRegion = MyMod.DedicatedServerAppMode ? -1 : MyMod.GetCurrentRegionIfPossible();
 		var weather = GameManager.m_Weather;
 		var set = GameManager.m_WeatherTransition?.m_CurrentWeatherSet;
-		if (localRegion >= 0 && !MyMod.LoadingScreenIsOn && weather != null && GameManager.GetUniStorm() != null && set != null && set.m_CurrentSetDuration > 0f)
+		var sky = localRegion >= 0 ? GameManager.GetUniStorm() : null;
+		bool hostWeather = localRegion >= 0 && !MyMod.LoadingScreenIsOn && weather != null && !weather.IsWeatherStatic()
+			&& sky != null && set != null && set.m_CurrentSetDuration > 0f;
+		if (hostWeather)
 		{
 			var state = Pathes.GetWeatherVolunteerData();
 			var cached = RegionWeathers.Find(entry => entry.m_Region == localRegion);
@@ -720,11 +725,12 @@ public class Shared
 			cached.m_PreviousStage = state.PreviousStage;
 			int stage = set.m_CurrentIndex;
 			float elapsed = stage >= 0 && stage < set.m_WeatherStages.Length ? set.m_WeatherStages[stage].m_ElapsedTime : 0f;
-			ServerSend.DEDICATEDWEATHER(localRegion, state.WeatherType, state.SetIndex, cached.m_Progress, cached.m_WeatherSeed, state.WeatherDuration, state.StageDuration, state.StageTransition, 0, cached.m_HighTemp, cached.m_LowTemp, state.PreviousStage, state.SetName, stage, elapsed);
+			ServerSend.DEDICATEDWEATHER(localRegion, state.WeatherType, state.SetIndex, cached.m_Progress, cached.m_WeatherSeed, state.WeatherDuration, state.StageDuration, state.StageTransition, 0, cached.m_HighTemp, cached.m_LowTemp, state.PreviousStage, state.SetName, stage, elapsed,
+				(int)sky.m_CurrentWeatherStage, (int)sky.m_PreviousWeatherStage, sky.GetNormalizedWeatherTransition());
 		}
 		foreach (RegionWeatherControler regionWeather in RegionWeathers)
 		{
-			if (regionWeather.m_Region == localRegion || regionWeather.m_WaitsForUpdate) continue;
+			if ((hostWeather && regionWeather.m_Region == localRegion) || regionWeather.m_WaitsForUpdate) continue;
 			regionWeather.AddTime(0.016f / 60f);
 			regionWeather.AddTOD(90, CurrentTimeOfDayStatus);
 			ServerSend.DEDICATEDWEATHER(regionWeather.m_Region, regionWeather.m_WeatherType, regionWeather.m_WeatherSetIndex, regionWeather.m_Progress, regionWeather.m_WeatherSeed, regionWeather.m_Duration, regionWeather.m_StageDuration, regionWeather.m_TransitionDuration, regionWeather.m_WeatherTimeOfDayCount, regionWeather.m_HighTemp, regionWeather.m_LowTemp, regionWeather.m_PreviousStage, regionWeather.m_WeatherSetName);
@@ -1040,6 +1046,7 @@ public class Shared
 		MyMod.OverridedHourse = minute / 60;
 		MyMod.OverridedMinutes = minute % 60;
 		int minutesFromStartServer = MyMod.MinutesFromStartServer;
+		FireHeatSync.AdvanceCooking(minutesFromStartServer, minutesFromStartServer + h * 60);
 		MyMod.MinutesFromStartServer += h * 60;
 		Log("Skipping " + h + " hour(s) now should be " + MyMod.OverridedHourse);
 		Log("MinutesFromStartServer " + minutesFromStartServer + " now it " + MyMod.MinutesFromStartServer + " because " + h * 60 + " been added");
@@ -2373,6 +2380,7 @@ public class Shared
 			if (!(gameObject3 == null))
 			{
 				GameObject gameObject4 = MyMod.SpawnModAsset(gameObject3);
+				AvatarLighting.Apply(gameObject4);
 				gameObject4.AddComponent<Comps.MultiplayerPlayerAnimator>().m_Animer = gameObject4.GetComponent<Animator>();
 				gameObject4.AddComponent<Comps.MultiplayerPlayerClothingManager>().m_Player = gameObject4;
 				Transform child = gameObject4.transform.GetChild(4);
@@ -2418,6 +2426,7 @@ public class Shared
 		if (MyMod.MyPlayerDoll == null && MyMod.BundleAsset<GameObject>("multiplayerPlayer") != null)
 		{
 			GameObject gameObject8 = MyMod.SpawnModAsset(MyMod.BundleAsset<GameObject>("multiplayerPlayer"));
+			AvatarLighting.Apply(gameObject8);
 			gameObject8.name = "MyPlayerDoll";
 			MyMod.MyPlayerDoll = gameObject8;
 			MyMod.MyPlayerDoll.SetActive(value: false);

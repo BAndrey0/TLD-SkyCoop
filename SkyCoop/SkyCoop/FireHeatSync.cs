@@ -45,6 +45,7 @@ public static class FireHeatSync
 	private static long revision;
 	private static string localScene;
 	private static double? nativeDelta;
+	private static bool advancingCooking;
 	private static bool suppressWind;
 
 	private static bool Online => MyMod.ServerConfig.m_FireSync != 0 && (MyMod.iAmHost || MyMod.sendMyPosition);
@@ -234,6 +235,7 @@ public static class FireHeatSync
 	{
 		if (!Online || !Local(data) || data.m_Revision <= 0 || !float.IsFinite(data.m_Fuel))
 			return;
+		if (!MyMod.iAmHost) SyncCookingClock(data.m_WorldMinute);
 		latestMinute = Math.Max(latestMinute, data.m_WorldMinute);
 		FireKey key = Key(data);
 		if (!Snapshots.TryGetValue(key, out var old) || data.m_Revision > old.m_Revision)
@@ -245,6 +247,54 @@ public static class FireHeatSync
 
 	private static float Remaining(DataStr.FireSourcesSync data, int minute)
 		=> FireClockPolicy.Remaining(FireClockPolicy.SecondsAt(data.m_WorldMinute) + data.m_Fuel, minute);
+
+	internal static void SyncCookingClock(int minute) => AdvanceCooking(Minute, minute);
+
+	internal static void AdvanceCooking(int fromMinute, int toMinute)
+	{
+		if (!Online || !MyMod.ApplyOtherCampfires || MyMod.DedicatedServerAppMode || !GearCatalogIndex.InWorld
+			|| MyMod.LoadingScreenIsOn || fromMinute < 0 || (long)toMinute - fromMinute <= 1)
+			return;
+
+		var previousDelta = nativeDelta;
+		advancingCooking = true;
+		try
+		{
+			foreach (var pot in UnityEngine.Object.FindObjectsOfType<CookingPotItem>())
+			{
+				if (pot == null || !pot.isActiveAndEnabled || !HasCookingContents(pot)) continue;
+				var fire = pot.m_FireBeingUsed;
+				if (fire == null || !fire.IsBurning() || fire.IsEmbers()) continue;
+				int id = pot.GetInstanceID();
+				int start = CookingUpdate.Clocks.TryGetValue(id, out int last) ? Math.Max(fromMinute, last) : fromMinute;
+				double seconds = FireClockPolicy.SecondsAt((int)Math.Clamp((long)toMinute - start, 0, MaxFuelSeconds / 60));
+				if (!fire.m_IsPerpetual)
+					seconds = Math.Min(seconds, Bound.TryGetValue(fire.GetInstanceID(), out var state)
+						? Remaining(state, start) : Positive(fire.GetRemainingLifeTimeSeconds()));
+				// Native cooking changes one phase per update (e.g. melting, then boiling).
+				while (seconds > 0 && pot != null && HasCookingContents(pot) && pot.m_CookingState != CookingPotItem.CookingState.Ruined)
+				{
+					double step = Math.Min(60, seconds);
+					// The native update can inline its time conversion. Advance the active phase counter directly.
+					float hours = (float)(step / 3600);
+					if (pot.m_CookingState == CookingPotItem.CookingState.Ready) pot.m_GracePeriodElapsedHours += hours;
+					else pot.m_CookingElapsedHours += hours;
+					nativeDelta = 0;
+					pot.Update();
+					seconds -= step;
+				}
+				if (pot != null) CookingUpdate.Clocks[id] = toMinute;
+			}
+		}
+		finally
+		{
+			advancingCooking = false;
+			nativeDelta = previousDelta;
+		}
+	}
+
+	private static bool HasCookingContents(CookingPotItem pot) => pot.m_GearItemBeingCooked != null
+		|| pot.m_LitersSnowBeingMelted.ToLiters() > 0f || pot.m_LitersWaterBeingBoiled.ToLiters() > 0f;
 
 	private static string EnsureStarted(Fire fire)
 	{
@@ -547,6 +597,7 @@ public static class FireHeatSync
 		private static void Prefix(CookingPotItem __instance, out double? __state)
 		{
 			__state = nativeDelta;
+			if (advancingCooking) return;
 			int id = __instance.GetInstanceID();
 			if (!Online || !MyMod.ApplyOtherCampfires || __instance.m_FireBeingUsed == null
 				|| !Bound.ContainsKey(__instance.m_FireBeingUsed.GetInstanceID()))

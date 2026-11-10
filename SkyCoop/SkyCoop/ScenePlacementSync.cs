@@ -41,7 +41,7 @@ internal static class ScenePlacementSync
     private sealed record GearTransfer(Guid Id, int Requester, string Gear, string Json, float Heat, int TimesHeated);
     private sealed record WaterTransfer(Guid Id, int Requester, float Liters, bool Potable);
     private static readonly Dictionary<Guid, float> ReceivedOutputs = new();
-    private sealed record RemotePot(Pot State, GameObject Visual, float Expires);
+    private sealed record RemotePot(Pot State, GameObject Visual, BoxCollider Hitbox, float Expires);
     private static readonly Dictionary<string, Dictionary<string, Move>> Saved = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Move> Pending = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Move> Unapplied = new(StringComparer.Ordinal);
@@ -708,20 +708,25 @@ internal static class ScenePlacementSync
         return false;
     }
 
-    internal static GameObject AimCookware(RaycastHit worldHit)
+    internal static GameObject AimCookware(float range, RaycastHit worldHit = default)
     {
         if (RemotePots.Count == 0) return null;
         var camera = GameManager.GetVpFPSCamera()?.GetCameraComponent();
         if (camera == null) return null;
         var ray = new Ray(camera.transform.position, camera.transform.forward);
-        float nearest = Vector3.Distance(ray.origin, worldHit.point) + .015f;
+        if (worldHit.collider == null)
+            Physics.Raycast(ray, out worldHit, range, Utils.m_PhysicalCollisionLayerMask, QueryTriggerInteraction.Ignore);
+        float nearest = worldHit.collider != null
+            ? Mathf.Min(range, Vector3.Dot(worldHit.point - ray.origin, ray.direction) + .025f) : range;
         GameObject selected = null;
         foreach (var remote in RemotePots.Values)
         {
-            var box = remote.Visual != null ? remote.Visual.GetComponent<BoxCollider>() : null;
-            if (box == null || !box.Raycast(ray, out var hit, nearest)) continue;
+            var box = remote.Hitbox;
+            if (box == null) continue;
+            var localRay = new Ray(box.transform.InverseTransformPoint(ray.origin), box.transform.InverseTransformDirection(ray.direction));
+            if (!new Bounds(box.center, box.size).IntersectRay(localRay, out float distance) || distance > nearest) continue;
             selected = remote.Visual;
-            nearest = hit.distance;
+            nearest = distance;
         }
         return selected;
     }
@@ -1061,14 +1066,19 @@ internal static class ScenePlacementSync
         if (!ValidPot(pot)) return;
         if (previous == null && RemotePots.Count >= 128) return;
         var visual = previous?.Visual;
+        var hitbox = previous?.Hitbox;
         if (previous != null && (previous.State.Gear != pot.Gear || previous.State.Food != pot.Food || previous.State.Meshes != pot.Meshes || previous.State.Liquid != pot.Liquid) && visual != null)
         {
             UnityEngine.Object.Destroy(visual);
             visual = null;
         }
-        if (visual == null) visual = CreatePotVisual(pot);
+        if (visual == null)
+        {
+            visual = CreatePotVisual(pot);
+            hitbox = visual != null ? visual.GetComponent<BoxCollider>() : null;
+        }
         if (visual != null) visual.transform.SetPositionAndRotation(pot.Pose.Position, pot.Pose.Rotation);
-        RemotePots[identity] = new RemotePot(pot, visual, Time.realtimeSinceStartup + 7f);
+        RemotePots[identity] = new RemotePot(pot, visual, hitbox, Time.realtimeSinceStartup + 7f);
     }
 
     private static bool ValidPot(Pot pot) => float.IsFinite(pot.Liters) && pot.Liters >= 0f && pot.Liters <= 20f && IsCookingGearName(pot.Gear) && pot.Pose?.Valid == true && pot.Slot?.Valid == true &&
@@ -1090,7 +1100,8 @@ internal static class ScenePlacementSync
         var prefab = MyMod.GetGearItemObject(useFood ? pot.Food : pot.Gear);
         if (prefab == null) return null;
         var root = new GameObject("TLD Coop cooking slot");
-        root.layer = prefab.layer;
+        var originalCollider = prefab.GetComponent<Collider>() ?? prefab.GetComponentInChildren<Collider>(true);
+        root.layer = originalCollider != null ? originalCollider.gameObject.layer : prefab.layer;
         Bounds hitBounds = default;
         bool hasHitBounds = false;
         var cooking = prefab.GetComponent<CookingPotItem>();
@@ -1172,6 +1183,7 @@ internal static class ScenePlacementSync
             nextFurnitureApply = 0f;
             scene = area;
             ContainerLockSync.Prepare(area);
+            SceneRepairSync.Prepare(area);
             nextRequest = 0;
             if (area != null)
             {
@@ -1198,6 +1210,7 @@ internal static class ScenePlacementSync
         foreach (var move in Pending.Values) SendToHost(1, area, JsonSerializer.Serialize(move));
         SendToHost(0, area, "");
         foreach (var state in ContainerLockSync.Requests()) PublishLock(state);
+        foreach (var id in SceneRepairSync.Requests(area)) PublishRepair(area, id);
     }
 
     internal static void ReceiveClient(int from, Packet packet)
@@ -1218,7 +1231,13 @@ internal static class ScenePlacementSync
                     using var reply = MakeServerPacket(1, area, JsonSerializer.Serialize(move), 0, 0);
                     ServerSend.SendUDPData(from, reply);
                 }
+                foreach (var id in SceneRepairSync.Snapshot(area))
+                {
+                    using var reply = MakeServerPacket(11, area, id, 0, 0);
+                    ServerSend.SendUDPData(from, reply);
+                }
             }
+            else if (kind == 11 && SceneRepairSync.Accept(area, data)) SendToPeers(11, area, data);
             else if (kind == 10) DeathRespawn.ReceiveClient(from, area, key, data);
             else if (kind == 1) AcceptMove(area, JsonSerializer.Deserialize<Move>(data), from);
             else if (kind == 2)
@@ -1259,6 +1278,7 @@ internal static class ScenePlacementSync
         try
         {
             if (kind == 10) DeathRespawn.Receive(area, key, data);
+            else if (kind == 11) SceneRepairSync.Receive(area, data);
             else if (kind == 1) ReceiveMove(area, JsonSerializer.Deserialize<Move>(data));
             else if (kind == 2) ReceivePot(area, owner, key, JsonSerializer.Deserialize<Pot>(data));
             else if (kind == 4 && int.TryParse(data, out int action) && action >= 1 && action <= 4) ReleaseCookware(key, action, owner);
@@ -1305,6 +1325,12 @@ internal static class ScenePlacementSync
             if (accepted != null) SendToPeers(7, area, JsonSerializer.Serialize(accepted));
         }
         else SendToHost(7, area, JsonSerializer.Serialize(state));
+    }
+
+    internal static void PublishRepair(string area, string id)
+    {
+        if (!MyMod.iAmHost) SendToHost(11, area, id);
+        else if (SceneRepairSync.Accept(area, id)) SendToPeers(11, area, id);
     }
 
     internal static void PublishThrownFlight(int key, string data)

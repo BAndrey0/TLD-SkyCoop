@@ -154,6 +154,7 @@ public static class GameCompat
 			return null;
 		}
 		var target = pm.GetInteractiveObjectUnderCrosshairs(2.5f);
+		if (target == null) target = ScenePlacementSync.AimCookware(2.5f);
 		var dropped = DroppedGearInteraction.Find(target);
 		return dropped != null ? dropped.gameObject : target;
 	}
