@@ -26,6 +26,10 @@ public static class SelfTest
 	private static bool previewTargetSet;
 	private static float previewSince;
 	private static bool rendered;
+	private static bool FurnitureCrashTest => Environment.GetEnvironmentVariable("SKYCOOP_FURNITURE_CRASH_TEST") == "1";
+	private static float furnitureReadyAt;
+	private static bool furnitureExited;
+	private static bool furnitureTestFinished;
 	private static Camera probeCamera;
 	private static string AvatarWorldOutput => Environment.GetEnvironmentVariable("SKYCOOP_AVATAR_WORLD_TEST");
 	private static int avatarStep;
@@ -571,11 +575,16 @@ public static class SelfTest
 	public static void Tick()
 	{
 		if (Environment.GetEnvironmentVariable("SKYCOOP_INTERACTION_PROBE") == "1") return;
-		if ((ModelOnly || !string.IsNullOrEmpty(AvatarWorldOutput)) && !started &&
+		if ((ModelOnly || FurnitureCrashTest || !string.IsNullOrEmpty(AvatarWorldOutput)) && !started &&
 			GameCompat.Panel<Panel_Boot>() is { } boot)
 		{
 			boot.m_HoldLoadingUntilInputGiven = false;
 			if (boot.m_SceneLoaded && boot.isActiveAndEnabled) boot._ReadyToActivateScene_k__BackingField = true;
+		}
+		if (FurnitureCrashTest)
+		{
+			Application.runInBackground = true;
+			if (started && MyMod.iAmHost && GearCatalogIndex.InWorld) CheckFurnitureCrash();
 		}
 		if(Environment.GetEnvironmentVariable("SKYCOOP_CATALOG_PROBE")=="1")
 		{
@@ -668,7 +677,7 @@ public static class SelfTest
 			}
 		}
 		CheckAvatarInWorld();
-		if (!string.IsNullOrEmpty(AvatarWorldOutput) && !started)
+		if ((FurnitureCrashTest || !string.IsNullOrEmpty(AvatarWorldOutput)) && !started)
 		{
 			MoviePlayer.m_HasIntroPlayedForMainMenu = true;
 			if (GameCompat.Panel<Panel_MainMenu>() is { } menu) menu.m_PlayedIntroMovie = true;
@@ -717,5 +726,32 @@ public static class SelfTest
 			}
 		}
 		MelonLogger.Warning("[SelfTest] Slot " + slot + " not found");
+	}
+
+	private static void CheckFurnitureCrash()
+	{
+		if (furnitureTestFinished) return;
+		if (furnitureReadyAt == 0f) furnitureReadyAt = Time.realtimeSinceStartup + 3f;
+		if (Time.realtimeSinceStartup < furnitureReadyAt) return;
+		if (MyMod.level_name == "RuralRegion")
+		{
+			furnitureTestFinished = true;
+			MelonLogger.Msg($"[Furniture crash probe] lookup={(ScenePlacementSync.ProbeFurniture() ? "PASS" : "FAIL")} transitioned={furnitureExited}");
+			Application.Quit();
+			return;
+		}
+		if (furnitureExited) return;
+		foreach (var door in UnityEngine.Object.FindObjectsOfType<LoadScene>())
+		{
+			if (door == null || door.GetSceneToLoad() != "RuralRegion") continue;
+			furnitureExited = true;
+			furnitureReadyAt = Time.realtimeSinceStartup + 8f;
+			MelonLogger.Msg("[Furniture crash probe] Exiting " + MyMod.level_name + " through " + door.name);
+			door.PerformSceneLoad();
+			return;
+		}
+		furnitureTestFinished = true;
+		MelonLogger.Warning("[Furniture crash probe] No exit to RuralRegion in " + MyMod.level_name);
+		Application.Quit();
 	}
 }

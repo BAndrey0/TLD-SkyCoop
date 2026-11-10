@@ -173,7 +173,7 @@ internal class Server
 				if (packet.UnreadLength() <= 12)
 				{
 					Log("Client without SubNetworkGUID trying to connect, rejecting, _clientId " + num);
-					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.25");
+					ServerSend.KICKMESSAGE(remoteEP, "Your version of the mod, isn't supported\nHost using version 0.16.26");
 					return;
 				}
 				text = packet.ReadString();

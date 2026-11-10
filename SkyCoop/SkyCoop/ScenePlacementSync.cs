@@ -36,7 +36,6 @@ internal static class ScenePlacementSync
     private static FurniturePlacement placingFurniture;
     private static bool creatingReplica;
     private static float nextFurnitureApply;
-    private static float registerExistingAt;
     private static readonly HashSet<string> FurnitureApplyWarnings = new();
     private sealed record Pot(string Gear, Pose Pose, Pose Slot, string Meshes, string Food, string Mode, int Minutes, bool CanTake, int Liquid, string NativeHover, float Liters = 0f);
     private sealed record GearTransfer(Guid Id, int Requester, string Gear, string Json, float Heat, int TimesHeated);
@@ -118,18 +117,39 @@ internal static class ScenePlacementSync
         private static void Prefix(DecorationItem __instance) => OriginalAnchors.Remove(__instance.GetInstanceID());
     }
 
-    private static GameObject Find(string id, string anchor = "")
+    // Build once per apply batch. Avoid IL2CPP Dictionary.TryGetValue with the
+    // game's boxed PlaceableInfo struct as an out argument.
+    private sealed class PlacementLookup
+    {
+        private Dictionary<string, Placeable> byGuid;
+
+        internal Placeable Find(string id)
+        {
+            if (byGuid == null)
+            {
+                byGuid = new Dictionary<string, Placeable>(StringComparer.Ordinal);
+                foreach (var placeable in UnityEngine.Object.FindObjectsOfType<Placeable>(true))
+                    Register(placeable);
+            }
+            return byGuid.TryGetValue(id, out var match) && match != null && !match.m_Invalidated ? match : null;
+        }
+
+        internal void Register(Placeable placeable)
+        {
+            if (byGuid == null || placeable == null || placeable.m_Invalidated) return;
+            string guid = placeable.m_Guid;
+            if (!string.IsNullOrEmpty(guid)) byGuid[guid] = placeable;
+        }
+    }
+
+    private static GameObject Find(string id, string anchor = "", PlacementLookup lookup = null)
     {
         if (string.IsNullOrEmpty(id)) return null;
         var obj = ObjectGuidManager.Lookup(id);
         if (obj != null) return obj;
         if (DecorationItem.TryGetDecorationFromId(id, out var decoration) && decoration != null) return decoration.gameObject;
-        var placeables = PlaceableManager.s_Placeables;
-        if (placeables != null && placeables.TryGetValue(id, out var placeableInfo))
-        {
-            var placeable = placeableInfo.m_Handle;
-            if (placeable != null && !placeable.m_Invalidated) return placeable.gameObject;
-        }
+        var placeable = (lookup ?? new PlacementLookup()).Find(id);
+        if (placeable != null) return placeable.gameObject;
         if (!string.IsNullOrEmpty(anchor))
         {
             GameObject match = null;
@@ -301,17 +321,23 @@ internal static class ScenePlacementSync
         try { moves = data == null ? null : JsonSerializer.Deserialize<Dictionary<string, Move>>(data); }
         catch (JsonException) { moves = null; }
         moves ??= new Dictionary<string, Move>(StringComparer.Ordinal);
-        int invalid = 0;
+        int invalid = 0, registrations = 0;
         foreach (var entry in moves.ToArray())
         {
             var move = entry.Value;
-            if (move?.Pose?.Valid != true || (move.Version < 2 && move.Pose.Position == Vector3.zero))
+            if (move?.RegisterOnly == true)
+            {
+                moves.Remove(entry.Key);
+                registrations++;
+            }
+            else if (move?.Pose?.Valid != true || (move.Version < 2 && move.Pose.Position == Vector3.zero))
             {
                 moves.Remove(entry.Key);
                 invalid++;
             }
         }
         if (invalid > 0) MelonLoader.MelonLogger.Warning("[Furniture] Ignored " + invalid + " invalid legacy placements in " + area);
+        if (registrations > 0) MelonLoader.MelonLogger.Msg("[Furniture] Ignored " + registrations + " automatic registrations in " + area);
         foreach (var move in moves.Values) revision = Math.Max(revision, move.Revision);
         Saved.Add(area, moves);
         return moves;
@@ -331,7 +357,7 @@ internal static class ScenePlacementSync
             if (!moves.TryGetValue(ancestor, out var parent)) break;
             ancestor = parent.Parent ?? "";
         }
-        if ((!move.RegisterOnly || !moves.ContainsKey(move.Id)) && !AcceptedOperations.Contains(move.Operation))
+        if (!move.RegisterOnly && !AcceptedOperations.Contains(move.Operation))
         {
             if (moves.Count >= 2048 && !moves.ContainsKey(move.Id)) return;
             if (OperationOrder.Count >= 8192) AcceptedOperations.Remove(OperationOrder.Dequeue());
@@ -357,7 +383,7 @@ internal static class ScenePlacementSync
 
     private static void ReceiveMove(string area, Move move)
     {
-        if (area != MyMod.level_guid || move?.Pose?.Valid != true || string.IsNullOrEmpty(move.Id)) return;
+        if (area != MyMod.level_guid || move?.Pose?.Valid != true || move.RegisterOnly || string.IsNullOrEmpty(move.Id)) return;
         if (LatestRevision.TryGetValue(move.Id, out long latest) && latest >= move.Revision) return;
         LatestRevision[move.Id] = move.Revision;
         Unapplied[move.Id] = move;
@@ -368,14 +394,14 @@ internal static class ScenePlacementSync
          float.IsFinite(move.Sx) && float.IsFinite(move.Sy) && float.IsFinite(move.Sz) &&
          Mathf.Abs(move.Sx) <= 20f && Mathf.Abs(move.Sy) <= 20f && Mathf.Abs(move.Sz) <= 20f);
 
-    private static bool Apply(Move move)
+    private static bool Apply(Move move, PlacementLookup lookup)
     {
         if (PlaceableManager.s_IsDeserializing) return false;
         if (!string.IsNullOrEmpty(move.Asset) && !ValidFurnitureAsset(move)) return true;
-        var obj = Find(move.Id, move.Anchor);
+        var obj = Find(move.Id, move.Anchor, lookup);
         if (obj == null && !string.IsNullOrEmpty(move.Asset) && ValidFurnitureAsset(move))
         {
-            if (move.Parent.Length > 0 && Find(move.Parent, move.ParentAnchor) == null) return false;
+            if (move.Parent.Length > 0 && Find(move.Parent, move.ParentAnchor, lookup) == null) return false;
             var saved = new PlaceableSaveData
             {
                 m_Addressable = new AssetReferencePlaceable(move.Asset), m_Name = move.AssetName,
@@ -385,7 +411,12 @@ internal static class ScenePlacementSync
             creatingReplica = true;
             try
             {
-                obj = Placeable.FindOrCreateAndDeserialize(move.Id, saved)?.gameObject;
+                var replica = Placeable.FindOrCreateAndDeserialize(move.Id, saved);
+                if (replica != null)
+                {
+                    lookup.Register(replica);
+                    obj = replica.gameObject;
+                }
             }
             catch (Exception ex)
             {
@@ -405,7 +436,7 @@ internal static class ScenePlacementSync
         if (decoration == null && obj.GetComponent<Placeable>() == null) return true;
         if (decoration != null && !fixedBed)
         {
-            var parent = Find(move.Parent, move.ParentAnchor);
+            var parent = Find(move.Parent, move.ParentAnchor, lookup);
             if (move.Parent.Length > 0 && parent == null) return false;
             var parentDecoration = parent != null ? parent.GetComponent<DecorationItem>() : null;
             if (parentDecoration != decoration.DecorationParent &&
@@ -414,6 +445,22 @@ internal static class ScenePlacementSync
         }
         obj.transform.SetPositionAndRotation(move.Pose.Position, move.Pose.Rotation);
         return true;
+    }
+
+    internal static bool ProbeFurniture()
+    {
+        var lookup = new PlacementLookup();
+        foreach (var placeable in UnityEngine.Object.FindObjectsOfType<Placeable>())
+        {
+            if (placeable == null || placeable.m_Invalidated || string.IsNullOrEmpty(placeable.m_Guid)) continue;
+            var obj = placeable.gameObject;
+            var move = CaptureFurniture(obj);
+            if (move == null || !string.IsNullOrEmpty(move.Parent) || IsFixedBed(obj)) continue;
+            return lookup.Find(placeable.m_Guid) == placeable &&
+                lookup.Find(Guid.NewGuid().ToString("N")) == null &&
+                Find(move.Id, move.Anchor, lookup) == obj && Apply(move, lookup);
+        }
+        return false;
     }
 
     [HarmonyPatch]
@@ -1123,7 +1170,6 @@ internal static class ScenePlacementSync
             LatestRevision.Clear();
             FurnitureApplyWarnings.Clear();
             nextFurnitureApply = 0f;
-            registerExistingAt = Time.realtimeSinceStartup + 4f;
             scene = area;
             ContainerLockSync.Prepare(area);
             nextRequest = 0;
@@ -1139,23 +1185,12 @@ internal static class ScenePlacementSync
         float now = Time.realtimeSinceStartup;
         foreach (var pair in RemotePots.ToArray())
             if (pair.Value.Expires <= now) ReceivePot(area, pair.Key.Owner, pair.Key.Key, null);
-        if (now >= nextFurnitureApply)
+        if (Unapplied.Count > 0 && now >= nextFurnitureApply)
         {
             nextFurnitureApply = now + .5f;
+            var lookup = new PlacementLookup();
             foreach (var pair in Unapplied.ToArray())
-                if (Apply(pair.Value)) Unapplied.Remove(pair.Key);
-        }
-        if (registerExistingAt > 0f && now >= registerExistingAt && !MyMod.LoadingScreenIsOn)
-        {
-            registerExistingAt = 0f;
-            foreach (var placeable in UnityEngine.Object.FindObjectsOfType<Placeable>())
-            {
-                if (placeable == null || placeable.m_Invalidated || placeable.m_Addressable == null ||
-                    string.IsNullOrEmpty(placeable.m_Guid) || PlaceableManager.GetPlacementState(placeable) != PlacementState.Active ||
-                    LatestRevision.ContainsKey(placeable.m_Guid) || Pending.ContainsKey(placeable.m_Guid)) continue;
-                var move = CaptureFurniture(placeable.gameObject);
-                if (move != null && !string.IsNullOrEmpty(move.Asset)) PublishMove(move with { RegisterOnly = true });
-            }
+                if (Apply(pair.Value, lookup)) Unapplied.Remove(pair.Key);
         }
         TickPots();
         if (MyMod.iAmHost || now < nextRequest) return;
