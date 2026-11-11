@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.27";
+		public const string Version = "0.16.28";
 
 		public const string DownloadLink = null;
 
@@ -5881,7 +5881,7 @@ public class MyMod : MelonMod
 			LetChooseSpawnForClient(PendingSave);
 			return;
 		}
-		WorldSaveIdentity.PrepareResume(slot.m_SaveSlotName, PendingSave.m_WorldId);
+		WorldSaveIdentity.PrepareResume(slot.m_SaveSlotName, PendingSave.m_WorldId, PendingSave.m_Seed);
 		PendingSave = null;
 		SaveGameSlots.SetBaseNameForSave(slot.m_SaveSlotName, slot.m_SaveSlotName);
 		SaveGameSystem.SetCurrentSaveInfo(slot.m_Episode, slot.m_GameMode, slot.m_GameId, slot.m_SaveSlotName);

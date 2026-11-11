@@ -3129,11 +3129,12 @@ public class Pathes
 				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
 				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
 			}
+			int worldSeed = WorldSaveIdentity.PendingHostSeed ?? GameManager.m_SceneTransitionData.m_GameRandomSeed;
 			if (EmulateOldRandom)
 			{
 				if (EmuGenVersion == 1)
 				{
-					__result = seed ^ GameManager.m_SceneTransitionData.m_GameRandomSeed;
+					__result = seed ^ worldSeed;
 				}
 				return;
 			}
@@ -3166,13 +3167,13 @@ public class Pathes
 				text = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 			}
 			int hashCode = Shared.StableHash(text);
-			__result = seed + GameManager.m_SceneTransitionData.m_GameRandomSeed + hashCode;
-			string logKey = text + "|" + GameManager.m_SceneTransitionData.m_GameRandomSeed;
+			__result = seed + worldSeed + hashCode;
+			string logKey = text + "|" + worldSeed;
 			if (logKey != LastLoggedSeed)
 			{
 				// Host and guests must print the same base for the same scene, otherwise their loot differs.
 				LastLoggedSeed = logKey;
-				MelonLogger.Msg("[Loot seed] scene=" + text + " gameSeed=" + GameManager.m_SceneTransitionData.m_GameRandomSeed + " base=" + (GameManager.m_SceneTransitionData.m_GameRandomSeed + hashCode));
+				MelonLogger.Msg("[Loot seed] scene=" + text + " gameSeed=" + worldSeed + " base=" + (worldSeed + hashCode));
 			}
 		}
 

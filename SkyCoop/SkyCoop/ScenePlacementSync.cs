@@ -43,6 +43,8 @@ internal static class ScenePlacementSync
     private static readonly Dictionary<Guid, float> ReceivedOutputs = new();
     private sealed record RemotePot(Pot State, GameObject Visual, BoxCollider Hitbox, float Expires);
     private static readonly Dictionary<string, Dictionary<string, Move>> Saved = new(StringComparer.Ordinal);
+    // LoadData migrates old Unity vectors by lowercasing X, Y and Z before returning JSON.
+    private static readonly JsonSerializerOptions FurnitureSaveOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly Dictionary<string, Move> Pending = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Move> Unapplied = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, long> LatestRevision = new(StringComparer.Ordinal);
@@ -318,7 +320,7 @@ internal static class ScenePlacementSync
         }
         if (Saved.TryGetValue(area, out var moves)) return moves;
         string data = MPSaveManager.LoadData(area + "_FurniturePositions", MPSaveManager.GetSeed());
-        try { moves = data == null ? null : JsonSerializer.Deserialize<Dictionary<string, Move>>(data); }
+        try { moves = data == null ? null : JsonSerializer.Deserialize<Dictionary<string, Move>>(data, FurnitureSaveOptions); }
         catch (JsonException) { moves = null; }
         moves ??= new Dictionary<string, Move>(StringComparer.Ordinal);
         int invalid = 0, registrations = 0;
@@ -330,7 +332,7 @@ internal static class ScenePlacementSync
                 moves.Remove(entry.Key);
                 registrations++;
             }
-            else if (move?.Pose?.Valid != true || (move.Version < 2 && move.Pose.Position == Vector3.zero))
+            else if (!HasFurniturePose(move))
             {
                 moves.Remove(entry.Key);
                 invalid++;
@@ -345,9 +347,9 @@ internal static class ScenePlacementSync
 
     private static void AcceptMove(string area, Move move, int sender = 0)
     {
-        if (move?.Pose?.Valid != true || string.IsNullOrEmpty(move.Id) || move.Id.Length > 100 ||
+        if (!HasFurniturePose(move) || string.IsNullOrEmpty(move.Id) || move.Id.Length > 100 ||
             (move.Anchor?.Length ?? 0) > 8 || (move.ParentAnchor?.Length ?? 0) > 8 ||
-            move.Pose.Position == Vector3.zero || move.Parent == null || move.Parent.Length > 100 || move.Id == move.Parent || move.Version != 2 ||
+            move.Parent == null || move.Parent.Length > 100 || move.Id == move.Parent || move.Version != 2 ||
             !Guid.TryParseExact(move.Operation, "N", out _) || !ValidFurnitureAsset(move)) return;
         var moves = GetScene(area);
         string ancestor = move.Parent;
@@ -383,11 +385,15 @@ internal static class ScenePlacementSync
 
     private static void ReceiveMove(string area, Move move)
     {
-        if (area != MyMod.level_guid || move?.Pose?.Valid != true || move.RegisterOnly || string.IsNullOrEmpty(move.Id)) return;
+        if (area != MyMod.level_guid || !HasFurniturePose(move) || move.RegisterOnly || string.IsNullOrEmpty(move.Id)) return;
         if (LatestRevision.TryGetValue(move.Id, out long latest) && latest >= move.Revision) return;
         LatestRevision[move.Id] = move.Revision;
         Unapplied[move.Id] = move;
     }
+
+    private static bool HasFurniturePose(Move move) => move?.Pose is { Valid: true } pose &&
+        (pose.X != 0f || pose.Y != 0f || pose.Z != 0f) &&
+        (pose.Qx != 0f || pose.Qy != 0f || pose.Qz != 0f || pose.Qw != 0f);
 
     private static bool ValidFurnitureAsset(Move move) => string.IsNullOrEmpty(move.Asset) ||
         (Guid.TryParseExact(move.Asset, "N", out _) && move.AssetName != null && move.AssetName.Length <= 128 &&
@@ -427,13 +433,15 @@ internal static class ScenePlacementSync
             finally { creatingReplica = false; }
         }
         if (obj == null) return false;
+        var placeable = obj.GetComponent<Placeable>();
+        if (placeable != null && (placeable.m_Invalidated || PlaceableManager.GetPlacementState(placeable) == PlacementState.Removed)) return true;
         bool fixedBed = IsFixedBed(obj);
         if (fixedBed && BedRest.IsOccupied(obj.GetComponentInChildren<Bed>(true))) return false;
         var player = GameManager.GetPlayerManagerComponent();
         if (player != null && player.m_ObjectToPlace == obj) return false;
         if (!fixedBed && move.Parent.Length > 0 && Unapplied.ContainsKey(move.Parent)) return false;
         var decoration = obj.GetComponent<DecorationItem>();
-        if (decoration == null && obj.GetComponent<Placeable>() == null) return true;
+        if (decoration == null && placeable == null) return true;
         if (decoration != null && !fixedBed)
         {
             var parent = Find(move.Parent, move.ParentAnchor, lookup);

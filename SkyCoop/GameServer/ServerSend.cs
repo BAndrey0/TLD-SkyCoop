@@ -1927,7 +1927,7 @@ internal class ServerSend
 			}
 		}
 		packet.WriteUnicodeString(MyMod.CustomServerName);
-		packet.Write("0.16.27");
+		packet.Write("0.16.28");
 		packet.Write(num);
 		packet.Write(maxPlayers);
 		packet.WriteUnicodeString(GetStatusJson(text));
@@ -1940,7 +1940,7 @@ internal class ServerSend
 		SendUDPDataToAll(packet);
 	}
 
-	public static void DEDICATEDWEATHER(int Region, int Type, int Indx, float StartAtFrac, int Seed, float Duration, List<float> Durations, List<float> Transitions, int TOD, float High, float Low, int PreviousStage, string setName, int activeStage = -1, float stageElapsed = 0f, int skyStage = -1, int skyPrevious = -1, float skyBlend = 1f)
+	public static void DEDICATEDWEATHER(int Region, int Type, int Indx, float StartAtFrac, int Seed, float Duration, List<float> Durations, List<float> Transitions, int TOD, float High, float Low, int PreviousStage, string setName, int activeStage = -1, float stageElapsed = 0f)
 	{
 		using Packet packet = new Packet(150);
 		packet.Write(Type);
@@ -1958,9 +1958,6 @@ internal class ServerSend
 		packet.Write(Region);
 		packet.Write(activeStage);
 		packet.Write(stageElapsed);
-		packet.Write(skyStage);
-		packet.Write(skyPrevious);
-		packet.Write(skyBlend);
 		SendUDPDataToAll(packet, Region, IgnoreLoaders: true);
 	}
 

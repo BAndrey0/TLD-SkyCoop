@@ -11,11 +11,19 @@ internal static class WorldSaveIdentity
 	internal static string Active { get; private set; } = "";
 	private static string pendingSlot;
 	private static string pendingWorld;
+	internal static int? PendingHostSeed { get; private set; }
 
-	internal static void PrepareResume(string slotName, string hostWorld)
+	internal static void PrepareResume(string slotName, string hostWorld, int hostSeed)
 	{
 		pendingSlot = slotName;
 		pendingWorld = hostWorld;
+		PendingHostSeed = hostSeed != 0 ? hostSeed : null;
+	}
+
+	internal static void ClearPendingResume()
+	{
+		pendingSlot = pendingWorld = null;
+		PendingHostSeed = null;
 	}
 
 	internal static string Read(string slotName)
@@ -46,7 +54,7 @@ internal static class WorldSaveIdentity
 		private static void Prefix()
 		{
 			Server.Stop();
-			pendingSlot = pendingWorld = null;
+			ClearPendingResume();
 			Active = MyMod.sendMyPosition && !MyMod.ShouldCreateSaveForHost && MyMod.PendingSave != null
 				? MyMod.PendingSave.m_WorldId
 				: Guid.NewGuid().ToString("N");
@@ -60,7 +68,7 @@ internal static class WorldSaveIdentity
 		{
 			string saved = Read(name);
 			if (saved.Length == 0 && pendingSlot == name) saved = pendingWorld;
-			pendingSlot = pendingWorld = null;
+			ClearPendingResume();
 			Active = Guid.TryParseExact(saved, "N", out Guid worldId) ? worldId.ToString("N") : "";
 		}
 	}

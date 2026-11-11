@@ -149,7 +149,7 @@ public static class GameCompat
 
 	public static GameObject GetInteractiveObjectUnderCrosshair(this PlayerManager pm)
 	{
-		if (pm == null)
+		if (pm == null || CoopReturnToMenu.InProgress || MyMod.LoadingScreenIsOn || GameManager.GetVpFPSCamera() == null)
 		{
 			return null;
 		}
