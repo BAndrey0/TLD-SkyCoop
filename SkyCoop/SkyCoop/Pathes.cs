@@ -360,7 +360,13 @@ public class Pathes
 	[HarmonyPatch(typeof(Panel_Rest), "OnCancel")]
 	private static class Panel_Rest_Close
 	{
-		internal static void Postfix(Panel_Rest __instance)
+		private static void Prefix(Panel_Rest __instance, out GameObject __state)
+		{
+			var bed = __instance.m_Bed;
+			__state = bed != null && bed.GetComponent<Comps.FakeBedDummy>() != null ? bed.gameObject : null;
+		}
+
+		internal static void Postfix(GameObject __state)
 		{
 			if (MyMod.CrazyPatchesLogger)
 			{
@@ -378,10 +384,7 @@ public class Pathes
 			{
 				MyMod.WaitForSleepLable.SetActive(value: false);
 			}
-			if (__instance.m_Bed != null && __instance.m_Bed.gameObject != null && __instance.m_Bed.gameObject.GetComponent<Comps.FakeBedDummy>() != null)
-			{
-				UnityEngine.Object.Destroy(__instance.m_Bed.gameObject);
-			}
+			if (__state != null) UnityEngine.Object.Destroy(__state);
 		}
 	}
 
@@ -4897,19 +4900,34 @@ public class Pathes
 			}
 			if (afflictionType != AfflictionType.SprainedAnkle && afflictionType != AfflictionType.SprainedWrist && afflictionType != AfflictionType.SprainedWristMajor && afflictionType != AfflictionType.SprainPain)
 			{
-				switch (MyMod.GetFirstAidSkillTier())
+				try
 				{
-				case 4:
-					MyMod.ApplyTreatmentRegeneration(33f, 0.25f, "Self Treatment");
-					GameManager.GetConditionComponent().AddHealth(5f, DamageSource.FirstAid);
-					break;
-				case 5:
-					MyMod.ApplyTreatmentRegeneration(35f, 0.25f, "Self Treatment");
-					GameManager.GetConditionComponent().AddHealth(5f, DamageSource.FirstAid);
-					break;
+					int tier = MyMod.GetFirstAidSkillTier();
+					if (tier is 4 or 5 && GameManager.GetConditionComponent() is { } condition)
+					{
+						MyMod.ApplyTreatmentRegeneration(tier == 4 ? 33f : 35f, 0.25f, "Self Treatment");
+						condition.AddHealth(5f, DamageSource.FirstAid);
+					}
+					MyMod.IncressCustomSkill(MyMod.CustomSkills.FirstAid);
 				}
-				MyMod.IncressCustomSkill(MyMod.CustomSkills.FirstAid);
+				catch (System.Exception ex) { MelonLogger.Warning("[First aid] Could not apply skill effects: " + ex.Message); }
 			}
+		}
+	}
+
+	[HarmonyPatch(typeof(PlayerManager), nameof(PlayerManager.OnFirstAidComplete))]
+	private static class RestoreFirstAidControls
+	{
+		private static void Prefix(PlayerManager __instance, out bool __state)
+		{
+			__state = MyMod.InOnline() && __instance.m_FirstAidItemUsed != null &&
+				__instance.GetControlMode() == PlayerControlMode.Locked;
+		}
+
+		private static void Postfix(PlayerManager __instance, bool __state)
+		{
+			if (__state && __instance.GetControlMode() == PlayerControlMode.Locked)
+				__instance.ReturnToNormalControlMode(PlayerControlMode.Locked);
 		}
 	}
 

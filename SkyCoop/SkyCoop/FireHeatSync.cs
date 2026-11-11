@@ -524,9 +524,9 @@ public static class FireHeatSync
 	[HarmonyPatch(typeof(Fire), "Update")]
 	private static class FireUpdate
 	{
-		private static void Prefix(Fire __instance, out (double? Delta, bool SuppressWind, DataStr.FireSourcesSync Data) __state)
+		private static void Prefix(Fire __instance, out (double? Delta, bool SuppressWind, DataStr.FireSourcesSync Data, (TimeOfDay, float) WorkClock) __state)
 		{
-			__state = (nativeDelta, suppressWind, null);
+			__state = (nativeDelta, suppressWind, null, WorkLighting.UseNormalClock());
 			if (!Online || !MyMod.ApplyOtherCampfires)
 				return;
 			int id = __instance.GetInstanceID();
@@ -565,7 +565,7 @@ public static class FireHeatSync
 			nativeDelta = FireClockPolicy.SecondsAt(Math.Max(0, minute - previous));
 		}
 
-		private static void Postfix(Fire __instance, (double? Delta, bool SuppressWind, DataStr.FireSourcesSync Data) __state)
+		private static void Postfix(Fire __instance, (double? Delta, bool SuppressWind, DataStr.FireSourcesSync Data, (TimeOfDay, float) WorkClock) __state)
 		{
 			var data = __state.Data;
 			if (data == null || __instance.IsEmbers()
@@ -579,8 +579,11 @@ public static class FireHeatSync
 			Pending.Enqueue(request);
 		}
 
-		private static void Finalizer((double? Delta, bool SuppressWind, DataStr.FireSourcesSync Data) __state)
-			=> (nativeDelta, suppressWind) = (__state.Delta, __state.SuppressWind);
+		private static void Finalizer((double? Delta, bool SuppressWind, DataStr.FireSourcesSync Data, (TimeOfDay, float) WorkClock) __state)
+		{
+			(nativeDelta, suppressWind) = (__state.Delta, __state.SuppressWind);
+			WorkLighting.RestoreWorkClock(__state.WorkClock);
+		}
 	}
 
 	[HarmonyPatch(typeof(Fire), nameof(Fire.MaybeBlowOutFromWind))]
@@ -594,9 +597,9 @@ public static class FireHeatSync
 	{
 		internal static readonly Dictionary<int, int> Clocks = new();
 
-		private static void Prefix(CookingPotItem __instance, out double? __state)
+		private static void Prefix(CookingPotItem __instance, out (double? Delta, (TimeOfDay, float) WorkClock) __state)
 		{
-			__state = nativeDelta;
+			__state = (nativeDelta, __instance.m_FireBeingUsed != null ? WorkLighting.UseNormalClock() : default);
 			if (advancingCooking) return;
 			int id = __instance.GetInstanceID();
 			if (!Online || !MyMod.ApplyOtherCampfires || __instance.m_FireBeingUsed == null
@@ -611,7 +614,11 @@ public static class FireHeatSync
 			Clocks[id] = minute;
 		}
 
-		private static void Finalizer(double? __state) => nativeDelta = __state;
+		private static void Finalizer((double? Delta, (TimeOfDay, float) WorkClock) __state)
+		{
+			nativeDelta = __state.Delta;
+			WorkLighting.RestoreWorkClock(__state.WorkClock);
+		}
 	}
 
 	[HarmonyPatch(typeof(CookingPotItem), nameof(CookingPotItem.OnDestroy))]

@@ -166,8 +166,10 @@ internal static class ScenePlacementSync
         return null;
     }
 
-    private static bool IsFixedBed(GameObject obj) => obj != null && obj.GetComponentInChildren<Bed>(true) != null &&
-        (obj.GetComponent<GearItem>() == null || obj.GetComponent<DecorationItem>() != null);
+    private static bool IsFixedBed(GameObject obj) => obj != null &&
+        (obj.GetComponent<DecorationItem>() != null || obj.GetComponent<Placeable>() != null) &&
+        obj.GetComponentInParent<SnowShelter>() == null && obj.GetComponentInChildren<SnowShelter>(true) == null &&
+        obj.GetComponentInChildren<Bed>(true) is { } bed && bed.m_Bedroll == null;
 
     internal static bool CanPlace(GameObject obj)
     {

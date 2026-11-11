@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.28";
+		public const string Version = "0.16.29";
 
 		public const string DownloadLink = null;
 
@@ -2005,7 +2005,9 @@ public class MyMod : MelonMod
 
 	public static Skill GetCustomSkill(CustomSkills SkillType)
 	{
-		Il2CppSystem.Collections.Generic.List<Skill>.Enumerator enumerator = GameManager.GetSkillsManager().m_Skills.GetEnumerator();
+		var skills = GameManager.GetSkillsManager()?.m_Skills;
+		if (skills == null) return null;
+		Il2CppSystem.Collections.Generic.List<Skill>.Enumerator enumerator = skills.GetEnumerator();
 		while (enumerator.MoveNext())
 		{
 			Skill current = enumerator.Current;
@@ -2021,16 +2023,17 @@ public class MyMod : MelonMod
 	{
 		SkillsManager skillsManager = GameManager.GetSkillsManager();
 		Skill customSkill = GetCustomSkill(Skill);
+		if (customSkill == null || skillsManager == null) return;
 		int currentTierNumber = customSkill.GetCurrentTierNumber();
 		customSkill.IncrementPoints(Points, SkillsManager.PointAssignmentMode.AssignOnlyInSandbox);
 		int currentTierNumber2 = customSkill.GetCurrentTierNumber();
 		if (currentTierNumber != currentTierNumber2)
 		{
-			GameManager.GetSkillNotify().MaybeShowLevelUp(customSkill.m_SkillIcon, customSkill.m_DisplayName, skillsManager.GetTierName(currentTierNumber2), currentTierNumber2);
+			GameManager.GetSkillNotify()?.MaybeShowLevelUp(customSkill.m_SkillIcon, customSkill.m_DisplayName, skillsManager.GetTierName(currentTierNumber2), currentTierNumber2);
 		}
 		else
 		{
-			GameManager.GetSkillNotify().MaybeShowPointIncrease(customSkill.m_SkillIcon);
+			GameManager.GetSkillNotify()?.MaybeShowPointIncrease(customSkill.m_SkillIcon);
 		}
 	}
 
@@ -7076,7 +7079,10 @@ public class MyMod : MelonMod
 	private static void AddPickedBedroll(GearItem gear)
 	{
 		if (gear != null && !gear.m_InPlayerInventory && gear.GetComponent<Comps.FakeBedDummy>() == null)
+		{
 			GameManager.GetInventoryComponent().AddGear(gear);
+			if (gear != null && gear.m_InPlayerInventory) gear.gameObject.SetActive(false);
+		}
 	}
 
 	public static void UseFakeBed(GameObject obj)
@@ -7098,7 +7104,15 @@ public class MyMod : MelonMod
 			gameObject.AddComponent<Comps.FakeBedDummy>().m_LinkedFakeObject = obj;
 			foreach (var collider in gameObject.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
 			gameObject.GetComponent<GearItem>().enabled = false;
-			gameObject.GetComponent<GearItem>().m_Bed.PerformInteraction();
+			// The dropped replica supplies the visible bedroll. This object only backs the rest panel.
+			foreach (var renderer in gameObject.GetComponentsInChildren<Renderer>(true)) renderer.enabled = false;
+			var bed = gameObject.GetComponent<GearItem>().m_Bed;
+			try { bed.PerformInteraction(); }
+			finally
+			{
+				var rest = GameCompat.Panel<Panel_Rest>();
+				if (rest == null || !rest.isActiveAndEnabled || rest.m_Bed != bed) UnityEngine.Object.Destroy(gameObject);
+			}
 		}
 		else
 		{
@@ -7509,11 +7523,7 @@ public class MyMod : MelonMod
 
 	public static int GetFirstAidSkillTier()
 	{
-		if (GameManager.GetSkillsManager() != null)
-		{
-			return GetCustomSkill(CustomSkills.FirstAid).GetCurrentTierNumber() + 1;
-		}
-		return 1;
+		return (GetCustomSkill(CustomSkills.FirstAid)?.GetCurrentTierNumber() ?? 0) + 1;
 	}
 
 	public static void SendCureAffliction(DataStr.AffictionSync Aff)

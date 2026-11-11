@@ -15,6 +15,21 @@ public static class WorkLighting
   if(tod==null||owner==null||tod.Pointer!=owner.Pointer||tod.IsTimeLapseActive())return;
   Restore(tod);
  }
+
+ internal static (TimeOfDay Clock, float Scale) UseNormalClock()
+ {
+  var clock = owner;
+  if (clock == null || !clock.IsTimeLapseActive() || GameManager.m_Rest?.IsSleeping() == true) return default;
+  float accelerated = clock.GetDayLengthScale();
+  if (accelerated == scale) return default;
+  clock.SetDayLengthScale(scale);
+  return (clock, accelerated);
+ }
+
+ internal static void RestoreWorkClock((TimeOfDay Clock, float Scale) state)
+ {
+  if (state.Clock != null) state.Clock.SetDayLengthScale(state.Scale);
+ }
  private static void Restore(TimeOfDay tod)
  {
   owner=null;tod.SetDayLengthScale(scale);
