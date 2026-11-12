@@ -394,6 +394,7 @@ internal class SteamConnect
 
 		public static void OnLobbyPlayersUpdate(LobbyChatUpdate_t request)
 		{
+			if (MyMod.MyLobby != request.m_ulSteamIDLobby.ToString()) return;
 			if (request.m_rgfChatMemberStateChange == 1)
 			{
 				MelonLogger.Msg("[SteamWorks.NET] Played joined lobby " + request.m_ulSteamIDUserChanged);
@@ -408,6 +409,10 @@ internal class SteamConnect
 				if (SteamMatchmaking.GetLobbyOwner(new CSteamID(request.m_ulSteamIDLobby)) == SteamUser.GetSteamID())
 				{
 					SteamNetworking.CloseP2PSessionWithUser(new CSteamID(request.m_ulSteamIDUserChanged));
+					if (MyMod.iAmHost)
+						foreach (var client in Server.clients.Values)
+							if (client.udp.sid == request.m_ulSteamIDUserChanged.ToString())
+								client.TimeOutTime = MyMod.TimeOutSecondsForLoaders + 1;
 				}
 				if ((bool)MyMod.LobbyUI)
 				{
@@ -821,54 +826,45 @@ internal class SteamConnect
 
 		public static void HandleData(byte[] _data, string sender)
 		{
-			if (MyMod.iAmHost)
+			bool receivingAsHost = MyMod.iAmHost;
+			if (!MotionWire.TryGetPayload(_data, !receivingAsHost, out int offset, out int length)) return;
+			byte[] payload = _data.AsSpan(offset, length).ToArray();
+			if (receivingAsHost)
 			{
+				int clientId = BitConverter.ToInt32(_data, 0);
 				var hostHandlers = Server.packetHandlers;
-				int _clientID = 0;
-				using (Packet packet = new Packet(_data))
-				{
-					_clientID = packet.ReadInt();
-					packet.ReadString();
-					int length = packet.ReadInt();
-					_data = packet.ReadBytes(length);
-				}
 				ThreadManager.ExecuteOnMainThread(delegate
 				{
 					if (hostHandlers == null || Server.packetHandlers != hostHandlers || !Server.UsingSteamWorks)
 					{
 						return;
 					}
-					using Packet packet3 = new Packet(_data);
+					using Packet packet3 = new Packet(payload);
 					int packetId = packet3.ReadInt();
 					if (packetId == (int)ClientPackets.CONNECTSTEAM)
 					{
-						if (_clientID == 0)
+						if (clientId == 0)
 						{
 							ServerHandle.ConnectSteamPeer(sender);
 						}
 					}
-					else if (Server.clients.TryGetValue(_clientID, out Client peer) && peer.udp.sid == sender &&
+					else if (Server.clients.TryGetValue(clientId, out Client peer) && peer.udp.sid == sender &&
 						(peer.ConnectionInitialized || packetId == (int)ClientPackets.welcomeReceived))
 					{
-						MyMod.SimUDPHandle(packetId, packet3, _clientID);
+						MyMod.SimUDPHandle(packetId, packet3, clientId);
 					}
 				});
 				return;
 			}
 			Dictionary<int, ClientUser.PacketHandler> sessionHandlers = ClientUser.packetHandlers;
 			string sessionHost = MyMod.SteamServerWorks;
-			if (!MyMod.ConnectedSteamWorks || sessionHandlers == null || string.IsNullOrEmpty(sessionHost))
+			if (!MyMod.ConnectedSteamWorks || sessionHandlers == null || string.IsNullOrEmpty(sessionHost) || sender != sessionHost)
 			{
 				return;
 			}
-			using (Packet packet2 = new Packet(_data))
-			{
-				int length2 = packet2.ReadInt();
-				_data = packet2.ReadBytes(length2);
-			}
 			ThreadManager.ExecuteOnMainThread(delegate
 			{
-				using Packet packet3 = new Packet(_data);
+				using Packet packet3 = new Packet(payload);
 				int packetId = packet3.ReadInt();
 				if (!MyMod.iAmHost && MyMod.ConnectedSteamWorks && !(MyMod.SteamServerWorks != sessionHost) && ClientUser.packetHandlers == sessionHandlers)
 				{

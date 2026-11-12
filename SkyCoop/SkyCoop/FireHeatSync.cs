@@ -346,6 +346,67 @@ public static class FireHeatSync
 		Pending.Enqueue(after);
 	}
 
+	internal static bool CanSpendTorchFuel(Fire fire, DataStr.FireSourcesSync before, float cost)
+	{
+		float reserved = 0f;
+		foreach (var request in Pending)
+			if (request.m_Generation == before.m_Generation && request.m_Fuel < 0)
+				reserved -= request.m_Fuel;
+		float available = before.m_Fuel;
+		if (Bound.TryGetValue(fire.GetInstanceID(), out var snapshot))
+			available = Math.Min(available, Remaining(snapshot) - reserved);
+		return available >= cost;
+	}
+
+	internal static bool TakingTorch { get; private set; }
+
+	[HarmonyPatch]
+	private static class TorchFuel
+	{
+		private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+		{
+			yield return AccessTools.Method(typeof(Panel_FeedFire), nameof(Panel_FeedFire.OnTakeTorch));
+			yield return AccessTools.Method(typeof(Panel_ActionPicker), nameof(Panel_ActionPicker.TakeTorchCallback));
+		}
+
+		private static bool Prefix(object __instance, out (Fire Fire, DataStr.FireSourcesSync Before, int Count, float Cost) __state)
+		{
+			__state = default;
+			if (!Online || TakingTorch) return true;
+			var fire = (__instance is Panel_FeedFire feed ? feed.m_FireplaceInteraction :
+				(__instance as Panel_ActionPicker)?.m_FireplaceInteractedWith)?.Fire;
+			var inventory = GameManager.GetInventoryComponent();
+			if (fire == null || inventory == null || !fire.CanTakeTorch()) return true;
+			var before = BeforeFuelChange(fire);
+			if (before == null) return true;
+			float cost = Positive(GameManager.GetFireManagerComponent().m_TakeTorchReduceBurnMinutes) * 60f;
+			if (cost > 0f && !CanSpendTorchFuel(fire, before, cost))
+			{
+				HUDMessage.AddMessage("В костре недостаточно топлива для факела");
+				return false;
+			}
+			__state = (fire, before, inventory.GetNumTorches(), cost);
+			TakingTorch = true;
+			return true;
+		}
+
+		private static void Postfix((Fire Fire, DataStr.FireSourcesSync Before, int Count, float Cost) __state)
+		{
+			var fire = __state.Fire;
+			if (fire == null || GameManager.GetInventoryComponent().GetNumTorches() <= __state.Count) return;
+			// The game's callback can inline ReduceDurationByTODSeconds, bypassing its Harmony patch.
+			float remaining = Positive(fire.GetRemainingLifeTimeSeconds());
+			if (__state.Cost > 0f && remaining >= __state.Before.m_Fuel - .01f)
+				fire.ReduceDurationByTODSeconds(__state.Cost);
+			AfterFuelChange(fire, __state.Before, add: false);
+		}
+
+		private static void Finalizer((Fire Fire, DataStr.FireSourcesSync Before, int Count, float Cost) __state)
+		{
+			if (__state.Before != null) TakingTorch = false;
+		}
+	}
+
 	internal static void Tick()
 	{
 		if (!Online)

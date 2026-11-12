@@ -85,7 +85,7 @@ internal static class StrengthCostLabels
     {
         private static void Postfix(Panel_Inventory_Examine __instance)
         {
-            if (!CoopFatigue.ShowsStrengthCost || __instance.m_Clean_TimeLabel == null || __instance.m_GearItem == null) return;
+            if (!CoopFatigue.ShowsStrengthCost || !__instance.m_ItemCleanable || __instance.m_Clean_TimeLabel == null || __instance.m_GearItem == null) return;
             __instance.GetCleanConditionIncreaseAndDuration(out _, out int minutes);
             __instance.m_Clean_TimeLabel.text = CoopFatigue.CostLabel(minutes / 60f);
         }
@@ -96,7 +96,7 @@ internal static class StrengthCostLabels
     {
         private static void Postfix(Panel_Inventory_Examine __instance)
         {
-            if (!CoopFatigue.ShowsStrengthCost || __instance.m_Sharpen_TimeLabel == null || __instance.m_GearItem == null) return;
+            if (!CoopFatigue.ShowsStrengthCost || !__instance.m_ItemSharpenable || __instance.m_Sharpen_TimeLabel == null || __instance.m_GearItem == null) return;
             __instance.GetSharpenConditionIncreaseAndDuration(out _, out int minutes);
             __instance.m_Sharpen_TimeLabel.text = CoopFatigue.CostLabel(minutes / 60f);
         }

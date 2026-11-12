@@ -367,6 +367,8 @@ public static class CoopReturnToMenu
 		unloading = true;
 		stage = "loading-menu";
 		status = "Загрузка главного меню…";
+		if (ItemSpawner.IsOpen) ItemSpawner.Close();
+		if (CheatConsole.IsOpen) CheatConsole.Close();
 		MyMod.iAmHost = false;
 		MyMod.sendMyPosition = false;
 		MyMod.ConnectedSteamWorks = false;
@@ -391,6 +393,9 @@ public static class CoopReturnToMenu
 		ClientUser.myId = 0;
 		ClientUser.packetHandlers = null;
 		LeaveLobby();
+		foreach (var entry in MyMod.LobbyElements.Values)
+			if (entry != null) UnityEngine.Object.Destroy(entry);
+		MyMod.LobbyElements.Clear();
 		MyMod.MyContainer = null;
 		MyMod.GoingToOpenContinaer = null;
 		MyMod.WildlifeAuthorityScene = "";

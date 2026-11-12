@@ -77,6 +77,8 @@ public static class SteamGameJoin
 		target = "";
 		welcomeWhiteList = null;
 		phase = "suspended";
+		nextPoll = 0;
+		traces.Clear();
 		Status = "Отключено. Нажмите «Войти в игру» для подключения";
 	}
 

@@ -3018,54 +3018,22 @@ public class Pathes
 	}
 
 	[HarmonyPatch(typeof(RopeAnchorPoint), "ActionFinished")]
-	public static class RopeAnchorPoint_TakeOrDeploy
+	private static class RopeAnchorPoint_TakeOrDeploy
 	{
-		public static void Prefix(RopeAnchorPoint __instance)
-		{
-			if (MyMod.CrazyPatchesLogger)
-			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
-			}
-			if (MyMod.IsDead || GameManager.GetPlayerStruggleComponent().InStruggle() || __instance.m_ActionState == RopeAnchorActionState.None || !(GameManager.m_PlayerManager != null))
-			{
-				return;
-			}
-			PlayerControlMode controlMode = GameManager.GetPlayerManagerComponent().GetControlMode();
-			if (controlMode == PlayerControlMode.DeployRope || controlMode == PlayerControlMode.TakeRope)
-			{
-				bool flag = false;
-				if (controlMode == PlayerControlMode.DeployRope)
-				{
-					MelonLogger.Msg("Rope Deployed");
-					flag = true;
-				}
-				else
-				{
-					MelonLogger.Msg("Rope Taken");
-					flag = false;
-				}
-				Shared.AddDeployedRopes(__instance.gameObject.transform.position, flag, __instance.m_RopeSnapped, MyMod.levelid, GameManager.m_SceneTransitionData.m_SceneSaveFilenameCurrent, needSync: true);
-			}
-		}
-	}
+		private static void Prefix(RopeAnchorPoint __instance, out bool __state) => __state = __instance.m_RopeDeployed;
 
-	[HarmonyPatch(typeof(RopeAnchorPoint), "Update")]
-	public static class RopeAnchorPoint_Update
-	{
-		public static void Prefix(RopeAnchorPoint __instance)
+		private static void Postfix(RopeAnchorPoint __instance, bool __state)
 		{
-			if (MyMod.CrazyPatchesLogger)
+			if (!MyMod.InOnline() || __instance.m_RopeDeployed == __state) return;
+			var player = GameManager.GetPlayerManagerComponent();
+			if (player != null && __instance.m_ActionState == RopeAnchorActionState.None && !CoopReturnToMenu.InProgress)
 			{
-				StackTrace stackTrace = new StackTrace(new StackFrame(needFileInfo: true));
-				MelonLogger.Msg(System.ConsoleColor.Blue, "----------------------------------------------------");
-				MelonLogger.Msg(System.ConsoleColor.Gray, " Stack trace for current level: {0}", stackTrace.ToString());
+				var mode = player.GetControlMode();
+				if (mode is PlayerControlMode.TakeRope or PlayerControlMode.DeployRope or PlayerControlMode.Locked)
+					player.ReturnToNormalControlMode(mode);
 			}
-			if (__instance.m_RopeDeployed)
-			{
-				__instance.enabled = false;
-			}
+			Shared.AddDeployedRopes(__instance.transform.position, __instance.m_RopeDeployed, __instance.m_RopeSnapped,
+				MyMod.levelid, MyMod.level_guid, needSync: true);
 		}
 	}
 
@@ -4437,7 +4405,7 @@ public class Pathes
 	public static class Fire_ReduceDuration
 	{
 		public static void Prefix(Fire __instance, out DataStr.FireSourcesSync __state)
-			=> __state = FireHeatSync.BeforeFuelChange(__instance);
+			=> __state = FireHeatSync.TakingTorch ? null : FireHeatSync.BeforeFuelChange(__instance);
 
 		public static void Postfix(Fire __instance, DataStr.FireSourcesSync __state)
 			=> FireHeatSync.AfterFuelChange(__instance, __state, add: false);

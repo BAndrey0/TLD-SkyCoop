@@ -700,6 +700,8 @@ public static class CoopFatigue
 			return;
 		}
 		StrengthBar.Update(Mathf.Clamp01(strength / MaxStrength), barAlpha);
+		if (actionActive && actionName is "breakdown" or "item work" or "clothing repair" or "tool repair")
+			DrawWorkProgress();
 		if (barAlpha <= 0.01f || StrengthBar.Available)
 		{
 			return;
@@ -729,6 +731,23 @@ public static class CoopFatigue
 		GUI.color = new Color(0.88f, 0.85f, 0.76f, 0.95f * barAlpha);
 		GUI.Label(label, "СИЛА", labelStyle);
 		GUI.color = old;
+	}
+
+	private static void DrawWorkProgress()
+	{
+		if (Event.current?.type != EventType.Repaint) return;
+		float progress = Mathf.Clamp01((Time.realtimeSinceStartup - actionStarted) / (actionEnds - actionStarted));
+		float scale = Screen.height / 1080f;
+		float width = 300f * scale;
+		float x = (Screen.width - width) * .5f;
+		float y = Screen.height * .73f;
+		float height = Mathf.Max(4f, 7f * scale);
+		var color = GUI.color;
+		GUI.color = new Color(0f, 0f, 0f, .8f);
+		GUI.DrawTexture(new Rect(x, y, width, height), Texture2D.whiteTexture);
+		GUI.color = new Color(.88f, .85f, .76f);
+		GUI.DrawTexture(new Rect(x, y, width * progress, height), Texture2D.whiteTexture);
+		GUI.color = color;
 	}
 
 	private static string lastHud = "";

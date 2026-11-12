@@ -153,7 +153,7 @@ public static class CheatConsole
 		MelonLogger.Msg("[Cheats] Console opened");
 	}
 
-	private static void Close()
+	internal static void Close()
 	{
 		if (open)
 		{

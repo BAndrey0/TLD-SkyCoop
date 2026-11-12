@@ -7,12 +7,40 @@ using HarmonyLib;
 using Il2Cpp;
 using Il2CppTLD.IntBackedUnit;
 using Il2CppTLD.Placement;
+using Il2CppTLD.UI.Scroll;
 using UnityEngine;
 
 namespace SkyCoop;
 
 internal static class ScenePlacementSync
 {
+    [HarmonyPatch(typeof(ScrollBehaviour), nameof(ScrollBehaviour.RebuildItems))]
+    private static class CookingListBounds
+    {
+        private static void Prefix(ScrollBehaviour __instance, ref int __0)
+        {
+            var panel = GameCompat.Panel<Panel_Cooking>();
+            if (panel == null || panel.m_ScrollBehaviour != __instance || panel.m_FoodList == null) return;
+            __0 = panel.m_FoodList.Count;
+            int itemsPerLine = Math.Max(1, __instance.m_ItemsPerLine);
+            int lastLine = Math.Max(0, (__0 + itemsPerLine - 1) / itemsPerLine - Math.Max(1, __instance.m_VisibleLines));
+            __instance.m_FirstLine = Math.Clamp(__instance.m_FirstLine, 0, lastLine);
+            __instance._SelectedIndex_k__BackingField = Math.Clamp(__instance.SelectedIndex, -1, __0 - 1);
+        }
+    }
+
+    [HarmonyPatch(typeof(Panel_Cooking), nameof(Panel_Cooking.BuildItem))]
+    private static class CookingListRow
+    {
+        private static bool Prefix(Panel_Cooking __instance, ScrollBehaviourItem __1, int __2)
+        {
+            bool valid = __instance.m_FoodList != null && (uint)__2 < (uint)__instance.m_FoodList.Count;
+            if (__1 == null) return false;
+            if (__1.gameObject.activeSelf != valid) __1.gameObject.SetActive(valid);
+            return valid;
+        }
+    }
+
     internal const int ClientPacket = 199;
     internal const int ServerPacket = 197;
 
