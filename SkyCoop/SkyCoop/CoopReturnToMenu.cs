@@ -245,7 +245,7 @@ public static class CoopReturnToMenu
 					{
 						return;
 					}
-					WaitingPeers.RemoveWhere((int id) => !Server.clients.ContainsKey(id) || !Server.clients[id].IsBusy() || Server.clients[id].TimeOutTime > MyMod.TimeOutSecondsForLoaders);
+					WaitingPeers.RemoveWhere(id => !ShouldWaitForGuest(id));
 					if (WaitingPeers.Count == 0 || Clock.Elapsed.TotalSeconds >= peerDeadline)
 					{
 						if (WaitingPeers.Count != 0)
@@ -309,7 +309,7 @@ public static class CoopReturnToMenu
 		peerDeadline = Clock.Elapsed.TotalSeconds + 15.0;
 		foreach (KeyValuePair<int, Client> client in Server.clients)
 		{
-			if (client.Key > 0 && client.Value != null && !client.Value.RCON && client.Value.IsBusy())
+			if (ShouldWaitForGuest(client.Key))
 			{
 				WaitingPeers.Add(client.Key);
 				ServerSend.KICKMESSAGE(client.Key, "COOP_RETURN_MENU: Host is returning to the main menu.");
@@ -329,10 +329,18 @@ public static class CoopReturnToMenu
 		}
 	}
 
+	private static bool ShouldWaitForGuest(int id)
+	{
+		return id > 0 && Server.clients.TryGetValue(id, out var client) && client != null &&
+			client.ConnectionInitialized && client.IsBusy() && !client.RCON && !client.Departing &&
+			client.TimeOutTime <= MyMod.TimeOutSecondsForLoaders;
+	}
+
 	private static void AfterLocalSave()
 	{
 		localSaved = true;
 		MelonLogger.Msg("[ReturnMenu] Local checkpoint committed");
+		WaitingPeers.RemoveWhere(id => !ShouldWaitForGuest(id));
 		if (wasHost && WaitingPeers.Count != 0)
 		{
 			stage = "waiting-peers";

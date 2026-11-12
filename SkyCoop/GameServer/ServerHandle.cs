@@ -33,9 +33,9 @@ internal class ServerHandle
 		}
 		else if (text2 != "RCON")
 		{
-			if (text2 != "0.16.30")
+			if (text2 != "0.16.31")
 			{
-				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.30");
+				ServerSend.KICKMESSAGE(_fromClient, "Wrong mod version! Server using version 0.16.31");
 				Shared.SendMessageToChat(new DataStr.MultiplayerChatMessage
 				{
 					m_Type = 0,
@@ -582,6 +582,7 @@ internal class ServerHandle
 			client.udp.sid = text;
 			client.SubNetworkGUID = text;
 			client.TimeOutTime = 0;
+			client.Departing = false;
 			Log("[SteamWorks.NET] " + (flag ? "Reconnecting" : "Connecting") + " Steam peer as client " + num);
 			ServerSend.Welcome(num, Server.MaxPlayers);
 		}
@@ -1445,9 +1446,9 @@ internal class ServerHandle
 				MPSaveManager.SetSaveHash(text, num);
 			}
 		}
-		if (flag && Server.clients[_fromClient] != null)
+		if (flag && Server.clients.TryGetValue(_fromClient, out var client))
 		{
-			Server.clients[_fromClient].TimeOutTime = MyMod.TimeOutSecondsForLoaders + 1;
+			client.Departing = true;
 		}
 	}
 

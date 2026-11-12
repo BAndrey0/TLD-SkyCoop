@@ -24,6 +24,7 @@ internal class Client
 
 		public void Connect(IPEndPoint _endPoint)
 		{
+			client.Departing = false;
 			Log($"Incoming connection from {_endPoint.Address}...");
 			endPoint = _endPoint;
 			ServerSend.Welcome(id, Server.MaxPlayers);
@@ -69,6 +70,7 @@ internal class Client
 
 		public void Disconnect()
 		{
+			client.Departing = false;
 			endPoint = null;
 			sid = "";
 			client.Ready = false;
@@ -83,6 +85,8 @@ internal class Client
 	public UDP udp;
 
 	public int TimeOutTime;
+
+	public bool Departing;
 
 	public bool RCON;
 

@@ -1165,24 +1165,7 @@ public class Shared
 			{
 				continue;
 			}
-			num++;
-			DataStr.MultiPlayerClientStatus multiPlayerClientStatus2 = new DataStr.MultiPlayerClientStatus();
-			multiPlayerClientStatus2.m_ID = i;
-			multiPlayerClientStatus2.m_Name = MyMod.playersData[i].m_Name;
-			if (MyMod.playersData[i].m_AnimState == "Knock")
-			{
-				multiPlayerClientStatus2.m_Dead = true;
-			}
-			else
-			{
-				multiPlayerClientStatus2.m_Dead = false;
-			}
-			multiPlayerClientStatus2.m_IsLoading = ClientIsLoading(i);
-			if (multiPlayerClientStatus2.m_Dead)
-			{
-				num3++;
-			}
-			list.Add(multiPlayerClientStatus2);
+			Client client = Server.clients[i];
 			int num4 = MyMod.TimeOutSeconds;
 			if (ClientIsLoading(i))
 			{
@@ -1193,7 +1176,7 @@ public class Shared
 				num4 = 300;
 			}
 			Server.clients[i].TimeOutTime = Server.clients[i].TimeOutTime + 1;
-			if (Server.clients[i].TimeOutTime > num4)
+			if (client.Departing || client.TimeOutTime > num4)
 			{
 				bool flag = false;
 				string name = MyMod.playersData[i].m_Name;
@@ -1204,7 +1187,8 @@ public class Shared
 					multiplayerChatMessage.m_Type = 0;
 					multiplayerChatMessage.m_By = MyMod.playersData[i].m_Name;
 					multiplayerChatMessage.m_Message = MyMod.playersData[i].m_Name + " disconnected!";
-					ServerSend.KICKMESSAGE(i, "The host has disconnected you from the server due to a long period without receiving data from you.");
+					if (!client.Departing)
+						ServerSend.KICKMESSAGE(i, "The host has disconnected you from the server due to a long period without receiving data from you.");
 					if (!string.IsNullOrEmpty(name))
 					{
 						SendMessageToChat(multiplayerChatMessage);
@@ -1216,14 +1200,28 @@ public class Shared
 					ServerSend.KICKMESSAGE(i, "Your RCON session is over, please reconnect.");
 				}
 				Server.clients[i].RCON = false;
+				string steamPeer = client.udp.sid;
+				client.udp.Disconnect();
 				ResetDataForSlot(i);
 				Log("Client " + i + " processing disconnect");
-				Server.clients[i].udp.Disconnect();
+				if (Server.UsingSteamWorks && !string.IsNullOrEmpty(steamPeer))
+					SteamConnect.Main.Disconnect(steamPeer);
 				if (flag)
 				{
 					WebhookPlayerLeave(name);
 				}
+				continue;
 			}
+			num++;
+			var clientStatus = new DataStr.MultiPlayerClientStatus
+			{
+				m_ID = i,
+				m_Name = MyMod.playersData[i].m_Name,
+				m_Dead = MyMod.playersData[i].m_AnimState == "Knock",
+				m_IsLoading = ClientIsLoading(i)
+			};
+			if (clientStatus.m_Dead) num3++;
+			list.Add(clientStatus);
 			if (MyMod.playersData[i] != null && Server.clients[i].IsBusy())
 			{
 				var wildlife = MyMod.playersData[i];

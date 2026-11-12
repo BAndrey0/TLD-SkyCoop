@@ -395,25 +395,14 @@ internal class SteamConnect
 		public static void OnLobbyPlayersUpdate(LobbyChatUpdate_t request)
 		{
 			if (MyMod.MyLobby != request.m_ulSteamIDLobby.ToString()) return;
-			if (request.m_rgfChatMemberStateChange == 1)
-			{
-				MelonLogger.Msg("[SteamWorks.NET] Played joined lobby " + request.m_ulSteamIDUserChanged);
-				if (SteamMatchmaking.GetLobbyOwner(new CSteamID(request.m_ulSteamIDLobby)) == SteamUser.GetSteamID())
-				{
-					SteamNetworking.AcceptP2PSessionWithUser(new CSteamID(request.m_ulSteamIDUserChanged));
-				}
-			}
-			else
+			const uint leftLobby = (uint)(EChatMemberStateChange.k_EChatMemberStateChangeLeft |
+				EChatMemberStateChange.k_EChatMemberStateChangeDisconnected |
+				EChatMemberStateChange.k_EChatMemberStateChangeKicked |
+				EChatMemberStateChange.k_EChatMemberStateChangeBanned);
+			if ((request.m_rgfChatMemberStateChange & leftLobby) != 0)
 			{
 				MelonLogger.Msg("[SteamWorks.NET] Player disconnected from lobby " + request.m_ulSteamIDUserChanged);
-				if (SteamMatchmaking.GetLobbyOwner(new CSteamID(request.m_ulSteamIDLobby)) == SteamUser.GetSteamID())
-				{
-					SteamNetworking.CloseP2PSessionWithUser(new CSteamID(request.m_ulSteamIDUserChanged));
-					if (MyMod.iAmHost)
-						foreach (var client in Server.clients.Values)
-							if (client.udp.sid == request.m_ulSteamIDUserChanged.ToString())
-								client.TimeOutTime = MyMod.TimeOutSecondsForLoaders + 1;
-				}
+				MarkPeerDeparting(request.m_ulSteamIDUserChanged.ToString());
 				if ((bool)MyMod.LobbyUI)
 				{
 					MyMod.RemovePersonFromLobby(request.m_ulSteamIDUserChanged);
@@ -423,11 +412,24 @@ internal class SteamConnect
 					CoopReturnToMenu.HostLeft();
 				}
 			}
+			else if ((request.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeEntered) != 0 &&
+				SteamMatchmaking.GetLobbyOwner(new CSteamID(request.m_ulSteamIDLobby)) == SteamUser.GetSteamID())
+			{
+				SteamNetworking.AcceptP2PSessionWithUser(new CSteamID(request.m_ulSteamIDUserChanged));
+			}
 			SteamFriends.SetRichPresence("steam_player_group", request.m_ulSteamIDLobby.ToString());
 			SteamFriends.SetRichPresence("steam_player_group_size", SteamMatchmaking.GetNumLobbyMembers(new CSteamID(request.m_ulSteamIDLobby)).ToString());
 			int numLobbyMembers = SteamMatchmaking.GetNumLobbyMembers(new CSteamID(request.m_ulSteamIDLobby));
 			int lobbyMemberLimit = SteamMatchmaking.GetLobbyMemberLimit(new CSteamID(request.m_ulSteamIDLobby));
 			SteamFriends.SetRichPresence("status", "Playing Online " + numLobbyMembers + "/" + lobbyMemberLimit);
+		}
+
+		internal static void MarkPeerDeparting(string steamId)
+		{
+			if (!MyMod.iAmHost || !Server.UsingSteamWorks) return;
+			foreach (var client in Server.clients.Values)
+				if (client.udp.sid == steamId)
+					client.Departing = true;
 		}
 
 		public static void TestMyVoice(byte[] DestBuffer, uint BytesWritten, float RecordTime)
@@ -803,19 +805,20 @@ internal class SteamConnect
 			SteamMatchmaking.JoinLobby(steamIDLobby);
 		}
 
-		public static void SendUDPData(Packet _packet, CSteamID receiver)
+		public static bool SendUDPData(Packet _packet, CSteamID receiver)
 		{
 			byte[] array = _packet.ToArray();
 			bool motion = MotionWire.IsMotion(array, MyMod.iAmHost);
 			bool sent = SteamNetworking.SendP2PPacket(receiver, array, (uint)array.Length,
 				motion ? EP2PSend.k_EP2PSendUnreliableNoDelay : EP2PSend.k_EP2PSendReliable, motion ? 1 : 0);
 			SteamGameJoin.TracePacket(receiver, array, incoming: false, sent);
+			return sent;
 		}
 
-		public static void SendUDPData(Packet _packet, string receiver)
+		public static bool SendUDPData(Packet _packet, string receiver)
 		{
 			CSteamID receiver2 = new CSteamID(ulong.Parse(receiver));
-			SendUDPData(_packet, receiver2);
+			return SendUDPData(_packet, receiver2);
 		}
 
 		public static void Disconnect(string hostid)

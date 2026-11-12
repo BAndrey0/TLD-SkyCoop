@@ -44,7 +44,7 @@ public class MyMod : MelonMod
 
 		public const string Company = null;
 
-		public const string Version = "0.16.30";
+		public const string Version = "0.16.31";
 
 		public const string DownloadLink = null;
 
@@ -4527,7 +4527,7 @@ public class MyMod : MelonMod
 		}
 	}
 
-	public static void Disconnect(bool checkpoint = true)
+	public static void Disconnect(bool checkpoint = true, bool leaveSteamChannelOpen = false)
 	{
 		if (checkpoint && !IReallyWantToQuit && !QuitWithoutSaving && !DedicatedServerAppMode && InOnline() && level_name != "Empty" && level_name != "Boot" && !Shared.IsMainMenuScene(level_name))
 		{
@@ -4545,7 +4545,9 @@ public class MyMod : MelonMod
 				string steamServerWorks = SteamServerWorks;
 				try
 				{
-					SteamConnect.Main.Disconnect(steamServerWorks);
+					// The host closes the channel after consuming the final reliable save packet.
+					if (!leaveSteamChannelOpen)
+						SteamConnect.Main.Disconnect(steamServerWorks);
 					return;
 				}
 				finally
@@ -4582,14 +4584,19 @@ public class MyMod : MelonMod
 	{
 		if (SteamConnect.CanUseSteam && ConnectedSteamWorks)
 		{
-			_packet.WriteLength();
-			_packet.InsertClientInfo(ClientUser.myId, ClientUser.SubNetworkClientGUID);
-			SteamConnect.Main.SendUDPData(_packet, SteamServerWorks);
+			SendSteamPacket(_packet);
 		}
 		else
 		{
 			ClientUser.udp.SendData(_packet, IgnoreQuit);
 		}
+	}
+
+	private static bool SendSteamPacket(Packet packet)
+	{
+		packet.WriteLength();
+		packet.InsertClientInfo(ClientUser.myId, ClientUser.SubNetworkClientGUID);
+		return SteamConnect.Main.SendUDPData(packet, SteamServerWorks);
 	}
 
 	public static bool IsEquippable(GearItem gi)
@@ -10427,22 +10434,23 @@ public class MyMod : MelonMod
 		}
 		MelonLogger.Msg("Saving on disk done");
 		MelonLogger.Msg("SAVE_DRAINED");
-		if (sendMyPosition)
+		bool leaveSteamChannelOpen = false;
+		if (sendMyPosition && ClientUser.myId > 0)
 		{
-			if (PendingSaveHashToSend != 0L)
+			using Packet packet = new Packet((int)ClientPackets.SAVEHASH);
+			packet.Write(MyUGUID ?? "");
+			packet.Write(PendingSaveHashToSend);
+			packet.Write(_value: true);
+			try
 			{
-				using Packet packet = new Packet(138);
-				packet.Write(MyUGUID);
-				packet.Write(PendingSaveHashToSend);
-				packet.Write(_value: true);
-				try
-				{
+				if (SteamConnect.CanUseSteam && ConnectedSteamWorks)
+					leaveSteamChannelOpen = SendSteamPacket(packet);
+				else
 					SendUDPData(packet, IgnoreQuit: true);
-				}
-				catch (System.Exception ex3)
-				{
-					MelonLogger.Warning("[SaveQuit] Save hash notification failed after disk commit: " + ex3.Message);
-				}
+			}
+			catch (System.Exception ex3)
+			{
+				MelonLogger.Warning("[SaveQuit] Save hash notification failed after disk commit: " + ex3.Message);
 			}
 			MelonLogger.Msg("[SaveQuit] Save notification processed; completing " + PendingSaveExitAction);
 		}
@@ -10454,7 +10462,7 @@ public class MyMod : MelonMod
 			System.Action afterSavedDisconnect = AfterSavedDisconnect;
 			AfterSavedDisconnect = null;
 			PendingSaveHashToSend = 0L;
-			Disconnect(checkpoint: false);
+			Disconnect(checkpoint: false, leaveSteamChannelOpen: leaveSteamChannelOpen);
 			QuitWithoutSaving = false;
 			RemovePleaseWait();
 			MelonLogger.Msg("SAVE_DISCONNECT_COMPLETED");

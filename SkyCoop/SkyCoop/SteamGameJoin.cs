@@ -262,6 +262,9 @@ public static class SteamGameJoin
 	public static void OnSessionFailure(P2PSessionConnectFail_t failure)
 	{
 		MelonLogger.Warning("[Steam join] P2P failure code=" + failure.m_eP2PSessionError + " " + Session(failure.m_steamIDRemote.ToString()));
+		if (MyMod.iAmHost && (!SteamNetworking.GetP2PSessionState(failure.m_steamIDRemote, out var state) ||
+			(state.m_bConnectionActive == 0 && state.m_bConnecting == 0)))
+			SteamConnect.Main.MarkPeerDeparting(failure.m_steamIDRemote.ToString());
 		if (failure.m_steamIDRemote.ToString() == target && !MyMod.sendMyPosition)
 		{
 			Status = "Ошибка соединения Steam: " + failure.m_eP2PSessionError;
